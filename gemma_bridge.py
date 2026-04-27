@@ -112,7 +112,10 @@ async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
         result = await handle_mlx_request(model_id, messages)
     else:
         result = await handle_litert_request(model_id, messages)
-    return result["choices"][0]["message"]["content"]
+    try:
+        return result["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f"run_inference: unexpected response structure: {e}") from e
 
 def update_memory_task(user_msg, assistant_msg):
     """Background task to learn from the interaction and update USER_MEMORY.md"""
