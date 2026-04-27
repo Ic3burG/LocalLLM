@@ -105,6 +105,15 @@ def strip_thinking(text):
     text = re.sub(r'<\|turn\|>.*', '', text)
     return text.strip()
 
+async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
+    """Shared inference helper — routes to LiteRT or MLX and returns response text."""
+    is_mlx = "26b" in model_id.lower() or "31b" in model_id.lower() or "mlx" in model_id.lower()
+    if is_mlx:
+        result = await handle_mlx_request(model_id, messages)
+    else:
+        result = await handle_litert_request(model_id, messages)
+    return result["choices"][0]["message"]["content"]
+
 def update_memory_task(user_msg, assistant_msg):
     """Background task to learn from the interaction and update USER_MEMORY.md"""
     try:
@@ -300,12 +309,8 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
                     messages.insert(0, {"role": "system", "content": context_block})
 
         # Decide which engine to use
-        is_mlx = "26b" in model_id.lower() or "31b" in model_id.lower() or "mlx" in model_id.lower()
-        
-        if is_mlx:
-            response = await handle_mlx_request(model_id, messages)
-        else:
-            response = await handle_litert_request(model_id, messages)
+        content = await run_inference(messages, model_id)
+        response = format_openai_response(model_id, content)
 
         # Trigger background learning
         last_user_msg = messages[-1].get("content")
