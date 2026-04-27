@@ -1,4 +1,5 @@
 import sys, os
+import json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Stub out heavy/unavailable dependencies before importing gemma_bridge
@@ -165,3 +166,86 @@ async def test_list_scheduled_tasks_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(agent, "SCHEDULER_TASKS_FILE", tmp_path / "tasks.json")
     result = await agent._list_scheduled_tasks()
     assert result == "[]"
+
+
+# ── Parser tests ──────────────────────────────────────────
+def test_parse_tool_call_single_arg():
+    from agent import parse_model_output
+    result = parse_model_output('TOOL: read_file("~/notes.md")')
+    assert result == ("tool", "read_file", ["~/notes.md"])
+
+def test_parse_tool_call_two_args():
+    from agent import parse_model_output
+    result = parse_model_output('TOOL: write_file("~/out.txt", "hello world")')
+    assert result == ("tool", "write_file", ["~/out.txt", "hello world"])
+
+def test_parse_done():
+    from agent import parse_model_output
+    result = parse_model_output('DONE: Summarised 5 files')
+    assert result == ("done", "Summarised 5 files", [])
+
+def test_parse_no_match_returns_none():
+    from agent import parse_model_output
+    result = parse_model_output("I need to think about this more.")
+    assert result is None
+
+def test_parse_tool_no_args():
+    from agent import parse_model_output
+    result = parse_model_output('TOOL: list_crons()')
+    assert result == ("tool", "list_crons", [])
+
+
+# ── ReAct loop tests ──────────────────────────────────────
+@pytest.mark.asyncio
+async def test_react_loop_internal_returns_done_message():
+    import agent
+    # Model immediately responds with DONE
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      return_value="DONE: all done"):
+        result = await agent._react_loop_internal("do something")
+    assert result == "all done"
+
+@pytest.mark.asyncio
+async def test_react_loop_internal_executes_safe_tool():
+    import agent
+    responses = iter(["TOOL: list_crons()", "DONE: found cron"])
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      side_effect=lambda msgs, model_id="gemma4-e4b": next(responses)), \
+         patch.object(agent, "_list_crons", new_callable=AsyncMock,
+                      return_value="0 9 * * * echo hi"):
+        result = await agent._react_loop_internal("check my crons")
+    assert result == "found cron"
+
+@pytest.mark.asyncio
+async def test_react_loop_internal_max_iterations():
+    import agent
+    # Model never outputs DONE
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      return_value="thinking..."):
+        result = await agent._react_loop_internal("loop forever")
+    assert result == "Max iterations reached"
+
+
+# ── Scheduler CRUD tests ──────────────────────────────────
+@pytest.mark.asyncio
+async def test_create_and_list_scheduled_task(tmp_path, monkeypatch):
+    import agent
+    monkeypatch.setattr(agent, "SCHEDULER_TASKS_FILE", tmp_path / "tasks.json")
+    # Mock _register_scheduler_task to avoid APScheduler issues in tests
+    with patch.object(agent, "_register_scheduler_task"):
+        result = await agent._create_scheduled_task("daily", "0 9 * * *", "check files")
+    assert result.startswith("OK:")
+    tasks = json.loads((tmp_path / "tasks.json").read_text())
+    assert len(tasks) == 1
+    assert tasks[0]["name"] == "daily"
+    assert tasks[0]["prompt"] == "check files"
+
+@pytest.mark.asyncio
+async def test_list_scheduled_tasks_returns_tasks(tmp_path, monkeypatch):
+    import agent
+    task_file = tmp_path / "tasks.json"
+    task_file.write_text(json.dumps([{"name": "x", "schedule": "* * * * *", "prompt": "hi"}]))
+    monkeypatch.setattr(agent, "SCHEDULER_TASKS_FILE", task_file)
+    result = await agent._list_scheduled_tasks()
+    data = json.loads(result)
+    assert data[0]["name"] == "x"
