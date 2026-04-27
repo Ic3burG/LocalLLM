@@ -117,6 +117,14 @@ async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"run_inference: unexpected response structure: {e}") from e
 
+from agent import router as agent_router, scheduler, load_scheduler_tasks_on_startup
+app.include_router(agent_router, prefix="/v1/agent")
+
+@app.on_event("startup")
+async def startup():
+    scheduler.start()
+    load_scheduler_tasks_on_startup()
+
 def update_memory_task(user_msg, assistant_msg):
     """Background task to learn from the interaction and update USER_MEMORY.md"""
     try:
