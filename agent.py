@@ -88,6 +88,7 @@ async def _write_file(path: str, content: str) -> str:
 async def _append_file(path: str, content: str) -> str:
     try:
         p = Path(os.path.expanduser(path))
+        p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "a") as f:
             f.write(content)
         return f"OK: appended {len(content)} bytes"
@@ -268,7 +269,9 @@ def parse_model_output(text: str) -> tuple[str, str, list] | None:
         try:
             args = json.loads(f"[{raw_args}]") if raw_args else []
         except json.JSONDecodeError:
-            args = [raw_args]  # fall back to treating as single string arg
+            # Heuristic: try splitting on comma+space for multi-arg tools
+            parts = [p.strip().strip('"\'') for p in raw_args.split(', ')]
+            args = parts if len(parts) > 1 else [raw_args]
         return ("tool", tool_name, args)
     if done_match:
         return ("done", done_match.group(1).strip(), [])
@@ -336,54 +339,57 @@ async def _react_loop_sse(task_id: str, user_prompt: str, model_id: str) -> None
         {"role": "system", "content": AGENT_SYSTEM_PROMPT},
         {"role": "user", "content": user_prompt},
     ]
-    for _ in range(20):
-        response_text = await run_inference(messages, model_id)
-        messages.append({"role": "assistant", "content": response_text})
+    try:
+        for _ in range(20):
+            response_text = await run_inference(messages, model_id)
+            messages.append({"role": "assistant", "content": response_text})
 
-        parsed = parse_model_output(response_text)
-        if parsed is None:
-            await q.put(json.dumps({"type": "thinking", "text": response_text}))
-            continue
-
-        kind, name_or_msg, args = parsed
-        if kind == "done":
-            await q.put(json.dumps({"type": "done", "message": name_or_msg}))
-            await q.put(None)  # sentinel
-            return
-
-        tool = TOOL_REGISTRY.get(name_or_msg)
-        if not tool:
-            msg = f"ERROR: unknown tool {name_or_msg}"
-            messages.append({"role": "user", "content": f"TOOL_RESULT: {msg}"})
-            continue
-
-        # confirmation gate for risky tools
-        if tool.risk == "risky":
-            args_dict = dict(enumerate(args))
-            await q.put(json.dumps({"type": "confirm_request", "task_id": task_id,
-                                    "tool": name_or_msg, "args": args_dict}))
-            cq = _confirm_queues[task_id]
-            try:
-                approved = await asyncio.wait_for(cq.get(), timeout=300)
-            except asyncio.TimeoutError:
-                approved = False
-            await q.put(json.dumps({"type": "confirm_resolved", "approved": approved}))
-            if not approved:
-                messages.append({"role": "user", "content": "TOOL_RESULT: denied by user"})
+            parsed = parse_model_output(response_text)
+            if parsed is None:
+                await q.put(json.dumps({"type": "thinking", "text": response_text}))
                 continue
 
-        t0 = time.monotonic()
-        try:
-            result = await tool.fn(*args)
-        except Exception as e:
-            result = f"ERROR: {e}"
-        elapsed = int((time.monotonic() - t0) * 1000)
-        await q.put(json.dumps({"type": "step", "tool": name_or_msg,
-                                "args": dict(enumerate(args)), "result": result, "elapsed_ms": elapsed}))
-        messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
+            kind, name_or_msg, args = parsed
+            if kind == "done":
+                await q.put(json.dumps({"type": "done", "message": name_or_msg}))
+                return
 
-    await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))
-    await q.put(None)
+            tool = TOOL_REGISTRY.get(name_or_msg)
+            if not tool:
+                msg = f"ERROR: unknown tool {name_or_msg}"
+                messages.append({"role": "user", "content": f"TOOL_RESULT: {msg}"})
+                continue
+
+            # confirmation gate for risky tools
+            if tool.risk == "risky":
+                args_dict = dict(enumerate(args))
+                await q.put(json.dumps({"type": "confirm_request", "task_id": task_id,
+                                        "tool": name_or_msg, "args": args_dict}))
+                cq = _confirm_queues[task_id]
+                try:
+                    approved = await asyncio.wait_for(cq.get(), timeout=300)
+                except asyncio.TimeoutError:
+                    approved = False
+                await q.put(json.dumps({"type": "confirm_resolved", "approved": approved}))
+                if not approved:
+                    messages.append({"role": "user", "content": "TOOL_RESULT: denied by user"})
+                    continue
+
+            t0 = time.monotonic()
+            try:
+                result = await tool.fn(*args)
+            except Exception as e:
+                result = f"ERROR: {e}"
+            elapsed = int((time.monotonic() - t0) * 1000)
+            await q.put(json.dumps({"type": "step", "tool": name_or_msg,
+                                    "args": dict(enumerate(args)), "result": result, "elapsed_ms": elapsed}))
+            messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
+
+        await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))
+    except Exception as e:
+        await q.put(json.dumps({"type": "error", "message": str(e)}))
+    finally:
+        await q.put(None)
 
 
 # ---------------------------------------------------------------------------
@@ -425,11 +431,15 @@ async def stream_agent(task_id: str):
     q = _sse_queues[task_id]
 
     async def event_gen():
-        while True:
-            event = await q.get()
-            if event is None:
-                break
-            yield f"data: {event}\n\n"
+        try:
+            while True:
+                event = await q.get()
+                if event is None:
+                    break
+                yield f"data: {event}\n\n"
+        finally:
+            _sse_queues.pop(task_id, None)
+            _confirm_queues.pop(task_id, None)
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
