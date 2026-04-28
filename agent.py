@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import googlesearch
+import pyperclip
 import requests
 from bs4 import BeautifulSoup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -283,6 +284,21 @@ async def _git_log(limit: int = 5) -> str:
         return f"ERROR: {e}"
 
 
+async def _clipboard_copy(text: str) -> str:
+    try:
+        pyperclip.copy(text)
+        return "OK: copied to clipboard"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+async def _clipboard_paste() -> str:
+    try:
+        return pyperclip.paste()
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
@@ -301,6 +317,8 @@ TOOL_REGISTRY: dict[str, Tool] = {
     "create_scheduled_task": Tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task),
     "git_status": Tool("git_status", "safe", "Get git status --short", _git_status),
     "git_log": Tool("git_log", "safe", "Get git log --oneline", _git_log),
+    "clipboard_copy": Tool("clipboard_copy", "safe", "Copy text to system clipboard", _clipboard_copy),
+    "clipboard_paste": Tool("clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste),
 }
 
 
@@ -399,7 +417,7 @@ AGENT_SYSTEM_PROMPT = """You are an autonomous agent. You have access to these t
   append_file(path, content), shell(command), list_crons(),
   create_cron(name, schedule, command), delete_cron(name),
   list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt),
-  git_status(), git_log(limit)
+  git_status(), git_log(limit), clipboard_copy(text), clipboard_paste()
 
 To call a tool, output EXACTLY one line:
   TOOL: tool_name("arg1", "arg2")
