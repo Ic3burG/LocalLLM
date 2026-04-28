@@ -933,12 +933,21 @@
 
             appendUserMessage(prompt);
 
-            const res = await fetch('/api/agent/run', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({prompt, model_id: getCurrentModelId()}),
-            });
-            const {task_id} = await res.json();
+            let task_id;
+            try {
+                const res = await fetch('/api/agent/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({prompt, model_id: getCurrentModelId()}),
+                });
+                ({task_id} = await res.json());
+            } catch (err) {
+                const errEl = document.createElement('div');
+                errEl.className = 'agent-error-message';
+                errEl.textContent = '⚠ Failed to start agent: ' + err.message;
+                appendToChat(errEl);
+                return;
+            }
 
             const traceContainer = createTraceContainer(task_id);
             appendToChat(traceContainer);
