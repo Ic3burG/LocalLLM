@@ -33,6 +33,9 @@ _inference_queue: queue.Queue = queue.Queue()
 _mlx_vlm_load = None
 _mlx_vlm_generate = None
 
+# Event to signal that the inference worker has completed initialization.
+_inference_ready = threading.Event()
+
 def _inference_worker():
     """Long-lived thread that owns all mlx GPU state."""
     global _mlx_vlm_load, _mlx_vlm_generate
@@ -40,13 +43,11 @@ def _inference_worker():
     from mlx_vlm import load as _load, generate as _gen
     _mlx_vlm_load = _load
     _mlx_vlm_generate = _gen
+    _inference_ready.set()  # signal: safe to call _mlx_vlm_load now
     logger.info("Inference worker thread ready (mlx_vlm imported in this thread).")
 
     while True:
-        item = _inference_queue.get()
-        if item is None:
-            break  # shutdown signal
-        fn, args, future = item
+        fn, args, future = _inference_queue.get()
         try:
             result = fn(*args)
             future.get_loop().call_soon_threadsafe(future.set_result, result)
@@ -59,7 +60,7 @@ _inference_thread.start()
 
 async def _run_in_inference_thread(fn, *args):
     """Submit *fn(*args)* to the inference thread and await the result."""
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     future: asyncio.Future = loop.create_future()
     _inference_queue.put((fn, args, future))
     return await future
@@ -95,6 +96,8 @@ doc_store: dict = {}
 
 def get_mlx_vlm_model(model_id: str):
     """Must only be called from the inference thread."""
+    if not _inference_ready.wait(timeout=30):
+        raise RuntimeError("Inference worker failed to start within 30 seconds")
     if model_id in _vlm_cache:
         return _vlm_cache[model_id]
     # No lock needed — only the inference thread calls this.
