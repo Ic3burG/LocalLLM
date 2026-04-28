@@ -925,6 +925,18 @@
 
         // ── runAgent ──────────────────────────────────────────────────────────
 
+        function setAgentStatus(text) {
+            typingIndicator.textContent = text;
+            typingIndicator.classList.remove('hidden');
+            sendBtn.disabled = true;
+        }
+
+        function clearAgentStatus() {
+            typingIndicator.classList.add('hidden');
+            typingIndicator.textContent = 'Thinking...';
+            sendBtn.disabled = false;
+        }
+
         async function runAgent() {
             const prompt = userInput.value.trim();
             if (!prompt) return;
@@ -932,6 +944,7 @@
             userInput.style.height = 'auto';
 
             appendUserMessage(prompt);
+            setAgentStatus('Agent thinking...');
 
             let task_id;
             try {
@@ -942,6 +955,7 @@
                 });
                 ({task_id} = await res.json());
             } catch (err) {
+                clearAgentStatus();
                 const errEl = document.createElement('div');
                 errEl.className = 'agent-error-message';
                 errEl.textContent = '⚠ Failed to start agent: ' + err.message;
@@ -959,7 +973,7 @@
                 const event = JSON.parse(e.data);
                 handleAgentEvent(event, task_id, traceContainer, startTime, es);
             };
-            es.onerror = () => es.close();
+            es.onerror = () => { clearAgentStatus(); es.close(); };
         }
 
         // ── Scheduled Tasks Panel ─────────────────────────────────────────────
@@ -1066,15 +1080,18 @@
         // ── Agent Event Handler ───────────────────────────────────────────────
 
         function handleAgentEvent(event, taskId, traceContainer, startTime, es) {
+            const stepCount = traceContainer.querySelectorAll('.trace-step').length;
             if (event.type === 'step') {
                 addTraceStep(traceContainer, event.tool, event.args, event.result, event.elapsed_ms, undefined);
                 traceContainer.dataset.elapsed = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
                 updateTraceSummary(traceContainer);
+                setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
             } else if (event.type === 'confirm_request') {
+                setAgentStatus('⚠️ Waiting for your approval…');
                 const card = createConfirmCard(taskId, event.tool, event.args);
                 appendToChat(card);
             } else if (event.type === 'confirm_resolved') {
-                // The step will come after this
+                setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
             } else if (event.type === 'done') {
                 traceContainer.dataset.elapsed = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
                 updateTraceSummary(traceContainer);
@@ -1082,12 +1099,14 @@
                 msg.className = 'agent-done-message';
                 msg.textContent = '✅ ' + event.message;
                 appendToChat(msg);
+                clearAgentStatus();
                 es.close();
             } else if (event.type === 'error') {
                 const errEl = document.createElement('div');
                 errEl.className = 'agent-error-message';
                 errEl.textContent = '⚠ ' + event.message;
                 appendToChat(errEl);
+                clearAgentStatus();
                 es.close();
             }
         }
