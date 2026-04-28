@@ -11,9 +11,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import pyperclip
-import requests
-from bs4 import BeautifulSoup
 
 @dataclass
 class Tool:
@@ -155,16 +152,17 @@ async def _delete_cron(name: str) -> str:
 
 async def _google_search(query: str) -> str:
     try:
-        from duckduckgo_search import DDGS
-        with DDGS() as ddgs:
-            results = [r["href"] for r in ddgs.text(query, max_results=5)]
-            return "\n".join(results)
+        from googlesearch import search
+        results = list(search(query, num=5, stop=5))
+        return "\n".join(results)
     except Exception as e:
         return f"ERROR: {e}"
 
 
 async def _web_fetch(url: str) -> str:
     try:
+        import requests
+        from bs4 import BeautifulSoup
         resp = requests.get(url, timeout=10)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
@@ -250,6 +248,7 @@ async def _git_log(limit: int = 5) -> str:
 
 async def _clipboard_copy(text: str) -> str:
     try:
+        import pyperclip
         pyperclip.copy(text)
         return "OK: copied to clipboard"
     except Exception as e:
@@ -258,6 +257,7 @@ async def _clipboard_copy(text: str) -> str:
 
 async def _clipboard_paste() -> str:
     try:
+        import pyperclip
         return pyperclip.paste()
     except Exception as e:
         return f"ERROR: {e}"
@@ -284,24 +284,29 @@ async def _python_interpreter(code: str) -> str:
 # Tool registry
 # ---------------------------------------------------------------------------
 
-TOOL_REGISTRY: dict[str, Tool] = {
-    "read_file": Tool("read_file", "safe", "Read file contents", _read_file),
-    "list_dir": Tool("list_dir", "safe", "List directory", _list_dir),
-    "grep_search": Tool("grep_search", "safe", "Grep search for a pattern in a path", _grep_search),
-    "list_crons": Tool("list_crons", "safe", "List crontab", _list_crons),
-    "write_file": Tool("write_file", "risky", "Write file", _write_file),
-    "append_file": Tool("append_file", "risky", "Append to file", _append_file),
-    "shell": Tool("shell", "risky", "Run shell command", _shell),
-    "python_interpreter": Tool("python_interpreter", "risky", "Execute Python code", _python_interpreter),
-    "create_cron": Tool("create_cron", "risky", "Create cron job", _create_cron),
-    "delete_cron": Tool("delete_cron", "risky", "Delete cron job", _delete_cron),
-    "git_status": Tool("git_status", "safe", "Get git status --short", _git_status),
-    "git_log": Tool("git_log", "safe", "Get git log --oneline", _git_log),
-    "clipboard_copy": Tool("clipboard_copy", "safe", "Copy text to system clipboard", _clipboard_copy),
-    "clipboard_paste": Tool("clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste),
-    "google_search": Tool("google_search", "safe", "Search Google for a query", _google_search),
-    "web_fetch": Tool("web_fetch", "safe", "Fetch and clean text from a URL", _web_fetch),
-}
+TOOL_REGISTRY: dict[str, Tool] = {}
+
+def register_tool(name: str, risk: str, description: str, fn: Any) -> None:
+    """Register a tool in the global TOOL_REGISTRY."""
+    TOOL_REGISTRY[name] = Tool(name, risk, description, fn)
+
+# Register default tools
+register_tool("read_file", "safe", "Read file contents", _read_file)
+register_tool("list_dir", "safe", "List directory", _list_dir)
+register_tool("grep_search", "safe", "Grep search for a pattern in a path", _grep_search)
+register_tool("list_crons", "safe", "List crontab", _list_crons)
+register_tool("write_file", "risky", "Write file", _write_file)
+register_tool("append_file", "risky", "Append to file", _append_file)
+register_tool("shell", "risky", "Run shell command", _shell)
+register_tool("python_interpreter", "risky", "Execute Python code", _python_interpreter)
+register_tool("create_cron", "risky", "Create cron job", _create_cron)
+register_tool("delete_cron", "risky", "Delete cron job", _delete_cron)
+register_tool("git_status", "safe", "Get git status --short", _git_status)
+register_tool("git_log", "safe", "Get git log --oneline", _git_log)
+register_tool("clipboard_copy", "safe", "Copy text to system clipboard", _clipboard_copy)
+register_tool("clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste)
+register_tool("google_search", "safe", "Search Google for a query", _google_search)
+register_tool("web_fetch", "safe", "Fetch and clean text from a URL", _web_fetch)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here 
 # because they depend on the scheduler in agent.py. 

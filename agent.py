@@ -13,26 +13,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import googlesearch
-import pyperclip
-import requests
-from bs4 import BeautifulSoup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent_utils import (
-    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output
+    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output, register_tool
 )
 
 router = APIRouter()
 scheduler = AsyncIOScheduler()
 
-# Lazy import to avoid circular dependency when gemma_bridge.py is run as __main__
-async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
-    from gemma_bridge import run_inference as _run_inference
-    return await _run_inference(messages, model_id)
+from inference_engine import run_inference
 
 # per-task SSE queues and confirmation queues
 sse_queues: dict[str, asyncio.Queue] = {}
@@ -59,9 +52,9 @@ async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
     except Exception as e:
         return f"ERROR: {e}"
 
-# Add them to the shared registry for this process
-TOOL_REGISTRY["list_scheduled_tasks"] = Tool("list_scheduled_tasks", "safe", "List scheduled tasks", _list_scheduled_tasks)
-TOOL_REGISTRY["create_scheduled_task"] = Tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task)
+# Register scheduler tools
+register_tool("list_scheduled_tasks", "safe", "List scheduled tasks", _list_scheduled_tasks)
+register_tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task)
 
 
 # ---------------------------------------------------------------------------
