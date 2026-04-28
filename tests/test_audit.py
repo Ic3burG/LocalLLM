@@ -41,3 +41,21 @@ async def test_grep_search_outside_sandbox():
     # Grep in /etc
     result = await _grep_search("root", "/etc")
     assert "Access denied" in result or "PermissionError" in result
+
+from agent_utils import _web_fetch
+
+@pytest.mark.asyncio
+async def test_web_fetch_ssrf_localhost():
+    # Attempt to fetch localhost
+    # Before fix, this might succeed if something is running on port 9379 (like the bridge itself)
+    # or it will just fail with a connection error but NOT a PermissionError/ValueError from our validation.
+    # After fix, it should raise PermissionError or return an ERROR message containing "SSRF detected".
+    url = "http://localhost:9379/v1/models"
+    result = await _web_fetch(url)
+    assert "SSRF detected" in result
+
+@pytest.mark.asyncio
+async def test_web_fetch_ssrf_ip():
+    url = "http://127.0.0.1/etc"
+    result = await _web_fetch(url)
+    assert "SSRF detected" in result

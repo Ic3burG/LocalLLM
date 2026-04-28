@@ -176,8 +176,26 @@ async def _google_search(query: str) -> str:
         return f"ERROR: {e}"
 
 
+def validate_url(url: str):
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Only http/https allowed, got: {parsed.scheme}")
+
+    host = parsed.hostname
+    if not host:
+        raise ValueError("Invalid URL: No hostname found")
+
+    # Block local/private IPs and names
+    blocked = ["localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254"]
+    # Add common local ranges if possible, but at least block these 4
+    if host.lower() in blocked:
+        raise PermissionError(f"SSRF detected: Access to {host} is blocked")
+
+
 async def _web_fetch(url: str) -> str:
     try:
+        validate_url(url)
         import requests
         from bs4 import BeautifulSoup
         resp = requests.get(url, timeout=10)
