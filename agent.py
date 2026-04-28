@@ -10,6 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import googlesearch
+import requests
+from bs4 import BeautifulSoup
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -175,6 +178,74 @@ async def _delete_cron(name: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _google_search(query: str) -> str:
+    try:
+        # googlesearch.search returns a generator of URLs
+        results = googlesearch.search(query, num=5, stop=5)
+        return "\n".join(list(results))
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+async def _web_fetch(url: str) -> str:
+    try:
+        resp = requests.get(url, timeout=10)
+        resp.raise_for_status()
+        soup = BeautifulSoup(resp.text, "html.parser")
+
+        # Remove script and style elements
+        for script_or_style in soup(["script", "style"]):
+            script_or_style.decompose()
+
+        # Get text and clean up whitespace
+        text = soup.get_text(separator="\n")
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        cleaned_text = "\n".join(lines)
+
+        return cleaned_text[:5000]
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+async def _grep_search(pattern: str, path: str = ".") -> str:
+    try:
+        base_path = Path(os.path.expanduser(path))
+        regex = re.compile(pattern)
+        results = []
+
+        def search_file(p: Path):
+            try:
+                with open(p, "r", errors="ignore") as f:
+                    for i, line in enumerate(f, 1):
+                        if regex.search(line):
+                            results.append(f"{p}:{i}: {line.strip()}")
+                            if len(results) >= 50:
+                                return True
+            except Exception:
+                pass
+            return False
+
+        if base_path.is_file():
+            search_file(base_path)
+        elif base_path.is_dir():
+            for root, dirs, files in os.walk(base_path):
+                if ".git" in dirs:
+                    dirs.remove(".git")
+                # Also skip other common large dirs if they are not explicitly requested
+                for d in [".venv", "node_modules", "__pycache__", ".pytest_cache"]:
+                    if d in dirs:
+                        dirs.remove(d)
+                for file in files:
+                    if search_file(Path(root) / file):
+                        return "\n".join(results)
+        else:
+            return f"ERROR: Path {path} not found"
+
+        return "\n".join(results) if results else "No matches found."
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
 async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
     try:
         tasks = _load_scheduler_tasks()
@@ -193,6 +264,7 @@ async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
 TOOL_REGISTRY: dict[str, Tool] = {
     "read_file": Tool("read_file", "safe", "Read file contents", _read_file),
     "list_dir": Tool("list_dir", "safe", "List directory", _list_dir),
+    "grep_search": Tool("grep_search", "safe", "Grep search for a pattern in a path", _grep_search),
     "list_crons": Tool("list_crons", "safe", "List crontab", _list_crons),
     "list_scheduled_tasks": Tool("list_scheduled_tasks", "safe", "List scheduled tasks", _list_scheduled_tasks),
     "write_file": Tool("write_file", "risky", "Write file", _write_file),
@@ -295,7 +367,7 @@ def parse_model_output(text: str) -> tuple[str, str, list] | None:
 # ---------------------------------------------------------------------------
 
 AGENT_SYSTEM_PROMPT = """You are an autonomous agent. You have access to these tools:
-  read_file(path), list_dir(path), write_file(path, content),
+  read_file(path), list_dir(path), grep_search(pattern, path), write_file(path, content),
   append_file(path, content), shell(command), list_crons(),
   create_cron(name, schedule, command), delete_cron(name),
   list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt)
