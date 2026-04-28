@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from agent import _google_search, _web_fetch
+from agent_utils import _google_search, _web_fetch
 
 @pytest.mark.asyncio
 async def test_google_search():
