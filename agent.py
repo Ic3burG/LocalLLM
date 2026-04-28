@@ -15,10 +15,13 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from gemma_bridge import run_inference
-
 router = APIRouter()
 scheduler = AsyncIOScheduler()
+
+# Lazy import to avoid circular dependency when gemma_bridge.py is run as __main__
+async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
+    from gemma_bridge import run_inference as _run_inference
+    return await _run_inference(messages, model_id)
 
 # per-task SSE queues and confirmation queues
 _sse_queues: dict[str, asyncio.Queue] = {}
