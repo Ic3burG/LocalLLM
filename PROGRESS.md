@@ -64,9 +64,83 @@ After fixing the above, every image request still caused the Python bridge proce
 | `handle_mlx_request()` | Raises `ValueError` on image input instead of silently dropping images |
 | `list_models()` | Fixed MLX scan to check `MLX_MODELS_DIR` not `MODELS_BASE_DIR` |
 
-## 📈 Current Status
+## 📈 Current Status (as of April 22, 2026)
 
 - **Backend:** `server.js` (Express) running on port 3001.
 - **Bridge:** `gemma_bridge.py` (FastAPI/MLX/LiteRT) running on port 9379.
 - **Storage:** Models stored in `~/.litert-lm/models` and `./mlx_models`.
 - **Formatting:** All files formatted with Prettier for consistency.
+
+---
+
+## 🤖 Agentic Layer — April 27, 2026
+
+Evolved the app from a pure chat interface into a full agentic tool. The model can now orchestrate multi-step work via a ReAct loop, interact with the filesystem and shell, manage scheduled tasks, and ask for user approval before running anything risky.
+
+### Architecture
+
+A new `agent.py` FastAPI router is mounted on `gemma_bridge.py` at `/v1/agent/*`. It calls model inference via direct Python function calls (no HTTP loopback) and streams results to the frontend via SSE.
+
+```
+Browser → server.js (port 3001) → gemma_bridge.py (port 9379)
+                                     ├─ /v1/chat/*      (existing)
+                                     └─ /v1/agent/*     (new)
+                                          ├─ Tool Registry (10 tools)
+                                          ├─ ReAct Loop (max 20 steps)
+                                          ├─ Confirmation Gate
+                                          ├─ SSE Streaming
+                                          └─ APScheduler + crontab
+```
+
+### Tool Registry
+
+| Risk | Tools |
+|---|---|
+| Safe (auto-run) | `read_file`, `list_dir`, `list_crons`, `list_scheduled_tasks` |
+| Risky (ask first) | `write_file`, `append_file`, `shell`, `create_cron`, `delete_cron`, `create_scheduled_task` |
+
+### ReAct Loop
+
+Text-based tool invocation (Gemma doesn't emit native function-call JSON). Model outputs `TOOL: name("arg1", "arg2")` or `DONE: summary`. Bridge parses, executes, and feeds `TOOL_RESULT:` back — up to 20 iterations per run.
+
+### Confirmation Gate
+
+Risky tools pause execution and emit a `confirm_request` SSE event. Frontend renders an inline card showing the exact tool call and args. User clicks Allow or Deny → `POST /v1/agent/confirm/{task_id}` → loop resumes.
+
+### Dual Scheduler
+
+- **In-App (APScheduler):** `AsyncIOScheduler` running inside FastAPI's asyncio loop. Tasks persist in `scheduler_tasks.json` and run full ReAct loops on schedule. Results logged to `scheduler_log.jsonl`.
+- **System Crontab:** Read/write via `crontab -l` / `crontab -`. Agent-managed entries tagged `# gemma:<name>` to isolate them from pre-existing cron jobs.
+
+### UI Changes (`index.html`)
+
+1. **Agent Mode Toggle** — pill above the input switches Chat ↔ Agent mode
+2. **Hybrid Trace** — collapsed `⚙ N steps · Xs` summary, expandable to per-call detail with results
+3. **Confirmation Modal** — inline card with tool name, args, risk description, Allow/Deny buttons (no browser alerts)
+4. **Scheduled Tasks Panel** — collapsible sidebar section listing in-app tasks and a cron placeholder; inline add/delete form
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent.py` | New — 315 lines: tool registry, ReAct loops, SSE streaming, scheduler, API endpoints |
+| `scheduler_tasks.json` | New — persisted in-app task definitions |
+| `gemma_bridge.py` | Added `run_inference` shared helper; mounted agent router; added APScheduler startup |
+| `gemma-web/server.js` | Added 6 agent proxy routes (SSE-aware stream handler) |
+| `gemma-web/index.html` | Agent toggle, hybrid trace UI, confirmation modal, scheduled tasks panel |
+| `tests/test_agent.py` | 24 tests covering inference routing, all 10 tools, parser, ReAct loop, scheduler CRUD |
+| `pytest.ini` | New — `asyncio_mode = auto` |
+| `requirements.txt` | Added `apscheduler` |
+
+### Bug Fixes
+
+- **Circular import (`__main__`):** `agent.py` originally imported `run_inference` at module top level. When `gemma_bridge.py` is run as a script it registers as `__main__` (not `gemma_bridge`) in `sys.modules`, causing `agent.py`'s import to re-execute the file and hit the circular dependency. Fixed by making the import lazy (inside the wrapper function).
+- **SSE sentinel not guaranteed:** `_react_loop_sse` could hang SSE connections if `run_inference` threw. Wrapped the loop in `try/finally` to always send the `None` sentinel.
+- **Queue memory leak:** SSE and confirm queues were never cleaned up after a task finished. Added `finally` cleanup in `event_gen` to pop both queues after the stream closes.
+
+## 📈 Current Status (as of April 27, 2026)
+
+- **Backend:** `gemma_bridge.py` (FastAPI/MLX/LiteRT + agent router) on port 9379, managed by `com.gemini.litert` launchd agent — auto-starts on login and restarts on crash.
+- **Proxy:** `server.js` (Express) on port 3001, managed by `com.gemini.gemma-bridge` launchd agent.
+- **Agent:** Available via the `🤖 Agent` toggle in the UI. Send any prompt to kick off a ReAct loop.
+- **Scheduler:** In-app tasks survive restarts via `scheduler_tasks.json`; system cron entries tagged `# gemma:<name>`.
