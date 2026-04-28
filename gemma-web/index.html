@@ -76,19 +76,21 @@
         }
         .dark .thought-block { background: rgba(59, 130, 246, 0.1); color: #9ca3af; }
 
-        /* CSS variables for agent UI */
+        /* CSS variables for agent UI — light is default, html.dark overrides */
         :root {
-            --accent: #3b82f6;
-            --border: #3c3d40;
-            --surface: #1e1f20;
-            --text-secondary: #9ca3af;
-            --bg: #0e0e11;
+            --color-bg:         #f8f9fa;
+            --color-surface:    #ffffff;
+            --color-border:     #e5e7eb;
+            --color-text:       #111827;
+            --color-text-muted: #6b7280;
+            --color-accent:     #3b82f6;
         }
-        .light {
-            --border: #e5e7eb;
-            --surface: #f9fafb;
-            --text-secondary: #6b7280;
-            --bg: #f8f9fa;
+        html.dark {
+            --color-bg:         #0e0e11;
+            --color-surface:    #1e1f20;
+            --color-border:     #3c3d40;
+            --color-text:       #f3f4f6;
+            --color-text-muted: #9ca3af;
         }
 
         /* Trace */
@@ -265,9 +267,18 @@
                 <p class="text-sm text-gray-500 mb-4">Gemma uses this file to remember your preferences and context. You can manually edit it below.</p>
                 <textarea id="memory-editor" class="w-full h-96 p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-xl font-mono text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none text-gray-800 dark:text-gray-200 resize-none"></textarea>
             </div>
-            <div class="p-6 border-t border-gray-100 dark:border-[#3c3d40] flex justify-end gap-3 bg-gray-50/50 dark:bg-[#0e0e11]/30">
-                <span id="save-status" class="text-xs text-green-500 flex items-center opacity-0 transition-opacity">Saved!</span>
-                <button id="save-memory-btn" class="bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-2 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg">Save Memory</button>
+            <div class="p-6 border-t border-gray-100 dark:border-[#3c3d40] flex justify-between items-center gap-3 bg-gray-50/50 dark:bg-[#0e0e11]/30">
+                <div class="flex items-center gap-3">
+                    <button id="restart-backend-btn" class="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-[#3c3d40] text-sm font-medium text-gray-600 dark:text-gray-300 hover:border-red-400 hover:text-red-500 dark:hover:text-red-400 transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        Restart Backend
+                    </button>
+                    <span id="restart-status" class="text-xs opacity-0 transition-opacity"></span>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="save-status" class="text-xs text-green-500 flex items-center opacity-0 transition-opacity">Saved!</span>
+                    <button id="save-memory-btn" class="bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-2 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg">Save Memory</button>
+                </div>
             </div>
         </div>
     </div>
@@ -373,6 +384,44 @@
         closeSettingsBtn.addEventListener('click', closeSettings);
         saveMemoryBtn.addEventListener('click', saveMemory);
         settingsModal.addEventListener('click', (e) => { if(e.target === settingsModal) closeSettings(); });
+
+        document.getElementById('restart-backend-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('restart-backend-btn');
+            const status = document.getElementById('restart-status');
+            btn.disabled = true;
+            status.textContent = 'Restarting...';
+            status.className = 'text-xs text-yellow-500 opacity-100 transition-opacity';
+            try {
+                await fetch('http://localhost:3001/api/backend/restart', { method: 'POST' });
+                status.textContent = 'Waiting for backend...';
+                // Poll until the backend responds or we give up
+                let attempts = 0;
+                const poll = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const r = await fetch('http://localhost:3001/api/backend/status');
+                        const { online } = await r.json();
+                        if (online) {
+                            clearInterval(poll);
+                            status.textContent = 'Backend online';
+                            status.className = 'text-xs text-green-500 opacity-100 transition-opacity';
+                            btn.disabled = false;
+                            setTimeout(() => { status.className = 'text-xs opacity-0 transition-opacity'; }, 3000);
+                        }
+                    } catch {}
+                    if (attempts >= 20) {
+                        clearInterval(poll);
+                        status.textContent = 'Backend may still be loading...';
+                        status.className = 'text-xs text-orange-500 opacity-100 transition-opacity';
+                        btn.disabled = false;
+                    }
+                }, 1500);
+            } catch (err) {
+                status.textContent = 'Restart failed';
+                status.className = 'text-xs text-red-500 opacity-100 transition-opacity';
+                btn.disabled = false;
+            }
+        });
 
         mobileMenuBtn.addEventListener('click', () => {
             sidebar.classList.remove('closed');
@@ -742,12 +791,23 @@
                 appendToChat(traceContainer);
                 const startTime = Date.now();
 
+                console.log("[TRACE] Starting SSE stream for task:", task_id);
                 const es = new EventSource(`http://localhost:3001/api/chat/stream/${task_id}`);
+                es.onopen = () => console.log("[TRACE] SSE stream opened");
                 es.onmessage = (e) => {
+                    console.log("[TRACE] SSE event received:", e.data);
                     const event = JSON.parse(e.data);
                     handleAgentEvent(event, task_id, traceContainer, startTime, es, currentChat);
                 };
-                es.onerror = () => { clearAgentStatus(); es.close(); };
+                es.onerror = (err) => {
+                    console.error("[TRACE] SSE stream error:", err);
+                    clearAgentStatus();
+                    es.close();
+                    const errEl = document.createElement('div');
+                    errEl.className = 'agent-error-message';
+                    errEl.textContent = '⚠ Connection to agent stream lost. Check server logs.';
+                    appendToChat(errEl);
+                };
             } catch (error) { 
                 console.error("Chat Error:", error); 
                 appendMessage('assistant', `Error: ${error.message}`); 
