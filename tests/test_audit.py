@@ -59,3 +59,24 @@ async def test_web_fetch_ssrf_ip():
     url = "http://127.0.0.1/etc"
     result = await _web_fetch(url)
     assert "SSRF detected" in result
+
+from agent_utils import _shell
+
+@pytest.mark.asyncio
+async def test_shell_audit_logging():
+    log_path = Path("audit.log")
+    # Clean up before test
+    if log_path.exists():
+        try:
+            log_path.unlink()
+        except:
+            pass
+    
+    test_command = "echo 'hello audit test'"
+    await _shell(test_command)
+    
+    assert log_path.exists()
+    content = log_path.read_text()
+    assert test_command in content
+    assert "SHELL:" in content
+

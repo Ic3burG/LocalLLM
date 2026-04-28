@@ -82,9 +82,20 @@ def get_mlx_vlm_model(model_id: str):
     """Must only be called from the inference thread."""
     if not _inference_ready.wait(timeout=30):
         raise RuntimeError("Inference worker failed to start within 30 seconds")
-    if model_id in _vlm_cache:
-        return _vlm_cache[model_id]
     
+    if model_id in _vlm_cache:
+        # Move to end to track LRU (Python 3.7+ dicts preserve insertion order)
+        val = _vlm_cache.pop(model_id)
+        _vlm_cache[model_id] = val
+        return val
+    
+    if len(_vlm_cache) >= 2:
+        # Remove the oldest entry (first item in the dict)
+        lru_model_id = next(iter(_vlm_cache))
+        logger.info(f"Evicting model {lru_model_id} from VRAM...")
+        del _vlm_cache[lru_model_id]
+        import gc; gc.collect()
+
     dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
     model_path = os.path.join(MLX_MODELS_DIR, dir_name)
     if not os.path.exists(model_path):
