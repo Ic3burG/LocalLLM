@@ -144,3 +144,109 @@ Risky tools pause execution and emit a `confirm_request` SSE event. Frontend ren
 - **Proxy:** `server.js` (Express) on port 3001, managed by `com.gemini.gemma-bridge` launchd agent.
 - **Agent:** Available via the `🤖 Agent` toggle in the UI. Send any prompt to kick off a ReAct loop.
 - **Scheduler:** In-app tasks survive restarts via `scheduler_tasks.json`; system cron entries tagged `# gemma:<name>`.
+
+---
+
+## 🛠 Subagent & Title Generation Fixes — April 27, 2026 (Session 2)
+
+### Bug Fixes
+- **Fixed `strip_thinking` logic:** The regular expressions for stripping internal model thoughts were failing to catch Gemma 4's specific channel markers (`<|channel>thought\n...<channel|>`). Updated the logic to be more robust and cover multiple tag variations.
+- **Title Generation Reliability:** Resolved an issue where chat titles were either remaining generic ("New Chat") or containing raw model thoughts.
+- **Clean Memory Updates:** The improved stripping logic ensures that `USER_MEMORY.md` is updated with clean text, preventing internal model reasoning from leaking into the long-term knowledge base.
+
+### Refactoring
+- **Consolidated Inference:** Refactored `generate_title` and `update_memory_task` to use the shared `run_inference` helper. This ensures that all subagents benefit from the same routing logic, error handling, and formatting standards as the main chat and agent loops.
+
+---
+
+## 🔀 Unified mlx_vlm Migration — April 28, 2026
+
+Replaced the two-engine backend (LiteRT for E4B, mlx_lm for 26B/31B) with a single `mlx_vlm` stack covering all three models — text and vision — through one code path.
+
+### Motivation
+
+- LiteRT is a single-threaded C++ engine; inference blocked the asyncio event loop even after a ThreadPoolExecutor workaround.
+- mlx_lm (used for 26B/31B) had no vision support — image inputs were silently discarded.
+- mlx_vlm is a superset of mlx_lm, natively supports both text and vision, and is optimised for Apple Silicon.
+
+### Architecture Changes
+
+**Removed from `gemma_bridge.py`:**
+- `import litert_lm` / `from litert_lm import Backend`
+- `get_litert_engine`, `get_mlx_model`, `process_multimodal_content`, `handle_litert_request`, `handle_mlx_request`
+- `MODELS_BASE_DIR`, `litert_engines`, `mlx_models_cache`
+
+**Added to `gemma_bridge.py`:**
+- Single persistent daemon thread (`mlx-inference`) that owns all mlx GPU state — required because mlx GPU streams are thread-local and must be created on the thread that runs inference.
+- `mlx_vlm` imported inside the worker thread so `generation_stream` is created in the right thread context.
+- `_run_in_inference_thread()` bridges the asyncio event loop to the worker via `asyncio.Future` + `call_soon_threadsafe`.
+- `_inference_ready` threading Event guards against requests arriving before the worker finishes its import.
+- `get_mlx_vlm_model(model_id)` — loads and caches `(model, processor)` pairs with `_MODEL_DIR_MAP` for canonical ID → directory resolution.
+- `handle_mlx_vlm_request(model_id, messages)` — unified handler: extracts text + optional base64 image (written to temp file, cleaned up in `finally`), renders chat template, calls `mlx_vlm.generate`, extracts `.text` from `GenerationResult`.
+- `run_inference` simplified — no more `is_mlx` routing condition.
+- `list_models` returns canonical model IDs (e.g. `"gemma4-e4b"`) not directory names, with `provider: "mlx_vlm"`.
+
+### New Model
+
+- **Gemma 3 E4B (mlx_vlm):** Downloaded `mlx-community/gemma-3-4b-it-4bit` (~3.2 GB) to `mlx_models/gemma-3-4b-it-4bit/`. Replaces the old LiteRT E4B model with full vision support.
+
+### Bugs Discovered & Fixed
+
+- **mlx GPU stream error (`RuntimeError: There is no Stream(gpu, 1) in current thread`):** mlx creates `generation_stream` at import time, so `mlx_vlm` must be imported on — and all inference must run on — the same OS thread. `ThreadPoolExecutor` violated this. Fixed by replacing the executor with a single persistent daemon thread backed by `queue.Queue`.
+- **`break` outside `if` block:** In the image extraction loop, `break` fired on the first `image_url` item regardless of type, silently dropping non-base64 images. Moved inside the `data:image` branch.
+- **`list_models` returning directory names:** Reversed `_MODEL_DIR_MAP` at response time so canonical IDs are returned.
+- **Thread startup race:** `_mlx_vlm_load` was `None` until the worker finished importing mlx_vlm. Added `threading.Event` so `get_mlx_vlm_model` waits (up to 30s) before trying to call it.
+- **Silent chat template fallback:** Bare `except Exception` hid the original error before the tokenizer fallback. Added `logger.warning` to surface it.
+
+### Cleanup
+
+- Deleted all unused LiteRT model files (~9.3 GB reclaimed):
+  - `~/.litert-lm/models/gemma4-e4b` (5.7 GB)
+  - `~/.litert-lm/models/phi4-mini` (3.6 GB)
+  - `~/.litert-lm/models/gemma4-26b` (empty)
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `gemma_bridge.py` | Full engine replacement — removed LiteRT/mlx_lm, added mlx_vlm worker thread architecture |
+| `requirements.txt` | Added `mlx-vlm`, `Pillow`; removed `mlx-lm` direct dependency |
+| `tests/test_agent.py` | Updated inference routing tests to mock `handle_mlx_vlm_request`; added `mlx_vlm` to stub list |
+| `docs/superpowers/specs/` | New: mlx_vlm migration design spec |
+| `docs/superpowers/plans/` | New: mlx_vlm migration implementation plan |
+
+## 📈 Current Status (as of April 28, 2026)
+
+- **Backend:** `gemma_bridge.py` (FastAPI + mlx_vlm + agent router) on port 9379, managed by `com.gemini.litert` launchd agent.
+- **Proxy:** `server.js` (Express) on port 3001, managed by `com.gemini.gemma-bridge` launchd agent.
+- **Models:** All three served via mlx_vlm from `mlx_models/`:
+  - `gemma4-e4b` → `gemma-3-4b-it-4bit` (3.2 GB, text + vision)
+  - `gemma4-26b-mlx` → `gemma-4-26b-it-4bit` (15 GB, text + vision)
+  - `gemma4-31b-mlx` → `gemma-4-31b-it-4bit` (17 GB, text + vision)
+- **Agent:** Unchanged — ReAct loop, SSE streaming, confirmation gate, scheduler all intact.
+- **Tests:** 26 passing.
+
+---
+
+## 🛠 Advanced Tool Access: Web Research — April 28, 2026 (Session 2)
+
+Implemented the first phase of the Advanced Tool Access plan, adding web research capabilities to the agent.
+
+### New Tools
+
+- **_google_search(query)**: Uses `googlesearch-python` to retrieve the top 5 URLs for a given query.
+- **_web_fetch(url)**: Uses `requests` and `BeautifulSoup` to fetch and clean the content of a webpage (removing scripts/styles and limiting to 5000 chars).
+
+### Testing
+
+- Created `tests/test_agent_tools.py` with 100% coverage for the new tools.
+- Used `unittest.mock` to ensure no actual network calls are made during tests.
+- Verified both tools handle errors gracefully (e.g., connection issues).
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent.py` | Implemented `_google_search` and `_web_fetch` internal methods |
+| `tests/test_agent_tools.py` | New — tests for the new web research tools |
+| `requirements.txt` | (Already contained `googlesearch-python`, `requests`, `beautifulsoup4`) |
