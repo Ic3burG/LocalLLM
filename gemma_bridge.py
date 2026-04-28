@@ -1,3 +1,4 @@
+import asyncio
 import os
 import time
 import uuid
@@ -7,6 +8,7 @@ import threading
 import json
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +20,10 @@ import pdf_pipeline
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gemma_bridge")
+
+# Single-worker executor: inference is serialised (one model) but the asyncio
+# event loop is released between calls so chat/agent/SSE stay responsive.
+_inference_executor = ThreadPoolExecutor(max_workers=1)
 
 # MLX-LM is loaded only when needed to save memory
 mlx_lm_module = None
@@ -93,25 +99,28 @@ def get_user_memory():
 
 def strip_thinking(text):
     """Helper to remove common thinking tags from model output"""
-    # Remove <|channel|>thought...<|channel|>
-    text = re.sub(r'<\|channel\|>thought.*?<\|channel\|>', '', text, flags=re.DOTALL)
+    # Handle Gemma 4 specific channel markers: <|channel>thought\n...<channel|>
+    # We use multiple patterns to be robust to minor variations
+    text = re.sub(r'<\|channel\|?>thought\n?.*?<channel\|?>', '', text, flags=re.DOTALL)
+    text = re.sub(r'<\|channel\|?>thought\n?.*?<\|channel\|?>', '', text, flags=re.DOTALL)
+    
     # Remove <thought>...</thought>
     text = re.sub(r'<thought>.*?</thought>', '', text, flags=re.DOTALL)
+    
     # Remove ***Thinking*** ...
     text = re.sub(r'\*\*\*Thinking\*\*\*.*?\*\*\*', '', text, flags=re.DOTALL)
-    # Remove Gemma 4 specific channel markers
-    text = re.sub(r'<\|channel\|>thought\n.*<channel\|>', '', text, flags=re.DOTALL)
+    
     # Remove turn markers if any leaked
-    text = re.sub(r'<\|turn\|>.*', '', text)
+    text = re.sub(r'<\|turn\|?>.*', '', text)
     return text.strip()
 
 async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
-    """Shared inference helper — routes to LiteRT or MLX and returns response text."""
+    """Shared inference helper — runs blocking inference in a thread pool so the
+    asyncio event loop stays responsive during agent loops and concurrent chat."""
     is_mlx = "26b" in model_id.lower() or "31b" in model_id.lower() or "mlx" in model_id.lower()
-    if is_mlx:
-        result = await handle_mlx_request(model_id, messages)
-    else:
-        result = await handle_litert_request(model_id, messages)
+    fn = handle_mlx_request if is_mlx else handle_litert_request
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(_inference_executor, fn, model_id, messages)
     try:
         return result["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as e:
@@ -125,11 +134,10 @@ async def startup():
     scheduler.start()
     load_scheduler_tasks_on_startup()
 
-def update_memory_task(user_msg, assistant_msg):
+async def update_memory_task(user_msg, assistant_msg):
     """Background task to learn from the interaction and update USER_MEMORY.md"""
     try:
         current_memory = get_user_memory()
-        engine = get_litert_engine("gemma4-e4b")
         
         learning_prompt = f"""You are a specialized Memory Subagent. Your task is to update a User Memory file based on a new interaction.
         
@@ -150,18 +158,15 @@ INSTRUCTIONS:
 5. Output ONLY the updated Markdown content. Do NOT include any reasoning, thoughts, or preamble.
 """
 
-        with engine.create_conversation() as conversation:
-            response_data = conversation.send_message(learning_prompt)
-            raw_content = "".join([item.get("text", "") for item in response_data.get("content", []) if item.get("type") == "text"])
-            
-            updated_content = strip_thinking(raw_content)
-            
-            if updated_content.strip() and "# User Memory" in updated_content:
-                # Deduplicate horizontal lines
-                updated_content = re.sub(r'\n---+\n---+', '\n---', updated_content)
-                with open(MEMORY_FILE, "w") as f:
-                    f.write(updated_content.strip())
-                logger.info("Memory updated successfully.")
+        raw_content = await run_inference([{"role": "user", "content": learning_prompt}], "gemma4-e4b")
+        updated_content = strip_thinking(raw_content)
+        
+        if updated_content.strip() and "# User Memory" in updated_content:
+            # Deduplicate horizontal lines
+            updated_content = re.sub(r'\n---+\n---+', '\n---', updated_content)
+            with open(MEMORY_FILE, "w") as f:
+                f.write(updated_content.strip())
+            logger.info("Memory updated successfully.")
             
     except Exception as e:
         logger.error(f"Memory update failed: {e}")
@@ -200,7 +205,6 @@ async def generate_title(request: Request):
                 content = " ".join([c.get("text", "") for c in content if c.get("type") == "text"])
             conversation_context += f"{role}: {content}\n"
 
-        engine = get_litert_engine("gemma4-e4b")
         title_prompt = f"""You are a Title Generator Subagent.
 Summarize the following conversation into a VERY concise, catchy title (MAX 5 WORDS).
 
@@ -213,14 +217,13 @@ INSTRUCTIONS:
 - Output ONLY the title text.
 - No quotes, no preamble, no thinking.
 """
-        with engine.create_conversation() as conversation:
-            response_data = conversation.send_message(title_prompt)
-            raw_title = "".join([item.get("text", "") for item in response_data.get("content", []) if item.get("type") == "text"])
-            title = strip_thinking(raw_title).strip().strip('"').strip("'")
-            # If model fails or produces empty, fallback
-            if not title:
-                title = "New Chat"
-            return {"title": title}
+        raw_title = await run_inference([{"role": "user", "content": title_prompt}], "gemma4-e4b")
+        title = strip_thinking(raw_title).strip().strip('"').strip("'")
+        
+        # If model fails or produces empty, fallback
+        if not title:
+            title = "New Chat"
+        return {"title": title}
     except Exception as e:
         logger.error(f"Title generation failed: {e}")
         return {"title": "New Chat"}
@@ -374,7 +377,7 @@ def process_multimodal_content(content, current_temp_files):
     # causes an INVALID_ARGUMENT: token count > image count mismatch.
     return processed_content
 
-async def handle_litert_request(model_id, messages):
+def handle_litert_request(model_id, messages):
     engine = get_litert_engine(model_id)
     current_temp_files = []
     processed_messages = []
@@ -410,7 +413,7 @@ async def handle_litert_request(model_id, messages):
                     os.remove(f)
             except: pass
 
-async def handle_mlx_request(model_id, messages):
+def handle_mlx_request(model_id, messages):
     # mlx_lm does not support multimodal inputs; mlx_vlm is required for images.
     for m in messages:
         content = m.get("content")
