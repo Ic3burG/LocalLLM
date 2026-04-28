@@ -19,7 +19,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent_utils import (
-    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output, register_tool
+    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output, register_tool, log_audit
 )
 
 router = APIRouter()
@@ -43,6 +43,7 @@ async def _list_scheduled_tasks() -> str:
     return json.dumps(tasks)
 
 async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
+    log_audit(f"CREATE_SCHEDULED_TASK: {name} ({schedule}) {prompt}")
     try:
         tasks = _load_scheduler_tasks()
         tasks.append({"name": name, "schedule": schedule, "prompt": prompt})

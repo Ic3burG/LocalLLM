@@ -12,6 +12,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+# Security: The audit log is stored outside the sandbox so the agent cannot delete it.
+AUDIT_LOG_PATH = "/Users/ojdavis/Claude Code/Gemma4/audit.log"
+
+def log_audit(action: str):
+    """Consistently log risky actions to the audit log."""
+    try:
+        with open(AUDIT_LOG_PATH, "a") as f:
+            f.write(f"[{datetime.now().isoformat()}] {action}\n")
+    except Exception as e:
+        # If we can't write to the audit log, we should at least print to stderr
+        print(f"CRITICAL: Failed to write to audit log: {e}", file=sys.stderr)
 
 @dataclass
 class Tool:
@@ -72,6 +83,7 @@ async def _list_crons() -> str:
 
 
 async def _write_file(path: str, content: str) -> str:
+    log_audit(f"WRITE_FILE: {path}")
     try:
         p = validate_path(path, must_exist=False)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -82,6 +94,7 @@ async def _write_file(path: str, content: str) -> str:
 
 
 async def _append_file(path: str, content: str) -> str:
+    log_audit(f"APPEND_FILE: {path}")
     try:
         p = validate_path(path, must_exist=False)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -93,9 +106,7 @@ async def _append_file(path: str, content: str) -> str:
 
 
 async def _shell(command: str) -> str:
-    # Audit logging
-    with open("audit.log", "a") as f:
-        f.write(f"[{datetime.now().isoformat()}] SHELL: {command}\n")
+    log_audit(f"SHELL: {command}")
     try:
         result = subprocess.run(
             command,
@@ -110,6 +121,7 @@ async def _shell(command: str) -> str:
 
 
 async def _create_cron(name: str, schedule: str, command: str) -> str:
+    log_audit(f"CREATE_CRON: {name} ({schedule}) {command}")
     try:
         try:
             existing = subprocess.run(
@@ -134,6 +146,7 @@ async def _create_cron(name: str, schedule: str, command: str) -> str:
 
 
 async def _delete_cron(name: str) -> str:
+    log_audit(f"DELETE_CRON: {name}")
     try:
         try:
             existing = subprocess.run(
@@ -295,6 +308,7 @@ async def _clipboard_copy(text: str) -> str:
 
 
 async def _clipboard_paste() -> str:
+    log_audit("CLIPBOARD_PASTE")
     try:
         import pyperclip
         return pyperclip.paste()
@@ -304,6 +318,7 @@ async def _clipboard_paste() -> str:
 
 async def _python_interpreter(code: str) -> str:
     """Executes python code and returns captured stdout or traceback."""
+    log_audit(f"PYTHON: {code}")
     old_stdout = sys.stdout
     new_stdout = io.StringIO()
     sys.stdout = new_stdout
