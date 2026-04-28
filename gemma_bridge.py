@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 import pdf_pipeline
-from inference_engine import run_inference, handle_mlx_vlm_request, format_openai_response
+from inference_engine import run_inference, MLX_MODELS_DIR, _MODEL_DIR_MAP, handle_mlx_vlm_request, format_openai_response
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
