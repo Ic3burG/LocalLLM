@@ -263,12 +263,21 @@ def load_scheduler_tasks_on_startup() -> None:
 # ---------------------------------------------------------------------------
 
 def parse_model_output(text: str) -> tuple[str, str, list] | None:
-    """Return (type, tool_or_message, args) or None if neither TOOL nor DONE found."""
+    """Return (type, tool_or_message, args) or None if neither TOOL nor DONE found.
+
+    Handles both the text-based format (TOOL: name(args)) and Gemma's native
+    function-call format (<|tool_call>call:name(args)<tool_call|>).
+    """
+    # Native Gemma format: <|tool_call>call:tool_name("arg")<tool_call|>
+    native_match = re.search(r'<\|tool_call\>call:(\w+)\((.*?)\)<tool_call\|>', text, re.DOTALL)
+    # Text-based format: TOOL: tool_name("arg")
     tool_match = re.search(r'TOOL:\s*(\w+)\((.*)\)\s*$', text, re.MULTILINE)
     done_match = re.search(r'DONE:\s*(.+)', text, re.MULTILINE)
-    if tool_match:
-        tool_name = tool_match.group(1)
-        raw_args = tool_match.group(2).strip()
+
+    active_match = native_match or tool_match
+    if active_match:
+        tool_name = active_match.group(1)
+        raw_args = active_match.group(2).strip()
         try:
             args = json.loads(f"[{raw_args}]") if raw_args else []
         except json.JSONDecodeError:
