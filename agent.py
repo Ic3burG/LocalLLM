@@ -22,6 +22,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from agent_utils import (
+    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output
+)
+
 router = APIRouter()
 scheduler = AsyncIOScheduler()
 
@@ -31,224 +35,19 @@ async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     return await _run_inference(messages, model_id)
 
 # per-task SSE queues and confirmation queues
-_sse_queues: dict[str, asyncio.Queue] = {}
-_confirm_queues: dict[str, asyncio.Queue] = {}
+sse_queues: dict[str, asyncio.Queue] = {}
+confirm_queues: dict[str, asyncio.Queue] = {}
 
 SCHEDULER_TASKS_FILE = Path(__file__).parent / "scheduler_tasks.json"
 SCHEDULER_LOG_FILE = Path(__file__).parent / "scheduler_log.jsonl"
 
-
-@dataclass
-class Tool:
-    name: str
-    risk: str  # "safe" or "risky"
-    description: str
-    fn: Any  # callable
-
-
 # ---------------------------------------------------------------------------
-# Tool implementations
+# Scheduler tools (keep here because they use the local scheduler instance)
 # ---------------------------------------------------------------------------
-
-async def _read_file(path: str) -> str:
-    try:
-        p = Path(os.path.expanduser(path))
-        return p.read_text()
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _list_dir(path: str) -> str:
-    try:
-        p = Path(os.path.expanduser(path))
-        entries = [entry.name for entry in p.iterdir()]
-        return "\n".join(entries)
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _list_crons() -> str:
-    try:
-        result = subprocess.run(
-            ["crontab", "-l"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout
-    except subprocess.CalledProcessError:
-        return "No crontab for this user."
-
 
 async def _list_scheduled_tasks() -> str:
     tasks = _load_scheduler_tasks()
     return json.dumps(tasks)
-
-
-async def _write_file(path: str, content: str) -> str:
-    try:
-        p = Path(os.path.expanduser(path))
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content)
-        return f"OK: wrote {len(content)} bytes"
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _append_file(path: str, content: str) -> str:
-    try:
-        p = Path(os.path.expanduser(path))
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with open(p, "a") as f:
-            f.write(content)
-        return f"OK: appended {len(content)} bytes"
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _shell(command: str) -> str:
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return (result.stdout + result.stderr).strip()
-    except subprocess.TimeoutExpired:
-        return "ERROR: timed out"
-
-
-async def _create_cron(name: str, schedule: str, command: str) -> str:
-    try:
-        try:
-            existing = subprocess.run(
-                ["crontab", "-l"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-        except subprocess.CalledProcessError:
-            existing = ""
-        new_entry = f"# gemma:{name}\n{schedule} {command}\n"
-        new_crontab = existing + new_entry
-        subprocess.run(
-            ["crontab", "-"],
-            input=new_crontab,
-            text=True,
-            check=True,
-        )
-        return "OK: cron created"
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _delete_cron(name: str) -> str:
-    try:
-        try:
-            existing = subprocess.run(
-                ["crontab", "-l"],
-                capture_output=True,
-                text=True,
-                check=True,
-            ).stdout
-        except subprocess.CalledProcessError:
-            existing = ""
-        lines = existing.splitlines(keepends=True)
-        tag = f"# gemma:{name}"
-        new_lines = []
-        i = 0
-        found = False
-        while i < len(lines):
-            if lines[i].strip() == tag:
-                found = True
-                i += 1  # skip the tag line
-                if i < len(lines):
-                    i += 1  # skip the following cron line
-            else:
-                new_lines.append(lines[i])
-                i += 1
-        if not found:
-            return "ERROR: not found"
-        subprocess.run(
-            ["crontab", "-"],
-            input="".join(new_lines),
-            text=True,
-            check=True,
-        )
-        return "OK: cron deleted"
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _google_search(query: str) -> str:
-    try:
-        # googlesearch.search returns a generator of URLs
-        results = googlesearch.search(query, num=5, stop=5)
-        return "\n".join(list(results))
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _web_fetch(url: str) -> str:
-    try:
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
-
-        # Remove script and style elements
-        for script_or_style in soup(["script", "style"]):
-            script_or_style.decompose()
-
-        # Get text and clean up whitespace
-        text = soup.get_text(separator="\n")
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        cleaned_text = "\n".join(lines)
-
-        return cleaned_text[:5000]
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _grep_search(pattern: str, path: str = ".") -> str:
-    try:
-        base_path = Path(os.path.expanduser(path))
-        regex = re.compile(pattern)
-        results = []
-
-        def search_file(p: Path):
-            try:
-                with open(p, "r", errors="ignore") as f:
-                    for i, line in enumerate(f, 1):
-                        if regex.search(line):
-                            results.append(f"{p}:{i}: {line.strip()}")
-                            if len(results) >= 50:
-                                return True
-            except Exception:
-                pass
-            return False
-
-        if base_path.is_file():
-            search_file(base_path)
-        elif base_path.is_dir():
-            for root, dirs, files in os.walk(base_path):
-                if ".git" in dirs:
-                    dirs.remove(".git")
-                # Also skip other common large dirs if they are not explicitly requested
-                for d in [".venv", "node_modules", "__pycache__", ".pytest_cache"]:
-                    if d in dirs:
-                        dirs.remove(d)
-                for file in files:
-                    if search_file(Path(root) / file):
-                        return "\n".join(results)
-        else:
-            return f"ERROR: Path {path} not found"
-
-        return "\n".join(results) if results else "No matches found."
-    except Exception as e:
-        return f"ERROR: {e}"
-
 
 async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
     try:
@@ -260,90 +59,9 @@ async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
     except Exception as e:
         return f"ERROR: {e}"
 
-
-async def _git_status() -> str:
-    try:
-        result = subprocess.run(
-            ["git", "status", "--short"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip() if result.stdout.strip() else "Clean"
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _git_log(limit: int = 5) -> str:
-    try:
-        result = subprocess.run(
-            ["git", "log", "-n", str(limit), "--oneline"],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        return result.stdout.strip()
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _clipboard_copy(text: str) -> str:
-    try:
-        pyperclip.copy(text)
-        return "OK: copied to clipboard"
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _clipboard_paste() -> str:
-    try:
-        return pyperclip.paste()
-    except Exception as e:
-        return f"ERROR: {e}"
-
-
-async def _python_interpreter(code: str) -> str:
-    """Executes python code and returns captured stdout or traceback."""
-    old_stdout = sys.stdout
-    new_stdout = io.StringIO()
-    sys.stdout = new_stdout
-    try:
-        # Execute in a clean global/local dict
-        exec(code, {})
-    except Exception:
-        sys.stdout = old_stdout
-        return traceback.format_exc()
-    finally:
-        sys.stdout = old_stdout
-
-    output = new_stdout.getvalue()
-    return output if output else "OK: executed"
-
-
-# ---------------------------------------------------------------------------
-# Tool registry
-# ---------------------------------------------------------------------------
-
-TOOL_REGISTRY: dict[str, Tool] = {
-    "read_file": Tool("read_file", "safe", "Read file contents", _read_file),
-    "list_dir": Tool("list_dir", "safe", "List directory", _list_dir),
-    "grep_search": Tool("grep_search", "safe", "Grep search for a pattern in a path", _grep_search),
-    "list_crons": Tool("list_crons", "safe", "List crontab", _list_crons),
-    "list_scheduled_tasks": Tool("list_scheduled_tasks", "safe", "List scheduled tasks", _list_scheduled_tasks),
-    "write_file": Tool("write_file", "risky", "Write file", _write_file),
-    "append_file": Tool("append_file", "risky", "Append to file", _append_file),
-    "shell": Tool("shell", "risky", "Run shell command", _shell),
-    "python_interpreter": Tool("python_interpreter", "risky", "Execute Python code", _python_interpreter),
-    "create_cron": Tool("create_cron", "risky", "Create cron job", _create_cron),
-    "delete_cron": Tool("delete_cron", "risky", "Delete cron job", _delete_cron),
-    "create_scheduled_task": Tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task),
-    "git_status": Tool("git_status", "safe", "Get git status --short", _git_status),
-    "git_log": Tool("git_log", "safe", "Get git log --oneline", _git_log),
-    "clipboard_copy": Tool("clipboard_copy", "safe", "Copy text to system clipboard", _clipboard_copy),
-    "clipboard_paste": Tool("clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste),
-    "google_search": Tool("google_search", "safe", "Search Google for a query", _google_search),
-    "web_fetch": Tool("web_fetch", "safe", "Fetch and clean text from a URL", _web_fetch),
-}
+# Add them to the shared registry for this process
+TOOL_REGISTRY["list_scheduled_tasks"] = Tool("list_scheduled_tasks", "safe", "List scheduled tasks", _list_scheduled_tasks)
+TOOL_REGISTRY["create_scheduled_task"] = Tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task)
 
 
 # ---------------------------------------------------------------------------
@@ -363,7 +81,11 @@ def _save_scheduler_tasks(tasks: list) -> None:
 async def _run_scheduler_task(task_name: str, prompt: str, model_id: str = "gemma4-e4b") -> None:
     """Run a full ReAct agent loop for a scheduled task and log the result."""
     try:
-        result = await _react_loop_internal(prompt, model_id)
+        messages = [
+            {"role": "system", "content": AGENT_SYSTEM_PROMPT},
+            {"role": "user", "content": prompt},
+        ]
+        result = await _react_loop_internal(messages, model_id)
         _log_scheduler_result(task_name, result, None)
     except Exception as e:
         _log_scheduler_result(task_name, None, str(e))
@@ -401,68 +123,15 @@ def load_scheduler_tasks_on_startup() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Arg parser
-# ---------------------------------------------------------------------------
-
-def parse_model_output(text: str) -> tuple[str, str, list] | None:
-    """Return (type, tool_or_message, args) or None if neither TOOL nor DONE found.
-
-    Handles both the text-based format (TOOL: name(args)) and Gemma's native
-    function-call format (<|tool_call>call:name(args)<tool_call|>).
-    """
-    # Native Gemma format: <|tool_call>call:tool_name("arg")<tool_call|>
-    native_match = re.search(r'<\|tool_call\>call:(\w+)\((.*?)\)<tool_call\|>', text, re.DOTALL)
-    # Text-based format: TOOL: tool_name("arg")
-    tool_match = re.search(r'TOOL:\s*(\w+)\((.*)\)\s*$', text, re.MULTILINE)
-    done_match = re.search(r'DONE:\s*(.+)', text, re.MULTILINE)
-
-    active_match = native_match or tool_match
-    if active_match:
-        tool_name = active_match.group(1)
-        raw_args = active_match.group(2).strip()
-        try:
-            args = json.loads(f"[{raw_args}]") if raw_args else []
-        except json.JSONDecodeError:
-            # Heuristic: try splitting on comma+space for multi-arg tools
-            parts = [p.strip().strip('"\'') for p in raw_args.split(', ')]
-            args = parts if len(parts) > 1 else [raw_args]
-        return ("tool", tool_name, args)
-    if done_match:
-        return ("done", done_match.group(1).strip(), [])
-    return None
-
-
-# ---------------------------------------------------------------------------
-# System prompt
-# ---------------------------------------------------------------------------
-
-AGENT_SYSTEM_PROMPT = """You are an autonomous agent. You have access to these tools:
-  read_file(path), list_dir(path), grep_search(pattern, path), write_file(path, content),
-  append_file(path, content), shell(command), python_interpreter(code), list_crons(),
-  create_cron(name, schedule, command), delete_cron(name),
-  list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt),
-  git_status(), git_log(limit), clipboard_copy(text), clipboard_paste(),
-  google_search(query), web_fetch(url)
-
-To call a tool, output EXACTLY one line:
-  TOOL: tool_name("arg1", "arg2")
-
-To finish, output:
-  DONE: <concise summary of what was accomplished>
-
-Think step by step. Only call one tool per response."""
-
-
-# ---------------------------------------------------------------------------
 # Internal ReAct loop (no SSE, for scheduler)
 # ---------------------------------------------------------------------------
 
-async def _react_loop_internal(user_prompt: str, model_id: str = "gemma4-e4b") -> str:
+async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Run ReAct loop without SSE, return final DONE summary."""
-    messages = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
+    # Ensure system prompt is present
+    if not any(m["role"] == "system" and "autonomous agent" in m["content"] for m in messages):
+        messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
+
     for _ in range(20):
         response_text = await run_inference(messages, model_id)
         messages.append({"role": "assistant", "content": response_text})
@@ -488,13 +157,14 @@ async def _react_loop_internal(user_prompt: str, model_id: str = "gemma4-e4b") -
 # SSE ReAct loop (with streaming + confirmation gate)
 # ---------------------------------------------------------------------------
 
-async def _react_loop_sse(task_id: str, user_prompt: str, model_id: str) -> None:
-    """Run ReAct loop, emitting SSE events to _sse_queues[task_id]."""
-    q = _sse_queues[task_id]
-    messages = [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
+async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
+    """Run ReAct loop, emitting SSE events to sse_queues[task_id]."""
+    q = sse_queues[task_id]
+    
+    # Ensure system prompt is present
+    if not any(m["role"] == "system" and "autonomous agent" in m["content"] for m in messages):
+        messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
+
     try:
         for _ in range(20):
             response_text = await run_inference(messages, model_id)
@@ -521,7 +191,7 @@ async def _react_loop_sse(task_id: str, user_prompt: str, model_id: str) -> None
                 args_dict = dict(enumerate(args))
                 await q.put(json.dumps({"type": "confirm_request", "task_id": task_id,
                                         "tool": name_or_msg, "args": args_dict}))
-                cq = _confirm_queues[task_id]
+                cq = confirm_queues[task_id]
                 try:
                     approved = await asyncio.wait_for(cq.get(), timeout=300)
                 except asyncio.TimeoutError:
@@ -553,7 +223,8 @@ async def _react_loop_sse(task_id: str, user_prompt: str, model_id: str) -> None
 # ---------------------------------------------------------------------------
 
 class AgentRequest(BaseModel):
-    prompt: str
+    prompt: str | None = None
+    messages: list[dict] | None = None
     model_id: str = "gemma4-e4b"
 
 
@@ -574,17 +245,22 @@ class ScheduleTaskRequest(BaseModel):
 @router.post("/run")
 async def run_agent(req: AgentRequest):
     task_id = str(uuid.uuid4())
-    _sse_queues[task_id] = asyncio.Queue()
-    _confirm_queues[task_id] = asyncio.Queue()
-    asyncio.create_task(_react_loop_sse(task_id, req.prompt, req.model_id))
+    sse_queues[task_id] = asyncio.Queue()
+    confirm_queues[task_id] = asyncio.Queue()
+    
+    messages = req.messages or []
+    if req.prompt:
+        messages.append({"role": "user", "content": req.prompt})
+        
+    asyncio.create_task(react_loop_sse(task_id, messages, req.model_id))
     return {"task_id": task_id}
 
 
 @router.get("/stream/{task_id}")
 async def stream_agent(task_id: str):
-    if task_id not in _sse_queues:
+    if task_id not in sse_queues:
         raise HTTPException(status_code=404, detail="Task not found")
-    q = _sse_queues[task_id]
+    q = sse_queues[task_id]
 
     async def event_gen():
         try:
@@ -594,17 +270,17 @@ async def stream_agent(task_id: str):
                     break
                 yield f"data: {event}\n\n"
         finally:
-            _sse_queues.pop(task_id, None)
-            _confirm_queues.pop(task_id, None)
+            sse_queues.pop(task_id, None)
+            confirm_queues.pop(task_id, None)
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")
 
 
 @router.post("/confirm/{task_id}")
 async def confirm_action(task_id: str, req: ConfirmRequest):
-    if task_id not in _confirm_queues:
+    if task_id not in confirm_queues:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _confirm_queues[task_id].put(req.approved)
+    await confirm_queues[task_id].put(req.approved)
     return {"ok": True}
 
 

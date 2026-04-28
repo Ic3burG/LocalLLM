@@ -216,7 +216,14 @@ async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     except (KeyError, IndexError) as e:
         raise RuntimeError(f"run_inference: unexpected response structure: {e}") from e
 
-from agent import router as agent_router, scheduler, load_scheduler_tasks_on_startup
+from agent import (
+    router as agent_router, 
+    scheduler, 
+    load_scheduler_tasks_on_startup,
+    react_loop_sse,
+    sse_queues,
+    confirm_queues
+)
 app.include_router(agent_router, prefix="/v1/agent")
 
 @app.on_event("startup")
@@ -426,6 +433,68 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
 
     except Exception as e:
         logger.error(f"Error during inference: {e}", exc_info=True)
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+@app.post("/v1/chat/stream")
+async def chat_stream(request: Request):
+    """
+    Unified streaming endpoint. 
+    Standard chat messages that can trigger tools via ReAct loop.
+    """
+    try:
+        body = await request.json()
+        messages = body.get("messages", [])
+        model_id = body.get("model", "gemma4-e4b")
+        doc_ids = body.get("doc_ids", [])
+
+        if not messages:
+            return JSONResponse(content={"error": "No messages provided"}, status_code=400)
+
+        # Inject Memory into System Prompt
+        user_memory = get_user_memory()
+        if user_memory:
+            system_injected = False
+            for msg in messages:
+                if msg.get("role") == "system":
+                    msg["content"] = f"{msg['content']}\n\nRELEVANT CONTEXT ABOUT THE USER:\n{user_memory}"
+                    system_injected = True
+                    break
+            if not system_injected:
+                messages.insert(0, {"role": "system", "content": f"RELEVANT CONTEXT ABOUT THE USER:\n{user_memory}"})
+
+        # RAG: inject retrieved document chunks into system prompt
+        if doc_ids:
+            last_content = messages[-1].get("content", "") if messages else ""
+            if isinstance(last_content, list):
+                last_user_text = " ".join(
+                    item.get("text", "") for item in last_content if item.get("type") == "text"
+                )
+            else:
+                last_user_text = last_content
+
+            chunks = pdf_pipeline.retrieve_chunks(last_user_text, doc_ids, doc_store, top_k=5)
+            if chunks:
+                context_block = pdf_pipeline.build_document_context(chunks)
+                system_injected = False
+                for msg in messages:
+                    if msg.get("role") == "system":
+                        msg["content"] = f"{context_block}\n\n{msg['content']}"
+                        system_injected = True
+                        break
+                if not system_injected:
+                    messages.insert(0, {"role": "system", "content": context_block})
+
+        # Start ReAct loop as background task
+        task_id = str(uuid.uuid4())
+        sse_queues[task_id] = asyncio.Queue()
+        confirm_queues[task_id] = asyncio.Queue()
+        
+        asyncio.create_task(react_loop_sse(task_id, messages, model_id))
+        
+        return {"task_id": task_id}
+
+    except Exception as e:
+        logger.error(f"Error in chat_stream: {e}", exc_info=True)
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 def format_openai_response(model_id, content):
