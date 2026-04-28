@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import traceback
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -92,6 +93,9 @@ async def _append_file(path: str, content: str) -> str:
 
 
 async def _shell(command: str) -> str:
+    # Audit logging
+    with open("audit.log", "a") as f:
+        f.write(f"[{datetime.now().isoformat()}] SHELL: {command}\n")
     try:
         result = subprocess.run(
             command,
