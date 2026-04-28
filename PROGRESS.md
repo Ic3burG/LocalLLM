@@ -250,3 +250,119 @@ Implemented the first phase of the Advanced Tool Access plan, adding web researc
 | `agent.py` | Implemented `_google_search` and `_web_fetch` internal methods |
 | `tests/test_agent_tools.py` | New — tests for the new web research tools |
 | `requirements.txt` | (Already contained `googlesearch-python`, `requests`, `beautifulsoup4`) |
+
+---
+
+## 🛠 Unified Agentic Chat & Advanced Tools (Failed Integration) — April 28, 2026 (Session 3)
+
+Attempted to merge "Chat Mode" and "Agent Mode" into a single experience while adding five new power tools. The integration resulted in persistent stability issues and connection drops.
+
+### Objectives
+- **Unify UI:** Remove the Agent/Chat toggle and enable tools for all conversations.
+- **Advanced Tools:** Added `google_search` (via DuckDuckGo fallback), `web_fetch`, `grep_search`, `git_status`, `git_log`, `clipboard_copy`, `clipboard_paste`, and `python_interpreter`.
+- **Thread Safety:** Fix MLX GPU stream conflicts by moving all inference to a single global worker thread.
+
+### Architectural Changes
+1.  **`inference_engine.py` (New):** Created to manage a single persistent worker thread for all MLX calls. This was intended to fix `RuntimeError: There is no Stream(gpu, 1) in current thread` caused by multiple threads accessing the GPU.
+2.  **`agent_utils.py` (New):** Extracted tool registry and logic to a shared file to resolve circular imports between `agent.py` and `gemma_bridge.py`.
+3.  **Unified SSE Stream:** Refactored `/v1/chat/stream` to use the ReAct loop for every request, allowing the model to "think" and use tools before providing a final answer.
+
+### Bugs (Fixed in Session 4)
+- **Persistent Connection Loss / Silent Hang:** Root cause was `react_loop_sse` looping up to 20 times whenever the model gave a plain text answer (no `TOOL:` tag), because `parse_model_output` returning `None` was not handled. Fixed by treating `None` as a final answer and emitting a `done` event immediately.
+- **"Conversation roles must alternate" error:** The agent system prompt was being injected as a second `system` role message on top of any existing one, violating Gemma's strict alternating role requirement. Fixed by merging the agent prompt into the existing system message rather than prepending a new one.
+- **asyncio event loop blocking:** `threading.Event.wait()` was called synchronously inside `async def` coroutines, blocking the entire event loop and preventing other SSE connections from making progress. Fixed using `loop.run_in_executor(None, event.wait)` to offload the blocking wait to a thread pool.
+- **NameError Cascade:** Resolved all `NameError` exceptions for `logger`, `Tool`, and `StreamingResponse` left over from the refactor.
+- **Google Search Blocking:** Retained the `duckduckgo-search` library fallback; tool name kept as `google_search` for model compatibility.
+- **Circular Import Complexity:** Stabilised by lazy import of `run_inference` inside the wrapper function rather than at module top level.
+
+### Current Status (after Session 4 fixes)
+All bugs resolved. Chat is stable — every message returns a response without hanging or dropping the connection.
+
+---
+
+## 🛠 Stability Fixes & Restart Button — April 28, 2026 (Session 4)
+
+Fixed all bugs introduced by the Session 3 unified agentic chat refactor, then added a user-friendly backend restart button to the Settings UI.
+
+### Bug Fixes
+
+| Bug | Root Cause | Fix |
+|---|---|---|
+| Every chat hangs silently | `react_loop_sse` looped 20 times on plain-text answers because `parse_model_output` returning `None` was not handled | Treat `None` as a final answer; emit `done` event immediately |
+| "Conversation roles must alternate" | Agent system prompt was injected as a second `system` message, violating Gemma's strict role alternation | Merge agent prompt into the existing system message if one is present |
+| SSE connections block each other | `threading.Event.wait()` called synchronously inside `async def` blocked the entire asyncio event loop | Offload the blocking wait with `loop.run_in_executor(None, event.wait)` |
+
+### Restart Backend Button
+
+Added to the Settings modal so users can restart the Python bridge without terminal access.
+
+**Backend (`gemma-web/server.js`):**
+- `GET /api/backend/status` — pings port 9379 with a 3 s timeout; returns `{ online: true/false }`
+- `POST /api/backend/restart` — kills any `gemma_bridge.py` process, waits 1.5 s, then spawns a fresh one using `spawn(..., { detached: true })` + `child.unref()` so the child outlives the Node proxy. Uses `execFile` (not `exec`) to avoid shell injection.
+
+**Frontend (`gemma-web/index.html`):** Inline Restart Backend button in the Settings modal. Polls `/api/backend/status` every 2 s after clicking and shows "Restarting… Online / Failed" state, then auto-closes the modal on success.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent.py` | Fixed `parse_model_output` returning `None` handling; fixed double system message injection |
+| `inference_engine.py` | Replaced `threading.Event.wait()` with `run_in_executor` to unblock asyncio |
+| `gemma-web/server.js` | Added `/api/backend/status` and `/api/backend/restart` endpoints |
+| `gemma-web/index.html` | Added Restart Backend button and polling logic to Settings modal |
+
+---
+
+## 🎨 Dark/Light Mode Fix — April 28, 2026 (Session 4, continued)
+
+Audited the entire UI for dark/light mode breakage, established a CSS token system and design rules doc, then fixed every broken component.
+
+### Root Cause
+
+The site had two theming mechanisms that were not in sync:
+
+1. **Tailwind `dark:` utilities** — activate when `<html>` has the `dark` class (JS toggle was correct).
+2. **CSS custom properties** — defined as dark defaults in `:root`, with light overrides in `.light`. The `.light` class was **never applied** by the JS toggle, so every CSS-var-driven component (sidebar, task cards, task inputs, trace panel, confirm cards, scrollbar, code blocks, thought blocks) was permanently stuck in dark mode regardless of the selected theme.
+
+### Solution
+
+Three coordinated changes across 6 commits:
+
+1. **Fixed CSS variable wiring** — swapped `:root` (dark defaults) + `.light` (dead) to `:root` (light defaults) + `html.dark` (dark overrides). This aligned CSS vars with Tailwind's existing toggle mechanism and fixed the root cause in one block.
+2. **Renamed tokens to semantic names** — `--surface` → `--color-surface`, `--border` → `--color-border`, `--bg` → `--color-bg`, `--text-secondary` → `--color-text-muted`, `--accent` → `--color-accent`. Added the previously-undefined `--color-text` token (was causing a white-on-white text bug in task inputs).
+3. **Fixed hardcoded colors** — scrollbar thumb, `.prose pre`, `.prose code`, and `.thought-block` replaced hardcoded hex with tokens. Dead `.light` and `.dark` override rules deleted. highlight.js swaps between `github-dark.min.css` and `github.min.css` on toggle.
+
+### Token System
+
+| Token | Light | Dark | Use for |
+|---|---|---|---|
+| `--color-bg` | `#f8f9fa` | `#0e0e11` | Page background, confirm cards |
+| `--color-surface` | `#ffffff` | `#1e1f20` | Cards, inputs, code blocks |
+| `--color-border` | `#e5e7eb` | `#3c3d40` | All borders, dividers |
+| `--color-text` | `#111827` | `#f3f4f6` | Primary text, input values |
+| `--color-text-muted` | `#6b7280` | `#9ca3af` | Timestamps, labels, placeholders |
+| `--color-accent` | `#3b82f6` | `#3b82f6` | Focus rings, active states, buttons |
+
+### Design Rules (for all future UI work)
+
+1. Never hardcode a color in a CSS class — use a `--color-*` token.
+2. Never use retired token names (`--bg`, `--surface`, `--border`, `--text-secondary`, `--accent`) — they are undefined.
+3. Never use `.light` as a CSS selector — it is never applied by JS.
+4. Name tokens by role, not color (`--color-surface` not `--color-white`).
+5. Status colors (`#22c55e`, `#ef4444`, `#f59e0b`) may be hardcoded — they are the same in both modes.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `gemma-web/index.html` | 6 commits: token definitions, 19 consumer renames, hardcoded color replacements, dead rule deletions, highlight.js href swap |
+| `gemma-web/THEME.md` | New — quick-reference token table, 5 rules, system selection guide, new component template, pre-ship checklist |
+| `docs/superpowers/specs/2026-04-28-dark-light-mode-design.md` | New — full design spec |
+| `docs/superpowers/plans/2026-04-28-dark-light-mode.md` | New — implementation plan |
+
+## 📈 Current Status (as of April 28, 2026, Session 4)
+
+- **Backend:** `gemma_bridge.py` (FastAPI + mlx_vlm + agent router) on port 9379.
+- **Proxy:** `server.js` (Express) on port 3001 — now includes backend status/restart endpoints.
+- **Chat:** Stable — no hangs, no dropped connections, all three models functional.
+- **Theme:** All UI components correctly switch between light and dark mode. highlight.js code blocks switch themes with the toggle. Design rules documented in `gemma-web/THEME.md`.
