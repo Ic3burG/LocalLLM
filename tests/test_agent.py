@@ -194,6 +194,16 @@ def test_parse_tool_no_args():
     result = parse_model_output('TOOL: list_crons()')
     assert result == ("tool", "list_crons", [])
 
+def test_parse_native_gemma_format_single_arg():
+    from agent import parse_model_output
+    result = parse_model_output('<|tool_call>call:shell("ls ~")<tool_call|>')
+    assert result == ("tool", "shell", ["ls ~"])
+
+def test_parse_native_gemma_format_no_args():
+    from agent import parse_model_output
+    result = parse_model_output('<|tool_call>call:list_crons()<tool_call|>')
+    assert result == ("tool", "list_crons", [])
+
 
 # ── ReAct loop tests ──────────────────────────────────────
 @pytest.mark.asyncio
