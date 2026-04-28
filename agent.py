@@ -257,6 +257,32 @@ async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _git_status() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "status", "--short"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip() if result.stdout.strip() else "Clean"
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
+async def _git_log(limit: int = 5) -> str:
+    try:
+        result = subprocess.run(
+            ["git", "log", "-n", str(limit), "--oneline"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except Exception as e:
+        return f"ERROR: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
@@ -273,6 +299,8 @@ TOOL_REGISTRY: dict[str, Tool] = {
     "create_cron": Tool("create_cron", "risky", "Create cron job", _create_cron),
     "delete_cron": Tool("delete_cron", "risky", "Delete cron job", _delete_cron),
     "create_scheduled_task": Tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task),
+    "git_status": Tool("git_status", "safe", "Get git status --short", _git_status),
+    "git_log": Tool("git_log", "safe", "Get git log --oneline", _git_log),
 }
 
 
@@ -370,7 +398,8 @@ AGENT_SYSTEM_PROMPT = """You are an autonomous agent. You have access to these t
   read_file(path), list_dir(path), grep_search(pattern, path), write_file(path, content),
   append_file(path, content), shell(command), list_crons(),
   create_cron(name, schedule, command), delete_cron(name),
-  list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt)
+  list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt),
+  git_status(), git_log(limit)
 
 To call a tool, output EXACTLY one line:
   TOOL: tool_name("arg1", "arg2")
