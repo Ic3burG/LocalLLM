@@ -916,7 +916,7 @@
 
         async function resolveConfirm(taskId, approved, card) {
             card.remove();
-            await fetch(`/api/agent/confirm/${taskId}`, {
+            await fetch(`http://localhost:3001/api/agent/confirm/${taskId}`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({approved}),
@@ -935,7 +935,7 @@
 
             let task_id;
             try {
-                const res = await fetch('/api/agent/run', {
+                const res = await fetch('http://localhost:3001/api/agent/run', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({prompt, model_id: getCurrentModelId()}),
@@ -954,7 +954,7 @@
 
             const startTime = Date.now();
 
-            const es = new EventSource(`/api/agent/stream/${task_id}`);
+            const es = new EventSource(`http://localhost:3001/api/agent/stream/${task_id}`);
             es.onmessage = (e) => {
                 const event = JSON.parse(e.data);
                 handleAgentEvent(event, task_id, traceContainer, startTime, es);
@@ -974,7 +974,7 @@
         }
 
         async function loadScheduledTasks() {
-            const res = await fetch('/api/agent/schedule');
+            const res = await fetch('http://localhost:3001/api/agent/schedule');
             const tasks = await res.json();
             renderInAppTasks(tasks);
         }
@@ -1035,7 +1035,7 @@
         }
 
         async function deleteScheduledTask(name) {
-            await fetch(`/api/agent/schedule/${encodeURIComponent(name)}`, {method: 'DELETE'});
+            await fetch(`http://localhost:3001/api/agent/schedule/${encodeURIComponent(name)}`, {method: 'DELETE'});
             loadScheduledTasks();
         }
 
@@ -1050,7 +1050,7 @@
             const prompt = document.getElementById('new-task-prompt').value.trim();
             if (!name || !schedule || !prompt) return;
 
-            await fetch('/api/agent/schedule', {
+            await fetch('http://localhost:3001/api/agent/schedule', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({name, schedule, prompt}),
