@@ -23,9 +23,24 @@ class Tool:
 # Tool implementations
 # ---------------------------------------------------------------------------
 
+def validate_path(path_str: str, must_exist: bool = True) -> Path:
+    # Resolve the project root (base) and the requested path (target)
+    base = Path(os.getcwd()).resolve()
+    target = Path(os.path.expanduser(path_str)).resolve()
+
+    # Security Check: Ensure target is within base
+    if not str(target).startswith(str(base)):
+        raise PermissionError(f"Access denied: {path_str} is outside the sandbox.")
+
+    if must_exist and not target.exists():
+        raise FileNotFoundError(f"File not found: {path_str}")
+
+    return target
+
+
 async def _read_file(path: str) -> str:
     try:
-        p = Path(os.path.expanduser(path))
+        p = validate_path(path)
         return p.read_text()
     except Exception as e:
         return f"ERROR: {e}"
@@ -33,7 +48,7 @@ async def _read_file(path: str) -> str:
 
 async def _list_dir(path: str) -> str:
     try:
-        p = Path(os.path.expanduser(path))
+        p = validate_path(path)
         entries = [entry.name for entry in p.iterdir()]
         return "\n".join(entries)
     except Exception as e:
@@ -55,7 +70,7 @@ async def _list_crons() -> str:
 
 async def _write_file(path: str, content: str) -> str:
     try:
-        p = Path(os.path.expanduser(path))
+        p = validate_path(path, must_exist=False)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content)
         return f"OK: wrote {len(content)} bytes"
@@ -65,7 +80,7 @@ async def _write_file(path: str, content: str) -> str:
 
 async def _append_file(path: str, content: str) -> str:
     try:
-        p = Path(os.path.expanduser(path))
+        p = validate_path(path, must_exist=False)
         p.parent.mkdir(parents=True, exist_ok=True)
         with open(p, "a") as f:
             f.write(content)
@@ -183,7 +198,7 @@ async def _web_fetch(url: str) -> str:
 
 async def _grep_search(pattern: str, path: str = ".") -> str:
     try:
-        base_path = Path(os.path.expanduser(path))
+        base_path = validate_path(path)
         regex = re.compile(pattern)
         results = []
 

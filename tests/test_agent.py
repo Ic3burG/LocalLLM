@@ -67,7 +67,8 @@ async def test_run_inference_raises_on_malformed_response(mock_deps):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_read_file_returns_contents(tmp_path):
+async def test_read_file_returns_contents(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     f = tmp_path / "notes.txt"
     f.write_text("hello world")
     import agent_utils
@@ -81,7 +82,8 @@ async def test_read_file_missing_returns_error():
     assert result.startswith("ERROR:")
 
 @pytest.mark.asyncio
-async def test_list_dir_returns_names(tmp_path):
+async def test_list_dir_returns_names(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     (tmp_path / "a.txt").write_text("")
     (tmp_path / "b.txt").write_text("")
     import agent_utils
@@ -96,7 +98,8 @@ async def test_list_dir_missing_returns_error():
     assert result.startswith("ERROR:")
 
 @pytest.mark.asyncio
-async def test_write_file_creates_file(tmp_path):
+async def test_write_file_creates_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     import agent_utils
     p = tmp_path / "out.txt"
     result = await agent_utils._write_file(str(p), "content here")
@@ -104,7 +107,8 @@ async def test_write_file_creates_file(tmp_path):
     assert p.read_text() == "content here"
 
 @pytest.mark.asyncio
-async def test_write_file_creates_parent_dirs(tmp_path):
+async def test_write_file_creates_parent_dirs(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     import agent_utils
     p = tmp_path / "subdir" / "out.txt"
     result = await agent_utils._write_file(str(p), "data")
@@ -112,7 +116,8 @@ async def test_write_file_creates_parent_dirs(tmp_path):
     assert p.read_text() == "data"
 
 @pytest.mark.asyncio
-async def test_append_file_appends(tmp_path):
+async def test_append_file_appends(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     import agent_utils
     p = tmp_path / "log.txt"
     p.write_text("line1\n")
