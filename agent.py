@@ -1,9 +1,12 @@
 import asyncio
+import io
 import json
 import os
 import re
 import subprocess
+import sys
 import time
+import traceback
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -299,6 +302,24 @@ async def _clipboard_paste() -> str:
         return f"ERROR: {e}"
 
 
+async def _python_interpreter(code: str) -> str:
+    """Executes python code and returns captured stdout or traceback."""
+    old_stdout = sys.stdout
+    new_stdout = io.StringIO()
+    sys.stdout = new_stdout
+    try:
+        # Execute in a clean global/local dict
+        exec(code, {})
+    except Exception:
+        sys.stdout = old_stdout
+        return traceback.format_exc()
+    finally:
+        sys.stdout = old_stdout
+
+    output = new_stdout.getvalue()
+    return output if output else "OK: executed"
+
+
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
@@ -312,6 +333,7 @@ TOOL_REGISTRY: dict[str, Tool] = {
     "write_file": Tool("write_file", "risky", "Write file", _write_file),
     "append_file": Tool("append_file", "risky", "Append to file", _append_file),
     "shell": Tool("shell", "risky", "Run shell command", _shell),
+    "python_interpreter": Tool("python_interpreter", "risky", "Execute Python code", _python_interpreter),
     "create_cron": Tool("create_cron", "risky", "Create cron job", _create_cron),
     "delete_cron": Tool("delete_cron", "risky", "Delete cron job", _delete_cron),
     "create_scheduled_task": Tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task),
@@ -319,6 +341,8 @@ TOOL_REGISTRY: dict[str, Tool] = {
     "git_log": Tool("git_log", "safe", "Get git log --oneline", _git_log),
     "clipboard_copy": Tool("clipboard_copy", "safe", "Copy text to system clipboard", _clipboard_copy),
     "clipboard_paste": Tool("clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste),
+    "google_search": Tool("google_search", "safe", "Search Google for a query", _google_search),
+    "web_fetch": Tool("web_fetch", "safe", "Fetch and clean text from a URL", _web_fetch),
 }
 
 
@@ -414,10 +438,11 @@ def parse_model_output(text: str) -> tuple[str, str, list] | None:
 
 AGENT_SYSTEM_PROMPT = """You are an autonomous agent. You have access to these tools:
   read_file(path), list_dir(path), grep_search(pattern, path), write_file(path, content),
-  append_file(path, content), shell(command), list_crons(),
+  append_file(path, content), shell(command), python_interpreter(code), list_crons(),
   create_cron(name, schedule, command), delete_cron(name),
   list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt),
-  git_status(), git_log(limit), clipboard_copy(text), clipboard_paste()
+  git_status(), git_log(limit), clipboard_copy(text), clipboard_paste(),
+  google_search(query), web_fetch(url)
 
 To call a tool, output EXACTLY one line:
   TOOL: tool_name("arg1", "arg2")
