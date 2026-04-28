@@ -36,28 +36,24 @@ FAKE_RESPONSE = {"choices": [{"message": {"content": "hello"}}]}
 
 
 @pytest.mark.asyncio
-async def test_run_inference_routes_litert_for_default_model():
-    with patch.object(gemma_bridge, "handle_litert_request", return_value=FAKE_RESPONSE) as mock_litert, \
-         patch.object(gemma_bridge, "handle_mlx_request") as mock_mlx:
+async def test_run_inference_routes_mlx_vlm_for_e4b():
+    with patch.object(gemma_bridge, "handle_mlx_vlm_request", return_value=FAKE_RESPONSE) as mock_vlm:
         result = await gemma_bridge.run_inference([{"role": "user", "content": "hi"}], "gemma4-e4b")
         assert result == "hello"
-        mock_litert.assert_called_once()
-        mock_mlx.assert_not_called()
+        mock_vlm.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_run_inference_routes_mlx_for_mlx_model():
-    with patch.object(gemma_bridge, "handle_mlx_request", return_value=FAKE_RESPONSE) as mock_mlx, \
-         patch.object(gemma_bridge, "handle_litert_request") as mock_litert:
+async def test_run_inference_routes_mlx_vlm_for_26b():
+    with patch.object(gemma_bridge, "handle_mlx_vlm_request", return_value=FAKE_RESPONSE) as mock_vlm:
         result = await gemma_bridge.run_inference([{"role": "user", "content": "hi"}], "gemma4-26b-mlx")
         assert result == "hello"
-        mock_mlx.assert_called_once()
-        mock_litert.assert_not_called()
+        mock_vlm.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_run_inference_raises_on_malformed_response():
-    with patch.object(gemma_bridge, "handle_litert_request", return_value={}):
+    with patch.object(gemma_bridge, "handle_mlx_vlm_request", return_value={}):
         with pytest.raises(RuntimeError, match="unexpected response structure"):
             await gemma_bridge.run_inference([{"role": "user", "content": "hi"}], "gemma4-e4b")
 
