@@ -5,14 +5,13 @@ import uuid
 import base64
 import tempfile
 import threading
+import queue
 import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from mlx_vlm import load as mlx_vlm_load, generate as mlx_vlm_generate
 import uvicorn
 import pdf_pipeline
 
@@ -20,9 +19,50 @@ import pdf_pipeline
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gemma_bridge")
 
-# Single-worker executor: inference is serialised (one model) but the asyncio
-# event loop is released between calls so chat/agent/SSE stay responsive.
-_inference_executor = ThreadPoolExecutor(max_workers=1)
+# ---------------------------------------------------------------------------
+# Single dedicated inference thread
+# ---------------------------------------------------------------------------
+# mlx GPU streams are thread-local objects.  mlx_vlm creates its
+# `generation_stream` at module-import time, so it must be imported — and all
+# subsequent inference calls must run — on the same OS thread.  We achieve
+# this with a single persistent worker thread backed by a job queue.
+
+_inference_queue: queue.Queue = queue.Queue()
+
+# These are populated inside the worker thread after mlx_vlm is imported there.
+_mlx_vlm_load = None
+_mlx_vlm_generate = None
+
+def _inference_worker():
+    """Long-lived thread that owns all mlx GPU state."""
+    global _mlx_vlm_load, _mlx_vlm_generate
+    # Import mlx_vlm here so that generation_stream is created in this thread.
+    from mlx_vlm import load as _load, generate as _gen
+    _mlx_vlm_load = _load
+    _mlx_vlm_generate = _gen
+    logger.info("Inference worker thread ready (mlx_vlm imported in this thread).")
+
+    while True:
+        item = _inference_queue.get()
+        if item is None:
+            break  # shutdown signal
+        fn, args, future = item
+        try:
+            result = fn(*args)
+            future.get_loop().call_soon_threadsafe(future.set_result, result)
+        except Exception as exc:
+            future.get_loop().call_soon_threadsafe(future.set_exception, exc)
+
+_inference_thread = threading.Thread(target=_inference_worker, daemon=True, name="mlx-inference")
+_inference_thread.start()
+
+
+async def _run_in_inference_thread(fn, *args):
+    """Submit *fn(*args)* to the inference thread and await the result."""
+    loop = asyncio.get_event_loop()
+    future: asyncio.Future = loop.create_future()
+    _inference_queue.put((fn, args, future))
+    return await future
 
 app = FastAPI()
 
@@ -41,8 +81,8 @@ MEMORY_FILE = os.path.join(os.getcwd(), "USER_MEMORY.md")
 PORT = 9379
 
 # Model cache: model_id -> (model, processor)
+# Only accessed from the single inference thread — no lock needed.
 _vlm_cache: dict = {}
-_vlm_cache_lock = threading.Lock()
 
 _MODEL_DIR_MAP = {
     "gemma4-e4b":     "gemma-3-4b-it-4bit",
@@ -54,19 +94,18 @@ _MODEL_DIR_MAP = {
 doc_store: dict = {}
 
 def get_mlx_vlm_model(model_id: str):
+    """Must only be called from the inference thread."""
     if model_id in _vlm_cache:
         return _vlm_cache[model_id]
-    with _vlm_cache_lock:
-        if model_id in _vlm_cache:  # re-check under lock
-            return _vlm_cache[model_id]
-        dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
-        model_path = os.path.join(MLX_MODELS_DIR, dir_name)
-        if not os.path.exists(model_path):
-            raise FileNotFoundError(f"mlx_vlm model directory not found: {model_path}")
-        logger.info(f"Loading mlx_vlm model {model_id} from {model_path}...")
-        model, processor = mlx_vlm_load(model_path)
-        _vlm_cache[model_id] = (model, processor)
-        return model, processor
+    # No lock needed — only the inference thread calls this.
+    dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
+    model_path = os.path.join(MLX_MODELS_DIR, dir_name)
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"mlx_vlm model directory not found: {model_path}")
+    logger.info(f"Loading mlx_vlm model {model_id} from {model_path}...")
+    model, processor = _mlx_vlm_load(model_path)
+    _vlm_cache[model_id] = (model, processor)
+    return model, processor
 
 
 def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
@@ -120,7 +159,7 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
     has_image = temp_image_path is not None
     logger.info(f"Starting mlx_vlm inference for {model_id} (image={'yes' if has_image else 'no'})...")
     try:
-        result = mlx_vlm_generate(
+        result = _mlx_vlm_generate(
             model, processor, prompt,
             image=temp_image_path,
             max_tokens=2048,
@@ -165,12 +204,10 @@ def strip_thinking(text):
     return text.strip()
 
 async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
-    """Shared inference helper — runs blocking inference in a thread pool so the
-    asyncio event loop stays responsive during agent loops and concurrent chat."""
-    loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(
-        _inference_executor, handle_mlx_vlm_request, model_id, messages
-    )
+    """Shared inference helper — runs blocking inference in the dedicated mlx
+    thread so the asyncio event loop stays responsive and mlx GPU streams remain
+    valid (streams are thread-local in mlx)."""
+    result = await _run_in_inference_thread(handle_mlx_vlm_request, model_id, messages)
     try:
         return result["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as e:
