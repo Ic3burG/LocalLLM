@@ -12,8 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import litert_lm
-from litert_lm import Backend
+from mlx_vlm import load as mlx_vlm_load, generate as mlx_vlm_generate
 import uvicorn
 import pdf_pipeline
 
@@ -24,9 +23,6 @@ logger = logging.getLogger("gemma_bridge")
 # Single-worker executor: inference is serialised (one model) but the asyncio
 # event loop is released between calls so chat/agent/SSE stay responsive.
 _inference_executor = ThreadPoolExecutor(max_workers=1)
-
-# MLX-LM is loaded only when needed to save memory
-mlx_lm_module = None
 
 app = FastAPI()
 
@@ -40,53 +36,102 @@ app.add_middleware(
 )
 
 # Configuration
-MODELS_BASE_DIR = os.path.expanduser("~/.litert-lm/models")
 MLX_MODELS_DIR = os.path.join(os.getcwd(), "mlx_models")
 MEMORY_FILE = os.path.join(os.getcwd(), "USER_MEMORY.md")
 PORT = 9379
 
-# Model cache
-litert_engines = {}
-mlx_models_cache = {}
+# Model cache: model_id -> (model, processor)
+_vlm_cache: dict = {}
+
+_MODEL_DIR_MAP = {
+    "gemma4-e4b":     "gemma-3-4b-it-4bit",
+    "gemma4-26b-mlx": "gemma-4-26b-it-4bit",
+    "gemma4-31b-mlx": "gemma-4-31b-it-4bit",
+}
 
 # In-memory document store: doc_id -> {filename, page_count, chunks, embeddings}
 doc_store: dict = {}
 
-def get_litert_engine(model_id):
-    if model_id in litert_engines:
-        return litert_engines[model_id]
-    
-    model_path = os.path.join(MODELS_BASE_DIR, model_id, "model.litertlm")
+def get_mlx_vlm_model(model_id: str):
+    if model_id in _vlm_cache:
+        return _vlm_cache[model_id]
+    dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
+    model_path = os.path.join(MLX_MODELS_DIR, dir_name)
     if not os.path.exists(model_path):
-        if os.path.exists(os.path.join(MODELS_BASE_DIR, model_id)):
-             if os.path.isfile(os.path.join(MODELS_BASE_DIR, model_id)):
-                 model_path = os.path.join(MODELS_BASE_DIR, model_id)
-    
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"LiteRT model file not found at {model_path}")
-        
-    logger.info(f"Loading LiteRT engine for {model_id}...")
-    engine = litert_lm.Engine(model_path, vision_backend=Backend.CPU)
-    litert_engines[model_id] = engine
-    return engine
+        raise FileNotFoundError(f"mlx_vlm model directory not found: {model_path}")
+    logger.info(f"Loading mlx_vlm model {model_id} from {model_path}...")
+    model, processor = mlx_vlm_load(model_path)
+    _vlm_cache[model_id] = (model, processor)
+    return model, processor
 
-def get_mlx_model(model_id):
-    global mlx_lm_module
-    if mlx_lm_module is None:
-        import mlx_lm
-        mlx_lm_module = mlx_lm
-        
-    if model_id in mlx_models_cache:
-        return mlx_models_cache[model_id]
-    
-    model_path = os.path.join(MLX_MODELS_DIR, model_id)
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"MLX model directory not found at {model_path}")
-        
-    logger.info(f"Loading MLX model {model_id}...")
-    model, tokenizer = mlx_lm_module.load(model_path)
-    mlx_models_cache[model_id] = (model, tokenizer)
-    return model, tokenizer
+
+def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
+    model, processor = get_mlx_vlm_model(model_id)
+
+    # Build clean message list; only the final message may carry an image
+    clean_messages = []
+    temp_image_path = None
+
+    for i, msg in enumerate(messages):
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        is_last = i == len(messages) - 1
+
+        if isinstance(content, list):
+            text_parts = [c.get("text", "") for c in content if c.get("type") == "text"]
+            text = " ".join(text_parts)
+            if is_last and temp_image_path is None:
+                for c in content:
+                    if c.get("type") == "image_url":
+                        url = c.get("image_url", {}).get("url", "")
+                        if url.startswith("data:image"):
+                            try:
+                                header, encoded = url.split(",", 1)
+                                ext = header.split(";")[0].split("/")[1]
+                                data = base64.b64decode(encoded)
+                                with tempfile.NamedTemporaryFile(
+                                    delete=False, suffix=f".{ext}"
+                                ) as tmp:
+                                    tmp.write(data)
+                                    temp_image_path = tmp.name
+                                logger.info(f"Saved temp image for mlx_vlm: {temp_image_path}")
+                            except Exception as e:
+                                logger.error(f"Failed to decode image, continuing text-only: {e}")
+                        break
+            clean_messages.append({"role": role, "content": text})
+        else:
+            clean_messages.append({"role": role, "content": content or ""})
+
+    # Render the prompt string using the processor's chat template
+    try:
+        prompt = processor.apply_chat_template(
+            clean_messages, tokenize=False, add_generation_prompt=True
+        )
+    except Exception:
+        prompt = processor.tokenizer.apply_chat_template(
+            clean_messages, tokenize=False, add_generation_prompt=True
+        )
+
+    has_image = temp_image_path is not None
+    logger.info(f"Starting mlx_vlm inference for {model_id} (image={'yes' if has_image else 'no'})...")
+    try:
+        result = mlx_vlm_generate(
+            model, processor, prompt,
+            image=temp_image_path,
+            max_tokens=2048,
+            verbose=False,
+        )
+    finally:
+        if temp_image_path and os.path.exists(temp_image_path):
+            try:
+                os.remove(temp_image_path)
+            except Exception:
+                pass
+
+    # mlx_vlm.generate returns a GenerationResult object; extract text
+    generated_text = result.text if hasattr(result, "text") else str(result)
+    return format_openai_response(model_id, generated_text)
+
 
 def get_user_memory():
     try:
@@ -117,10 +162,10 @@ def strip_thinking(text):
 async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Shared inference helper — runs blocking inference in a thread pool so the
     asyncio event loop stays responsive during agent loops and concurrent chat."""
-    is_mlx = "26b" in model_id.lower() or "31b" in model_id.lower() or "mlx" in model_id.lower()
-    fn = handle_mlx_request if is_mlx else handle_litert_request
     loop = asyncio.get_event_loop()
-    result = await loop.run_in_executor(_inference_executor, fn, model_id, messages)
+    result = await loop.run_in_executor(
+        _inference_executor, handle_mlx_vlm_request, model_id, messages
+    )
     try:
         return result["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as e:
@@ -174,14 +219,10 @@ INSTRUCTIONS:
 @app.get("/v1/models")
 async def list_models():
     available = []
-    if os.path.exists(MODELS_BASE_DIR):
-        for d in os.listdir(MODELS_BASE_DIR):
-            if os.path.isdir(os.path.join(MODELS_BASE_DIR, d)):
-                available.append({"id": d, "object": "model", "provider": "litert"})
     if os.path.exists(MLX_MODELS_DIR):
         for d in os.listdir(MLX_MODELS_DIR):
             if os.path.isdir(os.path.join(MLX_MODELS_DIR, d)):
-                available.append({"id": d, "object": "model", "provider": "mlx"})
+                available.append({"id": d, "object": "model", "provider": "mlx_vlm"})
     return {"data": available}
 
 @app.get("/v1/memory")
@@ -339,105 +380,6 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
     except Exception as e:
         logger.error(f"Error during inference: {e}", exc_info=True)
         return JSONResponse(content={"error": str(e)}, status_code=500)
-
-def process_multimodal_content(content, current_temp_files):
-    if not isinstance(content, list):
-        return content
-    
-    processed_content = []
-    has_image = False
-    for item in content:
-        if item.get("type") == "text":
-            processed_content.append({"type": "text", "text": item.get("text")})
-        elif item.get("type") == "image_url":
-            url = item.get("image_url", {}).get("url", "")
-            if url.startswith("data:image"):
-                try:
-                    logger.info("Processing base64 image...")
-                    header, encoded = url.split(",", 1)
-                    ext = header.split(";")[0].split("/")[1]
-                    data = base64.b64decode(encoded)
-                    
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{ext}") as tmp:
-                        tmp.write(data)
-                        processed_content.append({"type": "image", "path": tmp.name})
-                        current_temp_files.append(tmp.name)
-                        has_image = True
-                        logger.info(f"Saved temp image to {tmp.name}")
-                except Exception as e:
-                    logger.error(f"Failed to decode image: {e}")
-            else:
-                processed_content.append({"type": "image", "path": url})
-                has_image = True
-        else:
-            processed_content.append(item)
-    
-    # The LiteRT engine's internal chat template already inserts <|image|> tokens
-    # when it encounters {"type": "image", ...} items. Injecting them manually
-    # causes an INVALID_ARGUMENT: token count > image count mismatch.
-    return processed_content
-
-def handle_litert_request(model_id, messages):
-    engine = get_litert_engine(model_id)
-    current_temp_files = []
-    processed_messages = []
-    
-    for i, msg in enumerate(messages):
-        role = msg.get("role")
-        content = msg.get("content")
-        if i == len(messages) - 1:
-            processed_content = process_multimodal_content(content, current_temp_files)
-            processed_messages.append({"role": role, "content": processed_content})
-        else:
-            if isinstance(content, list):
-                text_content = " ".join([item.get("text", "") for item in content if item.get("type") == "text"])
-                processed_messages.append({"role": role, "content": text_content})
-            else:
-                processed_messages.append({"role": role, "content": content})
-
-    last_msg = processed_messages[-1]
-    preface = processed_messages[:-1]
-
-    try:
-        logger.info(f"Starting LiteRT inference for {model_id}...")
-        with engine.create_conversation(messages=preface) as conversation:
-            # send_message requires a dict (containing role and content) or a str.
-            # Passing only the content list causes a RuntimeError.
-            response_data = conversation.send_message(last_msg)
-            content = "".join([item.get("text", "") for item in response_data.get("content", []) if item.get("type") == "text"])
-            return format_openai_response(model_id, content)
-    finally:
-        for f in current_temp_files:
-            try:
-                if os.path.exists(f):
-                    os.remove(f)
-            except: pass
-
-def handle_mlx_request(model_id, messages):
-    # mlx_lm does not support multimodal inputs; mlx_vlm is required for images.
-    for m in messages:
-        content = m.get("content")
-        if isinstance(content, list) and any(c.get("type") == "image_url" for c in content):
-            raise ValueError(
-                f"Model '{model_id}' uses mlx_lm which does not support images. "
-                "Use the Gemma 4 E4B (LiteRT) model for image inputs, or switch to mlx_vlm."
-            )
-
-    model, tokenizer = get_mlx_model(model_id)
-    clean_messages = []
-    for m in messages:
-        role = m.get("role")
-        content = m.get("content")
-        if isinstance(content, list):
-            text_only = " ".join([c.get("text", "") for c in content if c.get("type") == "text"])
-            clean_messages.append({"role": role, "content": text_only})
-        else:
-            clean_messages.append(m)
-            
-    prompt = tokenizer.apply_chat_template(clean_messages, tokenize=False, add_generation_prompt=True)
-    logger.info(f"Starting MLX inference for {model_id}...")
-    response = mlx_lm_module.generate(model, tokenizer, prompt=prompt, verbose=False, max_tokens=2048)
-    return format_openai_response(model_id, response)
 
 def format_openai_response(model_id, content):
     completion_id = f"chatcmpl-{uuid.uuid4()}"
