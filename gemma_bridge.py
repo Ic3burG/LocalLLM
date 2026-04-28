@@ -42,6 +42,7 @@ PORT = 9379
 
 # Model cache: model_id -> (model, processor)
 _vlm_cache: dict = {}
+_vlm_cache_lock = threading.Lock()
 
 _MODEL_DIR_MAP = {
     "gemma4-e4b":     "gemma-3-4b-it-4bit",
@@ -55,14 +56,17 @@ doc_store: dict = {}
 def get_mlx_vlm_model(model_id: str):
     if model_id in _vlm_cache:
         return _vlm_cache[model_id]
-    dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
-    model_path = os.path.join(MLX_MODELS_DIR, dir_name)
-    if not os.path.exists(model_path):
-        raise FileNotFoundError(f"mlx_vlm model directory not found: {model_path}")
-    logger.info(f"Loading mlx_vlm model {model_id} from {model_path}...")
-    model, processor = mlx_vlm_load(model_path)
-    _vlm_cache[model_id] = (model, processor)
-    return model, processor
+    with _vlm_cache_lock:
+        if model_id in _vlm_cache:  # re-check under lock
+            return _vlm_cache[model_id]
+        dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
+        model_path = os.path.join(MLX_MODELS_DIR, dir_name)
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"mlx_vlm model directory not found: {model_path}")
+        logger.info(f"Loading mlx_vlm model {model_id} from {model_path}...")
+        model, processor = mlx_vlm_load(model_path)
+        _vlm_cache[model_id] = (model, processor)
+        return model, processor
 
 
 def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
@@ -97,7 +101,7 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
                                 logger.info(f"Saved temp image for mlx_vlm: {temp_image_path}")
                             except Exception as e:
                                 logger.error(f"Failed to decode image, continuing text-only: {e}")
-                        break
+                            break
             clean_messages.append({"role": role, "content": text})
         else:
             clean_messages.append({"role": role, "content": content or ""})
@@ -107,7 +111,8 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
         prompt = processor.apply_chat_template(
             clean_messages, tokenize=False, add_generation_prompt=True
         )
-    except Exception:
+    except Exception as e:
+        logger.warning(f"processor.apply_chat_template failed ({e}), trying tokenizer fallback")
         prompt = processor.tokenizer.apply_chat_template(
             clean_messages, tokenize=False, add_generation_prompt=True
         )
@@ -218,11 +223,13 @@ INSTRUCTIONS:
 
 @app.get("/v1/models")
 async def list_models():
+    _reverse_map = {v: k for k, v in _MODEL_DIR_MAP.items()}
     available = []
     if os.path.exists(MLX_MODELS_DIR):
         for d in os.listdir(MLX_MODELS_DIR):
             if os.path.isdir(os.path.join(MLX_MODELS_DIR, d)):
-                available.append({"id": d, "object": "model", "provider": "mlx_vlm"})
+                model_id = _reverse_map.get(d, d)
+                available.append({"id": model_id, "object": "model", "provider": "mlx_vlm"})
     return {"data": available}
 
 @app.get("/v1/memory")
@@ -393,5 +400,5 @@ def format_openai_response(model_id, content):
     }
 
 if __name__ == "__main__":
-    logger.info(f"Starting Multi-Engine Gemma Bridge on port {PORT}...")
+    logger.info(f"Starting mlx_vlm Gemma Bridge on port {PORT}...")
     uvicorn.run(app, host="0.0.0.0", port=PORT)
