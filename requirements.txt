@@ -5,3 +5,11 @@ python-multipart
 apscheduler
 mlx-vlm
 Pillow
+googlesearch-python
+requests
+beautifulsoup4
+pyperclip
+googlesearch-python
+requests
+beautifulsoup4
+pyperclip
