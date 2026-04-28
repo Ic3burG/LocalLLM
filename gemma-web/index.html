@@ -6,7 +6,7 @@
     <title>Gemma 4 Local Chat</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <link id="hljs-theme" rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <script>
@@ -322,6 +322,9 @@
             const isDark = document.documentElement.classList.contains('dark');
             themeIconContainer.innerHTML = isDark ? sunIcon : moonIcon;
             document.getElementById('theme-text').textContent = isDark ? 'Switch to Light' : 'Switch to Dark';
+            const hljsTheme = isDark ? 'github-dark' : 'github';
+            document.getElementById('hljs-theme').href =
+                `https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/${hljsTheme}.min.css`;
         }
 
         if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
