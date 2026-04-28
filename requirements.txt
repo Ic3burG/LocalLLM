@@ -3,3 +3,5 @@ sentence-transformers
 numpy
 python-multipart
 apscheduler
+mlx-vlm
+Pillow
