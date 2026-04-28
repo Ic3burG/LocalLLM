@@ -91,11 +91,6 @@
             --bg: #f8f9fa;
         }
 
-        /* Agent mode toggle */
-        .mode-toggle { display: flex; gap: 6px; margin-bottom: 8px; }
-        .mode-toggle button { padding: 4px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); cursor: pointer; font-size: 12px; }
-        .mode-toggle button.mode-active { background: var(--accent); color: white; border-color: var(--accent); }
-
         /* Trace */
         .agent-trace { margin: 8px 0; font-size: 12px; }
         .trace-summary { background: var(--surface); padding: 6px 10px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); user-select: none; }
@@ -237,11 +232,6 @@
         <footer class="p-4 md:p-8 pt-0 relative max-w-4xl mx-auto w-full">
             <div id="typing" class="hidden absolute -top-6 left-8 text-xs text-blue-500 dark:text-blue-400 font-medium typing-indicator">Thinking...</div>
             <div id="attachment-preview" class="hidden flex flex-wrap gap-2 mb-3 px-2"></div>
-
-            <div class="mode-toggle">
-                <button type="button" id="btn-chat-mode" class="mode-active" onclick="setAgentMode(false)">💬 Chat</button>
-                <button type="button" id="btn-agent-mode" onclick="setAgentMode(true)">🤖 Agent</button>
-            </div>
 
             <form id="chat-form" class="flex items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl">
                 <input type="file" id="file-input" class="hidden" multiple accept="image/*,.txt,.pdf,.md">
@@ -687,7 +677,6 @@
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (agentMode) { runAgent(); return; }
             const text = userInput.value.trim();
             if (!text && currentAttachments.length === 0) return;
             if (!currentChatId) createNewChat();
@@ -736,27 +725,34 @@
                 }).catch(err => console.error("Title gen error:", err));
             }
 
-            typingIndicator.classList.remove('hidden'); sendBtn.disabled = true;
+            setAgentStatus('Thinking...');
             try {
-                const response = await fetch('http://localhost:3001/api/chat', {
+                const response = await fetch('http://localhost:3001/api/chat/stream', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ messages: currentChat.messages, model: currentChat.model, doc_ids })
                 });
                 if (!response.ok) {
-                    if (response.status === 413) throw new Error("The image is too large for the local server to process. Please try a smaller file.");
-                    const errText = await response.text(); throw new Error(errText || `Server error: ${response.status}`);
+                    const errText = await response.text(); 
+                    throw new Error(errText || `Server error: ${response.status}`);
                 }
-                let data;
-                try { data = await response.json(); } catch (jsonErr) { console.error("JSON Parse Error:", jsonErr); throw new Error("Invalid response from server. The image might be incompatible or the server crashed."); }
-                if (data.error) throw new Error(data.error);
-                const reply = data.choices[0].message.content;
-                appendMessage('assistant', reply);
-                currentChat.messages.push({ role: 'assistant', content: reply });
-                saveChats();
-                setTimeout(refreshMemoryPreview, 2000); 
-            } catch (error) { console.error("Chat Error:", error); appendMessage('assistant', `Error: ${error.message}`); } 
-            finally { typingIndicator.classList.add('hidden'); sendBtn.disabled = false; }
+                const { task_id } = await response.json();
+                
+                const traceContainer = createTraceContainer(task_id);
+                appendToChat(traceContainer);
+                const startTime = Date.now();
+
+                const es = new EventSource(`http://localhost:3001/api/chat/stream/${task_id}`);
+                es.onmessage = (e) => {
+                    const event = JSON.parse(e.data);
+                    handleAgentEvent(event, task_id, traceContainer, startTime, es, currentChat);
+                };
+                es.onerror = () => { clearAgentStatus(); es.close(); };
+            } catch (error) { 
+                console.error("Chat Error:", error); 
+                appendMessage('assistant', `Error: ${error.message}`); 
+                clearAgentStatus();
+            } 
         });
 
         userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatForm.dispatchEvent(new Event('submit')); } });
@@ -765,15 +761,7 @@
         if (chats.length > 0) loadChat(chats[0].id); else sidebar.classList.add('closed');
         refreshMemoryPreview();
 
-        // ── Agent Mode ──────────────────────────────────────────────────────
-
-        let agentMode = false;
-
-        function setAgentMode(enabled) {
-            agentMode = enabled;
-            document.getElementById('btn-chat-mode').classList.toggle('mode-active', !enabled);
-            document.getElementById('btn-agent-mode').classList.toggle('mode-active', enabled);
-        }
+        // ── Agent UI Helpers ────────────────────────────────────────────────
 
         function appendToChat(element) {
             chatBox.appendChild(element);
@@ -914,17 +902,6 @@
             return card;
         }
 
-        async function resolveConfirm(taskId, approved, card) {
-            card.remove();
-            await fetch(`http://localhost:3001/api/agent/confirm/${taskId}`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({approved}),
-            });
-        }
-
-        // ── runAgent ──────────────────────────────────────────────────────────
-
         function setAgentStatus(text) {
             typingIndicator.textContent = text;
             typingIndicator.classList.remove('hidden');
@@ -935,45 +912,6 @@
             typingIndicator.classList.add('hidden');
             typingIndicator.textContent = 'Thinking...';
             sendBtn.disabled = false;
-        }
-
-        async function runAgent() {
-            const prompt = userInput.value.trim();
-            if (!prompt) return;
-            userInput.value = '';
-            userInput.style.height = 'auto';
-
-            appendUserMessage(prompt);
-            setAgentStatus('Agent thinking...');
-
-            let task_id;
-            try {
-                const res = await fetch('http://localhost:3001/api/agent/run', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({prompt, model_id: getCurrentModelId()}),
-                });
-                ({task_id} = await res.json());
-            } catch (err) {
-                clearAgentStatus();
-                const errEl = document.createElement('div');
-                errEl.className = 'agent-error-message';
-                errEl.textContent = '⚠ Failed to start agent: ' + err.message;
-                appendToChat(errEl);
-                return;
-            }
-
-            const traceContainer = createTraceContainer(task_id);
-            appendToChat(traceContainer);
-
-            const startTime = Date.now();
-
-            const es = new EventSource(`http://localhost:3001/api/agent/stream/${task_id}`);
-            es.onmessage = (e) => {
-                const event = JSON.parse(e.data);
-                handleAgentEvent(event, task_id, traceContainer, startTime, es);
-            };
-            es.onerror = () => { clearAgentStatus(); es.close(); };
         }
 
         // ── Scheduled Tasks Panel ─────────────────────────────────────────────
@@ -1079,7 +1017,7 @@
 
         // ── Agent Event Handler ───────────────────────────────────────────────
 
-        function handleAgentEvent(event, taskId, traceContainer, startTime, es) {
+        function handleAgentEvent(event, taskId, traceContainer, startTime, es, currentChat) {
             const stepCount = traceContainer.querySelectorAll('.trace-step').length;
             if (event.type === 'step') {
                 addTraceStep(traceContainer, event.tool, event.args, event.result, event.elapsed_ms, undefined);
@@ -1095,12 +1033,16 @@
             } else if (event.type === 'done') {
                 traceContainer.dataset.elapsed = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
                 updateTraceSummary(traceContainer);
-                const msg = document.createElement('div');
-                msg.className = 'agent-done-message';
-                msg.textContent = '✅ ' + event.message;
-                appendToChat(msg);
+                
+                appendMessage('assistant', event.message);
+                if (currentChat) {
+                    currentChat.messages.push({ role: 'assistant', content: event.message });
+                    saveChats();
+                }
+                
                 clearAgentStatus();
                 es.close();
+                setTimeout(refreshMemoryPreview, 2000);
             } else if (event.type === 'error') {
                 const errEl = document.createElement('div');
                 errEl.className = 'agent-error-message';

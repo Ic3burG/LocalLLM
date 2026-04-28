@@ -55,6 +55,43 @@ app.post("/api/chat", async (req, res) => {
   }
 });
 
+app.post("/api/chat/stream", async (req, res) => {
+  try {
+    const response = await axios.post(
+      "http://localhost:9379/v1/chat/stream",
+      req.body,
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error("Error starting unified chat stream:", error.message);
+    res.status(500).json({ error: "Failed to start chat stream" });
+  }
+});
+
+app.get("/api/chat/stream/:taskId", (req, res) => {
+  const taskId = req.params.taskId;
+  const options = {
+    hostname: "localhost",
+    port: 9379,
+    path: `/v1/agent/stream/${taskId}`,
+    method: "GET",
+  };
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders();
+  const proxyReq = http.request(options, (proxyRes) => {
+    proxyRes.pipe(res);
+  });
+  proxyReq.on("error", (err) => {
+    console.error("SSE proxy error:", err);
+    res.end();
+  });
+  req.on("close", () => proxyReq.destroy());
+  proxyReq.end();
+});
+
 app.post("/api/title", async (req, res) => {
   try {
     const { messages } = req.body;
