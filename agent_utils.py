@@ -29,7 +29,9 @@ def validate_path(path_str: str, must_exist: bool = True) -> Path:
     target = Path(os.path.expanduser(path_str)).resolve()
 
     # Security Check: Ensure target is within base
-    if not str(target).startswith(str(base)):
+    try:
+        target.relative_to(base)
+    except ValueError:
         raise PermissionError(f"Access denied: {path_str} is outside the sandbox.")
 
     if must_exist and not target.exists():
