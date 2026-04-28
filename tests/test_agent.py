@@ -17,6 +17,7 @@ _make_stub(
     "fastapi.middleware",
     "fastapi.middleware.cors",
     "litert_lm",
+    "mlx_vlm",
     "uvicorn",
     "pdf_pipeline",
 )
