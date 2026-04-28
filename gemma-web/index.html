@@ -75,6 +75,67 @@
             color: #6b7280;
         }
         .dark .thought-block { background: rgba(59, 130, 246, 0.1); color: #9ca3af; }
+
+        /* CSS variables for agent UI */
+        :root {
+            --accent: #3b82f6;
+            --border: #3c3d40;
+            --surface: #1e1f20;
+            --text-secondary: #9ca3af;
+            --bg: #0e0e11;
+        }
+        .light {
+            --border: #e5e7eb;
+            --surface: #f9fafb;
+            --text-secondary: #6b7280;
+            --bg: #f8f9fa;
+        }
+
+        /* Agent mode toggle */
+        .mode-toggle { display: flex; gap: 6px; margin-bottom: 8px; }
+        .mode-toggle button { padding: 4px 14px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text-secondary); cursor: pointer; font-size: 12px; }
+        .mode-toggle button.mode-active { background: var(--accent); color: white; border-color: var(--accent); }
+
+        /* Trace */
+        .agent-trace { margin: 8px 0; font-size: 12px; }
+        .trace-summary { background: var(--surface); padding: 6px 10px; border-radius: 6px; cursor: pointer; color: var(--text-secondary); user-select: none; }
+        .trace-steps { padding-left: 8px; border-left: 2px solid var(--border); margin-top: 4px; }
+        .trace-step { margin: 4px 0; }
+        .trace-call { font-family: monospace; color: #22c55e; font-size: 11px; }
+        .trace-result { font-family: monospace; color: var(--text-secondary); font-size: 10px; padding-left: 12px; white-space: pre-wrap; word-break: break-word; max-height: 60px; overflow: hidden; }
+
+        /* Confirm card */
+        .confirm-card { border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; margin: 8px 0; background: var(--bg); }
+        .confirm-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-weight: 600; }
+        .confirm-args { background: var(--surface); padding: 8px; border-radius: 6px; font-family: monospace; font-size: 10px; margin: 8px 0; white-space: pre-wrap; }
+        .confirm-desc { color: var(--text-secondary); font-size: 11px; margin-bottom: 10px; }
+        .confirm-buttons { display: flex; gap: 8px; }
+        .btn-allow { background: #22c55e; color: white; border: none; padding: 5px 14px; border-radius: 6px; cursor: pointer; }
+        .btn-deny { background: #ef444422; color: #ef4444; border: 1px solid #ef4444; padding: 5px 14px; border-radius: 6px; cursor: pointer; }
+
+        /* Agent messages */
+        .agent-done-message { padding: 8px 12px; color: #22c55e; font-size: 13px; }
+        .agent-error-message { padding: 8px 12px; color: #ef4444; font-size: 13px; }
+
+        /* Scheduled tasks panel */
+        .sidebar-section { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 8px; }
+        .sidebar-section-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 6px 0; font-size: 13px; font-weight: 600; color: var(--text-secondary); user-select: none; }
+        .sidebar-section-header:hover { color: var(--text, #fff); }
+        .tasks-subsection { margin: 8px 0; }
+        .tasks-subsection-header { font-size: 11px; font-weight: 600; color: var(--accent, #a78bfa); margin-bottom: 6px; }
+        .task-card { background: var(--surface); padding: 8px; border-radius: 6px; margin-bottom: 6px; font-size: 11px; }
+        .task-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+        .task-active-badge { color: #22c55e; font-size: 10px; }
+        .task-delete-btn { background: none; border: none; cursor: pointer; font-size: 12px; opacity: 0.6; padding: 0 2px; }
+        .task-delete-btn:hover { opacity: 1; }
+        .task-schedule { font-family: monospace; color: var(--text-secondary); font-size: 10px; margin-bottom: 2px; }
+        .task-prompt { color: var(--text-secondary); font-size: 10px; font-style: italic; }
+        .tasks-empty { color: var(--text-secondary); font-size: 11px; font-style: italic; padding: 4px 0; }
+        .add-task-btn { background: none; border: 1px dashed var(--border); color: var(--text-secondary); padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; margin-top: 4px; width: 100%; }
+        .add-task-btn:hover { border-color: var(--accent, #a78bfa); color: var(--accent, #a78bfa); }
+        .task-input { width: 100%; background: var(--surface); border: 1px solid var(--border); color: var(--text, #fff); padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 4px; box-sizing: border-box; }
+        .btn-save-task { background: var(--accent, #a78bfa); color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+        .btn-cancel-task { background: var(--surface); color: var(--text-secondary); border: 1px solid var(--border); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; }
     </style>
 </head>
 <body class="bg-lightBg text-gray-900 dark:bg-darkBg dark:text-gray-200 flex h-screen overflow-hidden">
@@ -103,6 +164,40 @@
                 <span id="theme-icon-container"></span>
                 <span id="theme-text">Toggle Theme</span>
             </button>
+
+            <div id="scheduled-tasks-panel" class="sidebar-section">
+                <div class="sidebar-section-header" onclick="toggleScheduledPanel()">
+                    <span>📅 Scheduled Tasks</span>
+                    <span id="scheduled-chevron">▼</span>
+                </div>
+                <div id="scheduled-tasks-body" style="display:none">
+
+                    <!-- In-App Tasks -->
+                    <div class="tasks-subsection">
+                        <div class="tasks-subsection-header">🤖 In-App Tasks</div>
+                        <div id="in-app-tasks-list"></div>
+                        <button class="add-task-btn" onclick="showAddTaskForm()">+ Add Task</button>
+                        <div id="add-task-form" style="display:none">
+                            <input id="new-task-name" type="text" placeholder="Task name" class="task-input">
+                            <input id="new-task-schedule" type="text" placeholder="Cron schedule (e.g. 0 9 * * *)" class="task-input">
+                            <textarea id="new-task-prompt" placeholder="Agent prompt..." class="task-input" rows="2"></textarea>
+                            <div style="display:flex;gap:6px;margin-top:4px">
+                                <button onclick="submitAddTask()" class="btn-save-task">Save</button>
+                                <button onclick="showAddTaskForm()" class="btn-cancel-task">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- System Cron (read-only display for now) -->
+                    <div class="tasks-subsection">
+                        <div class="tasks-subsection-header">⚙ System Cron Jobs</div>
+                        <div id="system-cron-list">
+                            <div class="tasks-empty">Run agent with "list my cron jobs" to see system crontab.</div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
         </div>
     </aside>
 
@@ -142,6 +237,11 @@
         <footer class="p-4 md:p-8 pt-0 relative max-w-4xl mx-auto w-full">
             <div id="typing" class="hidden absolute -top-6 left-8 text-xs text-blue-500 dark:text-blue-400 font-medium typing-indicator">Thinking...</div>
             <div id="attachment-preview" class="hidden flex flex-wrap gap-2 mb-3 px-2"></div>
+
+            <div class="mode-toggle">
+                <button type="button" id="btn-chat-mode" class="mode-active" onclick="setAgentMode(false)">💬 Chat</button>
+                <button type="button" id="btn-agent-mode" onclick="setAgentMode(true)">🤖 Agent</button>
+            </div>
 
             <form id="chat-form" class="flex items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl">
                 <input type="file" id="file-input" class="hidden" multiple accept="image/*,.txt,.pdf,.md">
@@ -587,6 +687,7 @@
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (agentMode) { runAgent(); return; }
             const text = userInput.value.trim();
             if (!text && currentAttachments.length === 0) return;
             if (!currentChatId) createNewChat();
@@ -663,6 +764,324 @@
         renderHistory();
         if (chats.length > 0) loadChat(chats[0].id); else sidebar.classList.add('closed');
         refreshMemoryPreview();
+
+        // ── Agent Mode ──────────────────────────────────────────────────────
+
+        let agentMode = false;
+
+        function setAgentMode(enabled) {
+            agentMode = enabled;
+            document.getElementById('btn-chat-mode').classList.toggle('mode-active', !enabled);
+            document.getElementById('btn-agent-mode').classList.toggle('mode-active', enabled);
+        }
+
+        function appendToChat(element) {
+            chatBox.appendChild(element);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+
+        function getCurrentModelId() {
+            return modelSelect.value;
+        }
+
+        function appendUserMessage(prompt) {
+            if (!currentChatId) createNewChat();
+            appendMessage('user', prompt, [], true);
+        }
+
+        // ── Trace UI ─────────────────────────────────────────────────────────
+
+        function createTraceContainer(taskId) {
+            const container = document.createElement('div');
+            container.className = 'agent-trace';
+            container.dataset.taskId = taskId;
+
+            const summary = document.createElement('div');
+            summary.className = 'trace-summary';
+            container.appendChild(summary);
+
+            const steps = document.createElement('div');
+            steps.className = 'trace-steps';
+            steps.style.display = 'none';
+            container.appendChild(steps);
+
+            summary.addEventListener('click', () => {
+                const expanded = steps.style.display !== 'none';
+                steps.style.display = expanded ? 'none' : 'block';
+                updateTraceSummary(container);
+            });
+
+            updateTraceSummary(container);
+            return container;
+        }
+
+        function updateTraceSummary(container) {
+            const steps = container.querySelector('.trace-steps');
+            const summary = container.querySelector('.trace-summary');
+            const stepCount = container.querySelectorAll('.trace-step').length;
+            const elapsed = container.dataset.elapsed || '...';
+            const expanded = steps.style.display !== 'none';
+
+            summary.textContent = '';
+            const icon = document.createElement('span');
+            icon.textContent = `⚙ ${stepCount} steps · ${elapsed}`;
+            const chevron = document.createElement('span');
+            chevron.textContent = expanded ? ' ▲ collapse' : ' ▼ expand';
+            chevron.style.color = 'var(--accent)';
+            summary.appendChild(icon);
+            summary.appendChild(chevron);
+        }
+
+        function addTraceStep(container, toolName, args, result, elapsedMs, approved) {
+            const step = document.createElement('div');
+            step.className = 'trace-step';
+
+            const call = document.createElement('div');
+            call.className = 'trace-call';
+            const argsStr = JSON.stringify(args);
+            call.textContent = `→ ${toolName}(${argsStr})`;
+            if (approved !== undefined) {
+                const badge = document.createElement('span');
+                badge.textContent = approved ? ' ✓ approved' : ' ✕ denied';
+                badge.style.color = approved ? '#22c55e' : '#ef4444';
+                call.appendChild(badge);
+            }
+
+            const resultEl = document.createElement('div');
+            resultEl.className = 'trace-result';
+            const preview = typeof result === 'string' && result.length > 120
+                ? result.slice(0, 120) + '…'
+                : result;
+            resultEl.textContent = String(preview);
+
+            step.appendChild(call);
+            step.appendChild(resultEl);
+            container.querySelector('.trace-steps').appendChild(step);
+            updateTraceSummary(container);
+        }
+
+        // ── Confirmation Modal ────────────────────────────────────────────────
+
+        function createConfirmCard(taskId, toolName, args) {
+            const card = document.createElement('div');
+            card.className = 'confirm-card';
+            card.dataset.taskId = taskId;
+
+            const header = document.createElement('div');
+            header.className = 'confirm-header';
+            const warning = document.createElement('span');
+            warning.textContent = '⚠️ Agent wants to run: ';
+            const toolSpan = document.createElement('code');
+            toolSpan.textContent = toolName;
+            header.appendChild(warning);
+            header.appendChild(toolSpan);
+
+            const argsEl = document.createElement('pre');
+            argsEl.className = 'confirm-args';
+            argsEl.textContent = JSON.stringify(args, null, 2);
+
+            const desc = document.createElement('div');
+            desc.className = 'confirm-desc';
+            const riskDescriptions = {
+                'write_file': 'This will create or overwrite a file.',
+                'append_file': 'This will append text to a file.',
+                'shell': 'This will run a shell command on your computer.',
+                'create_cron': 'This will add a cron job to your system crontab.',
+                'delete_cron': 'This will remove a cron job from your system crontab.',
+                'create_scheduled_task': 'This will create a recurring agent task.',
+            };
+            desc.textContent = riskDescriptions[toolName] || 'This action requires your approval.';
+
+            const buttons = document.createElement('div');
+            buttons.className = 'confirm-buttons';
+            const allowBtn = document.createElement('button');
+            allowBtn.textContent = '✓ Allow';
+            allowBtn.className = 'btn-allow';
+            const denyBtn = document.createElement('button');
+            denyBtn.textContent = '✕ Deny';
+            denyBtn.className = 'btn-deny';
+            buttons.appendChild(allowBtn);
+            buttons.appendChild(denyBtn);
+
+            card.appendChild(header);
+            card.appendChild(argsEl);
+            card.appendChild(desc);
+            card.appendChild(buttons);
+
+            allowBtn.addEventListener('click', () => resolveConfirm(taskId, true, card));
+            denyBtn.addEventListener('click', () => resolveConfirm(taskId, false, card));
+
+            return card;
+        }
+
+        async function resolveConfirm(taskId, approved, card) {
+            card.remove();
+            await fetch(`/api/agent/confirm/${taskId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({approved}),
+            });
+        }
+
+        // ── runAgent ──────────────────────────────────────────────────────────
+
+        async function runAgent() {
+            const prompt = userInput.value.trim();
+            if (!prompt) return;
+            userInput.value = '';
+            userInput.style.height = 'auto';
+
+            appendUserMessage(prompt);
+
+            const res = await fetch('/api/agent/run', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({prompt, model_id: getCurrentModelId()}),
+            });
+            const {task_id} = await res.json();
+
+            const traceContainer = createTraceContainer(task_id);
+            appendToChat(traceContainer);
+
+            const startTime = Date.now();
+
+            const es = new EventSource(`/api/agent/stream/${task_id}`);
+            es.onmessage = (e) => {
+                const event = JSON.parse(e.data);
+                handleAgentEvent(event, task_id, traceContainer, startTime, es);
+            };
+            es.onerror = () => es.close();
+        }
+
+        // ── Scheduled Tasks Panel ─────────────────────────────────────────────
+
+        function toggleScheduledPanel() {
+            const body = document.getElementById('scheduled-tasks-body');
+            const chevron = document.getElementById('scheduled-chevron');
+            const visible = body.style.display !== 'none';
+            body.style.display = visible ? 'none' : 'block';
+            chevron.textContent = visible ? '▼' : '▲';
+            if (!visible) loadScheduledTasks();
+        }
+
+        async function loadScheduledTasks() {
+            const res = await fetch('/api/agent/schedule');
+            const tasks = await res.json();
+            renderInAppTasks(tasks);
+        }
+
+        function renderInAppTasks(tasks) {
+            const container = document.getElementById('in-app-tasks-list');
+            container.textContent = '';
+            if (tasks.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'tasks-empty';
+                empty.textContent = 'No scheduled tasks yet.';
+                container.appendChild(empty);
+                return;
+            }
+            tasks.forEach(task => {
+                const card = createTaskCard(task);
+                container.appendChild(card);
+            });
+        }
+
+        function createTaskCard(task) {
+            const card = document.createElement('div');
+            card.className = 'task-card';
+
+            const header = document.createElement('div');
+            header.className = 'task-card-header';
+
+            const name = document.createElement('strong');
+            name.textContent = task.name;
+
+            const active = document.createElement('span');
+            active.className = 'task-active-badge';
+            active.textContent = '● active';
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'task-delete-btn';
+            deleteBtn.textContent = '🗑';
+            deleteBtn.title = 'Delete task';
+            deleteBtn.addEventListener('click', () => deleteScheduledTask(task.name));
+
+            header.appendChild(name);
+            header.appendChild(active);
+            header.appendChild(deleteBtn);
+
+            const schedule = document.createElement('div');
+            schedule.className = 'task-schedule';
+            schedule.textContent = task.schedule;
+
+            const prompt = document.createElement('div');
+            prompt.className = 'task-prompt';
+            const preview = task.prompt.length > 60 ? task.prompt.slice(0, 60) + '…' : task.prompt;
+            prompt.textContent = preview;
+
+            card.appendChild(header);
+            card.appendChild(schedule);
+            card.appendChild(prompt);
+            return card;
+        }
+
+        async function deleteScheduledTask(name) {
+            await fetch(`/api/agent/schedule/${encodeURIComponent(name)}`, {method: 'DELETE'});
+            loadScheduledTasks();
+        }
+
+        function showAddTaskForm() {
+            const form = document.getElementById('add-task-form');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function submitAddTask() {
+            const name = document.getElementById('new-task-name').value.trim();
+            const schedule = document.getElementById('new-task-schedule').value.trim();
+            const prompt = document.getElementById('new-task-prompt').value.trim();
+            if (!name || !schedule || !prompt) return;
+
+            await fetch('/api/agent/schedule', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({name, schedule, prompt}),
+            });
+
+            document.getElementById('new-task-name').value = '';
+            document.getElementById('new-task-schedule').value = '';
+            document.getElementById('new-task-prompt').value = '';
+            document.getElementById('add-task-form').style.display = 'none';
+            loadScheduledTasks();
+        }
+
+        // ── Agent Event Handler ───────────────────────────────────────────────
+
+        function handleAgentEvent(event, taskId, traceContainer, startTime, es) {
+            if (event.type === 'step') {
+                addTraceStep(traceContainer, event.tool, event.args, event.result, event.elapsed_ms, undefined);
+                traceContainer.dataset.elapsed = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+                updateTraceSummary(traceContainer);
+            } else if (event.type === 'confirm_request') {
+                const card = createConfirmCard(taskId, event.tool, event.args);
+                appendToChat(card);
+            } else if (event.type === 'confirm_resolved') {
+                // The step will come after this
+            } else if (event.type === 'done') {
+                traceContainer.dataset.elapsed = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
+                updateTraceSummary(traceContainer);
+                const msg = document.createElement('div');
+                msg.className = 'agent-done-message';
+                msg.textContent = '✅ ' + event.message;
+                appendToChat(msg);
+                es.close();
+            } else if (event.type === 'error') {
+                const errEl = document.createElement('div');
+                errEl.className = 'agent-error-message';
+                errEl.textContent = '⚠ ' + event.message;
+                appendToChat(errEl);
+                es.close();
+            }
+        }
     </script>
 </body>
 </html>
