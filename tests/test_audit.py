@@ -60,11 +60,11 @@ async def test_web_fetch_ssrf_ip():
     result = await _web_fetch(url)
     assert "SSRF detected" in result
 
-from agent_utils import _shell
+from agent_utils import _shell, AUDIT_LOG_PATH, _write_file, _python_interpreter
 
 @pytest.mark.asyncio
-async def test_shell_audit_logging():
-    log_path = Path("audit.log")
+async def test_audit_logging_expansion():
+    log_path = Path(AUDIT_LOG_PATH)
     # Clean up before test
     if log_path.exists():
         try:
@@ -72,11 +72,22 @@ async def test_shell_audit_logging():
         except:
             pass
     
-    test_command = "echo 'hello audit test'"
+    # 1. Test SHELL logging
+    test_command = "echo 'hello shell audit'"
     await _shell(test_command)
+    
+    # 2. Test WRITE_FILE logging
+    await _write_file("test_audit.txt", "some content")
+    
+    # 3. Test PYTHON logging
+    await _python_interpreter("print('hello from python')")
     
     assert log_path.exists()
     content = log_path.read_text()
-    assert test_command in content
-    assert "SHELL:" in content
+    assert "SHELL: echo 'hello shell audit'" in content
+    assert "WRITE_FILE: test_audit.txt" in content
+    assert "PYTHON: print('hello from python')" in content
+
+    # Clean up test file
+    Path("test_audit.txt").unlink(missing_ok=True)
 

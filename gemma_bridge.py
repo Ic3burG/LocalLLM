@@ -347,4 +347,4 @@ async def chat_stream(request: Request):
 
 if __name__ == "__main__":
     logger.info(f"Starting mlx_vlm Gemma Bridge on port {PORT}...")
-    uvicorn.run(app, host="0.0.0.0", port=PORT)
+    uvicorn.run(app, host="127.0.0.1", port=PORT)
