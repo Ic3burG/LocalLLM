@@ -325,3 +325,25 @@ async def test_react_loop_sse_logs_confirmation_timeout(mock_deps, caplog):
 
     agent.TOOL_REGISTRY.clear()
     agent.TOOL_REGISTRY.update(original_registry)
+
+
+# ── Task 4: Tool error logging tests ──────────────────────
+@pytest.mark.asyncio
+async def test_shell_logs_error_on_timeout(caplog):
+    import subprocess
+    import agent_utils
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("sleep", 30)), \
+         caplog.at_level(logging.ERROR, logger="agent_utils"):
+        result = await agent_utils._shell("sleep 99")
+    assert result == "ERROR: timed out"
+    assert any("shell" in r.getMessage().lower() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_logs_error_on_exception(caplog):
+    import agent_utils
+    with patch("requests.get", side_effect=Exception("connection refused")), \
+         caplog.at_level(logging.ERROR, logger="agent_utils"):
+        result = await agent_utils._web_fetch("https://example.com")
+    assert result.startswith("ERROR:")
+    assert any("web_fetch" in r.getMessage().lower() for r in caplog.records)
