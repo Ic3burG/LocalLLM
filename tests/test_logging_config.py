@@ -149,3 +149,30 @@ def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
         assert isinstance(getattr(r, "elapsed_ms", None), int)
     finally:
         root.removeHandler(handler)
+
+
+@pytest.mark.asyncio
+async def test_run_inference_logs_timing(caplog):
+    """run_inference emits INFO records with model_id and elapsed_ms."""
+    from unittest.mock import patch, MagicMock
+    FAKE = {"choices": [{"message": {"content": "hi"}}]}
+
+    with patch.dict("sys.modules", {"mlx_vlm": MagicMock()}):
+        import importlib
+        import inference_engine as ie
+        importlib.reload(ie)
+
+    async def fake_run_in_thread(fn, *args):
+        return FAKE
+
+    with patch.object(ie, "run_in_inference_thread", side_effect=fake_run_in_thread), \
+         caplog.at_level(logging.INFO, logger="inference_engine"):
+        result = await ie.run_inference([{"role": "user", "content": "hi"}], "gemma4-e4b")
+
+    assert result == "hi"
+    start_records = [r for r in caplog.records if "inference start" in r.getMessage()]
+    done_records = [r for r in caplog.records if "inference complete" in r.getMessage()]
+    assert len(start_records) >= 1
+    assert len(done_records) >= 1
+    assert getattr(done_records[0], "elapsed_ms", None) is not None
+    assert getattr(done_records[0], "model_id", None) == "gemma4-e4b"

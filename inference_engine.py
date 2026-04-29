@@ -189,8 +189,16 @@ async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Shared inference helper — runs blocking inference in the dedicated mlx
     thread so the asyncio event loop stays responsive and mlx GPU streams remain
     valid (streams are thread-local in mlx)."""
+    t0 = time.monotonic()
+    logger.info("inference start", extra={"model_id": model_id, "msg_count": len(messages)})
     result = await run_in_inference_thread(handle_mlx_vlm_request, model_id, messages)
+    elapsed_ms = int((time.monotonic() - t0) * 1000)
+    logger.info("inference complete", extra={"model_id": model_id, "elapsed_ms": elapsed_ms})
     try:
         return result["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as e:
+        logger.error(
+            "unexpected inference response structure",
+            extra={"model_id": model_id, "result_preview": str(result)[:200]},
+        )
         raise RuntimeError(f"run_inference: unexpected response structure: {e}") from e
