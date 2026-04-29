@@ -1,3 +1,4 @@
+import logging
 import asyncio
 import io
 import json
@@ -23,6 +24,8 @@ def log_audit(action: str):
     except Exception as e:
         # If we can't write to the audit log, we should at least print to stderr
         print(f"CRITICAL: Failed to write to audit log: {e}", file=sys.stderr)
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class Tool:

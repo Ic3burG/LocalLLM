@@ -4,6 +4,8 @@ const axios = require("axios");
 const multer = require("multer");
 const FormData = require("form-data");
 const http = require("http");
+const { execFile, spawn } = require("child_process");
+const path = require("path");
 
 const app = express();
 const port = 3001;
@@ -107,43 +109,6 @@ app.post("/api/title", async (req, res) => {
 
 // Agent routes
 
-app.post("/api/agent/run", async (req, res) => {
-  try {
-    const response = await axios.post(
-      "http://localhost:9379/v1/agent/run",
-      req.body,
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error("Error starting agent run:", error.message);
-    res.status(500).json({ error: "Failed to start agent run" });
-  }
-});
-
-app.get("/api/agent/stream/:taskId", (req, res) => {
-  const taskId = req.params.taskId;
-  const options = {
-    hostname: "localhost",
-    port: 9379,
-    path: `/v1/agent/stream/${taskId}`,
-    method: "GET",
-  };
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
-  res.flushHeaders();
-  const proxyReq = http.request(options, (proxyRes) => {
-    proxyRes.pipe(res);
-  });
-  proxyReq.on("error", (err) => {
-    console.error("SSE proxy error:", err);
-    res.end();
-  });
-  req.on("close", () => proxyReq.destroy());
-  proxyReq.end();
-});
-
 app.post("/api/agent/confirm/:taskId", async (req, res) => {
   try {
     const { taskId } = req.params;
@@ -194,6 +159,33 @@ app.delete("/api/agent/schedule/:name", async (req, res) => {
     console.error("Error deleting agent schedule:", error.message);
     res.status(500).json({ error: "Failed to delete agent schedule" });
   }
+});
+
+app.get("/api/backend/status", async (req, res) => {
+  try {
+    await axios.get("http://localhost:9379/v1/models", { timeout: 3000 });
+    res.json({ online: true });
+  } catch {
+    res.json({ online: false });
+  }
+});
+
+app.post("/api/backend/restart", (req, res) => {
+  const projectDir = path.resolve(__dirname, "..");
+  const pythonPath = path.join(projectDir, ".venv/bin/python");
+  const bridgePath = path.join(projectDir, "gemma_bridge.py");
+
+  execFile("pkill", ["-f", "gemma_bridge.py"], () => {
+    setTimeout(() => {
+      const child = spawn(pythonPath, [bridgePath], {
+        cwd: projectDir,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      res.json({ ok: true });
+    }, 1500);
+  });
 });
 
 app.listen(port, () => {
