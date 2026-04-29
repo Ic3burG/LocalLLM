@@ -93,3 +93,59 @@ def test_setup_logging_replaces_existing_handlers(tmp_path):
     root.addHandler(logging.NullHandler())
     setup_logging(log_file=str(tmp_path / "app.log"), max_bytes=1024, backup_count=1)
     assert len(root.handlers) == 2  # always exactly two, regardless of what was there
+
+
+def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
+    """RequestLoggingMiddleware emits a log record with method, path, status, elapsed_ms."""
+    from unittest.mock import MagicMock, patch
+    from fastapi import FastAPI
+    from starlette.testclient import TestClient
+
+    with patch.dict("sys.modules", {
+        "mlx_vlm": MagicMock(),
+        "inference_engine": MagicMock(),
+        "pdf_pipeline": MagicMock(),
+        "uvicorn": MagicMock(),
+        "apscheduler": MagicMock(),
+        "apscheduler.schedulers": MagicMock(),
+        "apscheduler.schedulers.asyncio": MagicMock(),
+        "agent": MagicMock(),
+    }):
+        import importlib
+        import gemma_bridge as gb
+        importlib.reload(gb)
+        middleware_cls = gb.RequestLoggingMiddleware
+
+    test_app = FastAPI()
+    test_app.add_middleware(middleware_cls)
+
+    @test_app.get("/ping")
+    async def ping():
+        return {"ok": True}
+
+    # Use a manual handler to capture records instead of relying on caplog
+    records = []
+    class TestHandler(logging.Handler):
+        def emit(self, record):
+            records.append(record)
+
+    root = logging.getLogger()
+    handler = TestHandler()
+    handler.setLevel(logging.INFO)
+    root.addHandler(handler)
+    root.setLevel(logging.INFO)
+
+    try:
+        with TestClient(test_app) as client:
+            resp = client.get("/ping")
+
+        assert resp.status_code == 200
+        http_records = [r for r in records if r.getMessage() == "http request"]
+        assert len(http_records) >= 1
+        r = http_records[0]
+        assert getattr(r, "method", None) == "GET"
+        assert getattr(r, "path", None) == "/ping"
+        assert getattr(r, "status", None) == 200
+        assert isinstance(getattr(r, "elapsed_ms", None), int)
+    finally:
+        root.removeHandler(handler)
