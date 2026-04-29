@@ -23,14 +23,20 @@ def mock_deps():
         "uvicorn": MagicMock(),
         "pdf_pipeline": MagicMock(),
         "inference_engine": MagicMock(),
+        "apscheduler": MagicMock(),
+        "apscheduler.schedulers": MagicMock(),
+        "apscheduler.schedulers.asyncio": MagicMock(),
     }
     # FastAPI() is called at module level; make it return a proper mock
     stubs["fastapi"].FastAPI.return_value = MagicMock()
-    
+
+    # Mock apscheduler
+    stubs["apscheduler.schedulers.asyncio"].AsyncIOScheduler = MagicMock()
+
     # Mock inference_engine functions
     stubs["inference_engine"].run_inference = AsyncMock(return_value="hello")
     stubs["inference_engine"].handle_mlx_vlm_request = MagicMock(return_value=FAKE_RESPONSE)
-    
+
     with patch.dict("sys.modules", stubs):
         # Import/Reload modules that depend on these stubs
         import gemma_bridge
@@ -242,3 +248,80 @@ async def test_list_scheduled_tasks_returns_tasks(tmp_path, monkeypatch, mock_de
     result = await agent._list_scheduled_tasks()
     data = json.loads(result)
     assert data[0]["name"] == "x"
+
+# ── Task 3: Logging tests ──────────────────────────────────
+import logging
+
+@pytest.mark.asyncio
+async def test_react_loop_internal_logs_unknown_tool(mock_deps, caplog):
+    _, agent = mock_deps
+    responses = iter(["TOOL: ghost_tool()", "DONE: done"])
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      side_effect=lambda msgs, model_id="gemma4-e4b": next(responses)), \
+         caplog.at_level(logging.WARNING):
+        await agent._react_loop_internal([{"role": "user", "content": "go"}])
+    assert any("unknown tool" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_react_loop_internal_logs_tool_exception(mock_deps, caplog):
+    _, agent = mock_deps
+    async def bad_tool():
+        raise RuntimeError("disk full")
+
+    original_registry = dict(agent.TOOL_REGISTRY)
+    from agent_utils import Tool
+    agent.TOOL_REGISTRY["boom"] = Tool("boom", "safe", "desc", bad_tool)
+
+    responses = iter(["TOOL: boom()", "DONE: done"])
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      side_effect=lambda msgs, model_id="gemma4-e4b": next(responses)), \
+         caplog.at_level(logging.ERROR):
+        await agent._react_loop_internal([{"role": "user", "content": "go"}])
+    assert any("tool execution failed" in r.getMessage() for r in caplog.records)
+
+    agent.TOOL_REGISTRY.clear()
+    agent.TOOL_REGISTRY.update(original_registry)
+
+
+@pytest.mark.asyncio
+async def test_react_loop_internal_logs_max_iterations(mock_deps, caplog):
+    _, agent = mock_deps
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      return_value="thinking..."), \
+         caplog.at_level(logging.WARNING):
+        await agent._react_loop_internal([{"role": "user", "content": "loop"}])
+    assert any("max iterations" in r.getMessage().lower() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_react_loop_sse_logs_confirmation_timeout(mock_deps, caplog):
+    import asyncio
+    _, agent = mock_deps
+
+    task_id = "test-timeout"
+    agent.sse_queues[task_id] = asyncio.Queue()
+    agent.confirm_queues[task_id] = asyncio.Queue()
+
+    async def risky_fn():
+        return "ok"
+
+    from agent_utils import Tool
+    original_registry = dict(agent.TOOL_REGISTRY)
+    agent.TOOL_REGISTRY["risky_op"] = Tool("risky_op", "risky", "desc", risky_fn)
+
+    responses = iter(['TOOL: risky_op()', "DONE: done"])
+
+    async def fake_wait_for(coro, timeout):
+        raise asyncio.TimeoutError()
+
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      side_effect=lambda msgs, model_id="gemma4-e4b": next(responses)), \
+         patch("agent.asyncio.wait_for", side_effect=fake_wait_for), \
+         caplog.at_level(logging.WARNING):
+        await agent.react_loop_sse(task_id, [{"role": "user", "content": "go"}], "gemma4-e4b")
+
+    assert any("timed" in r.getMessage().lower() for r in caplog.records)
+
+    agent.TOOL_REGISTRY.clear()
+    agent.TOOL_REGISTRY.update(original_registry)
