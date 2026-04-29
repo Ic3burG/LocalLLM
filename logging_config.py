@@ -16,7 +16,9 @@ del _sample
 class JsonLinesFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         record.message = record.getMessage()
+        extras = {k: v for k, v in record.__dict__.items() if k not in _BUILTIN_ATTRS}
         entry = {
+            **extras,  # extras first
             "ts": (
                 datetime.fromtimestamp(record.created, tz=timezone.utc)
                 .strftime("%Y-%m-%dT%H:%M:%S.")
@@ -27,12 +29,9 @@ class JsonLinesFormatter(logging.Formatter):
             "task_id": task_id_var.get(),
             "msg": record.message,
         }
-        if record.exc_info:
+        if record.exc_info and record.exc_info[0] is not None:
             entry["exc"] = self.formatException(record.exc_info)
-        for key, val in record.__dict__.items():
-            if key not in _BUILTIN_ATTRS:
-                entry[key] = val
-        return json.dumps(entry)
+        return json.dumps(entry, default=str)
 
 
 class HumanFormatter(logging.Formatter):
@@ -45,6 +44,8 @@ class HumanFormatter(logging.Formatter):
         )
         if record.exc_info:
             base += "\n" + self.formatException(record.exc_info)
+        if record.stack_info:
+            base += "\n" + self.formatStack(record.stack_info)
         return base
 
 

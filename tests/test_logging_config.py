@@ -91,6 +91,5 @@ def test_setup_logging_writes_json_to_file(tmp_path):
 def test_setup_logging_replaces_existing_handlers(tmp_path):
     root = logging.getLogger()
     root.addHandler(logging.NullHandler())
-    prev_count = len(root.handlers)
     setup_logging(log_file=str(tmp_path / "app.log"), max_bytes=1024, backup_count=1)
     assert len(root.handlers) == 2  # always exactly two, regardless of what was there
