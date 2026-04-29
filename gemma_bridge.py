@@ -2,6 +2,7 @@ import asyncio
 import os
 import time
 import uuid
+import uuid as _uuid
 import base64
 import tempfile
 import threading
@@ -12,12 +13,13 @@ import re
 from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 import pdf_pipeline
 from inference_engine import run_inference, MLX_MODELS_DIR, _MODEL_DIR_MAP, handle_mlx_vlm_request, format_openai_response
+from logging_config import setup_logging, task_id_var
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 logger = logging.getLogger("gemma_bridge")
 
 app = FastAPI()
@@ -30,6 +32,46 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        parts = request.url.path.split("/")
+        task_id = ""
+        if "stream" in parts:
+            idx = parts.index("stream")
+            if idx + 1 < len(parts):
+                task_id = parts[idx + 1]
+        if not task_id:
+            task_id = str(_uuid.uuid4())[:8]
+
+        token = task_id_var.set(task_id)
+        t0 = time.monotonic()
+        try:
+            response = await call_next(request)
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.info(
+                "http request",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "elapsed_ms": elapsed_ms,
+                },
+            )
+            return response
+        except Exception:
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.error(
+                "http request failed",
+                extra={"method": request.method, "path": request.url.path, "elapsed_ms": elapsed_ms},
+                exc_info=True,
+            )
+            raise
+        finally:
+            task_id_var.reset(token)
+
+app.add_middleware(RequestLoggingMiddleware)
 
 # Configuration
 MEMORY_FILE = os.path.join(os.getcwd(), "USER_MEMORY.md")
@@ -347,4 +389,4 @@ async def chat_stream(request: Request):
 
 if __name__ == "__main__":
     logger.info(f"Starting mlx_vlm Gemma Bridge on port {PORT}...")
-    uvicorn.run(app, host="127.0.0.1", port=PORT)
+    uvicorn.run(app, host="127.0.0.1", port=PORT, log_config=None)
