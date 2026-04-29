@@ -60,6 +60,7 @@ async def _read_file(path: str) -> str:
         p = validate_path(path)
         return p.read_text()
     except Exception as e:
+        logger.error("read_file failed: %s", e, extra={"path": path})
         return f"ERROR: {e}"
 
 
@@ -69,6 +70,7 @@ async def _list_dir(path: str) -> str:
         entries = [entry.name for entry in p.iterdir()]
         return "\n".join(entries)
     except Exception as e:
+        logger.error("list_dir failed: %s", e, extra={"path": path})
         return f"ERROR: {e}"
 
 
@@ -93,6 +95,7 @@ async def _write_file(path: str, content: str) -> str:
         p.write_text(content)
         return f"OK: wrote {len(content)} bytes"
     except Exception as e:
+        logger.error("write_file failed: %s", e, extra={"path": path})
         return f"ERROR: {e}"
 
 
@@ -105,6 +108,7 @@ async def _append_file(path: str, content: str) -> str:
             f.write(content)
         return f"OK: appended {len(content)} bytes"
     except Exception as e:
+        logger.error("append_file failed: %s", e, extra={"path": path})
         return f"ERROR: {e}"
 
 
@@ -120,6 +124,7 @@ async def _shell(command: str) -> str:
         )
         return (result.stdout + result.stderr).strip()
     except subprocess.TimeoutExpired:
+        logger.error("shell timed out", extra={"command": command})
         return "ERROR: timed out"
 
 
@@ -145,6 +150,7 @@ async def _create_cron(name: str, schedule: str, command: str) -> str:
         )
         return "OK: cron created"
     except Exception as e:
+        logger.error("create_cron failed: %s", e, extra={"name": name})
         return f"ERROR: {e}"
 
 
@@ -184,6 +190,7 @@ async def _delete_cron(name: str) -> str:
         )
         return "OK: cron deleted"
     except Exception as e:
+        logger.error("delete_cron failed: %s", e, extra={"name": name})
         return f"ERROR: {e}"
 
 
@@ -193,6 +200,7 @@ async def _google_search(query: str) -> str:
         results = list(search(query, num=5, stop=5))
         return "\n".join(results)
     except Exception as e:
+        logger.error("google_search failed: %s", e, extra={"query": query})
         return f"ERROR: {e}"
 
 
@@ -233,6 +241,7 @@ async def _web_fetch(url: str) -> str:
 
         return cleaned_text[:5000]
     except Exception as e:
+        logger.error("web_fetch failed: %s", e, extra={"url": url})
         return f"ERROR: {e}"
 
 
@@ -272,6 +281,7 @@ async def _grep_search(pattern: str, path: str = ".") -> str:
 
         return "\n".join(results) if results else "No matches found."
     except Exception as e:
+        logger.error("grep_search failed: %s", e, extra={"pattern": pattern, "path": path})
         return f"ERROR: {e}"
 
 
@@ -285,6 +295,7 @@ async def _git_status() -> str:
         )
         return result.stdout.strip() if result.stdout.strip() else "Clean"
     except Exception as e:
+        logger.error("git_status failed: %s", e)
         return f"ERROR: {e}"
 
 
@@ -298,6 +309,7 @@ async def _git_log(limit: int = 5) -> str:
         )
         return result.stdout.strip()
     except Exception as e:
+        logger.error("git_log failed: %s", e)
         return f"ERROR: {e}"
 
 
@@ -307,6 +319,7 @@ async def _clipboard_copy(text: str) -> str:
         pyperclip.copy(text)
         return "OK: copied to clipboard"
     except Exception as e:
+        logger.error("clipboard_copy failed: %s", e)
         return f"ERROR: {e}"
 
 
@@ -316,6 +329,7 @@ async def _clipboard_paste() -> str:
         import pyperclip
         return pyperclip.paste()
     except Exception as e:
+        logger.error("clipboard_paste failed: %s", e)
         return f"ERROR: {e}"
 
 
@@ -330,7 +344,9 @@ async def _python_interpreter(code: str) -> str:
         exec(code, {})
     except Exception:
         sys.stdout = old_stdout
-        return traceback.format_exc()
+        tb = traceback.format_exc()
+        logger.error("python_interpreter raised exception", extra={"code_preview": code[:200]})
+        return tb
     finally:
         sys.stdout = old_stdout
 
