@@ -1,6 +1,7 @@
 import asyncio
 import io
 import json
+import logging
 import os
 import re
 import subprocess
@@ -13,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from logging_config import task_id_var
+
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -24,6 +27,7 @@ from agent_utils import (
 
 router = APIRouter()
 scheduler = AsyncIOScheduler()
+logger = logging.getLogger(__name__)
 
 from inference_engine import run_inference
 
@@ -113,7 +117,10 @@ def load_scheduler_tasks_on_startup() -> None:
         try:
             _register_scheduler_task(task["name"], task["schedule"], task["prompt"])
         except Exception as e:
-            print(f"[agent] Failed to register task {task.get('name')}: {e}")
+            logger.warning(
+                "failed to register scheduled task on startup",
+                extra={"task_name": task.get("name"), "error": str(e)},
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -122,6 +129,10 @@ def load_scheduler_tasks_on_startup() -> None:
 
 async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Run ReAct loop without SSE, return final DONE summary."""
+    loop_id = f"sched-{str(uuid.uuid4())[:8]}"
+    task_id_var.set(loop_id)
+    logger.info("internal react loop started", extra={"model_id": model_id})
+
     # Ensure system prompt is present
     if not any(m["role"] == "system" and "autonomous agent" in m["content"] for m in messages):
         messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
@@ -131,19 +142,23 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
         messages.append({"role": "assistant", "content": response_text})
         parsed = parse_model_output(response_text)
         if parsed is None:
+            logger.debug("unparseable model output", extra={"preview": response_text[:200]})
             continue
         kind, name_or_msg, args = parsed
         if kind == "done":
             return name_or_msg
         tool = TOOL_REGISTRY.get(name_or_msg)
         if not tool:
+            logger.warning("unknown tool called", extra={"tool": name_or_msg})
             messages.append({"role": "user", "content": f"TOOL_RESULT: ERROR: unknown tool {name_or_msg}"})
             continue
         try:
             result = await tool.fn(*args)
         except Exception as e:
+            logger.error("tool execution failed", extra={"tool": name_or_msg, "error": str(e)}, exc_info=True)
             result = f"ERROR: {e}"
         messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
+    logger.warning("max iterations reached")
     return "Max iterations reached"
 
 
@@ -153,8 +168,11 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
 
 async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
     """Run ReAct loop, emitting SSE events to sse_queues[task_id]."""
+    task_id_var.set(task_id)
+    logger.info("sse react loop started", extra={"model_id": model_id})
+
     q = sse_queues[task_id]
-    
+
     # Ensure system prompt is present
     if not any(m["role"] == "system" and "autonomous agent" in m["content"] for m in messages):
         messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
@@ -166,6 +184,7 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
             parsed = parse_model_output(response_text)
             if parsed is None:
+                logger.debug("unparseable model output", extra={"preview": response_text[:200]})
                 await q.put(json.dumps({"type": "thinking", "text": response_text}))
                 continue
 
@@ -176,6 +195,7 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
             tool = TOOL_REGISTRY.get(name_or_msg)
             if not tool:
+                logger.warning("unknown tool called", extra={"tool": name_or_msg})
                 msg = f"ERROR: unknown tool {name_or_msg}"
                 messages.append({"role": "user", "content": f"TOOL_RESULT: {msg}"})
                 continue
@@ -189,6 +209,10 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
                 try:
                     approved = await asyncio.wait_for(cq.get(), timeout=300)
                 except asyncio.TimeoutError:
+                    logger.warning(
+                        "confirmation timed out for risky tool",
+                        extra={"tool": name_or_msg},
+                    )
                     approved = False
                 await q.put(json.dumps({"type": "confirm_resolved", "approved": approved}))
                 if not approved:
@@ -199,12 +223,14 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
             try:
                 result = await tool.fn(*args)
             except Exception as e:
+                logger.error("tool execution failed", extra={"tool": name_or_msg, "error": str(e)}, exc_info=True)
                 result = f"ERROR: {e}"
             elapsed = int((time.monotonic() - t0) * 1000)
             await q.put(json.dumps({"type": "step", "tool": name_or_msg,
                                     "args": dict(enumerate(args)), "result": result, "elapsed_ms": elapsed}))
             messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
 
+        logger.warning("max iterations reached")
         await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))
     except Exception as e:
         await q.put(json.dumps({"type": "error", "message": str(e)}))
