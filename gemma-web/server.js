@@ -6,16 +6,29 @@ const FormData = require("form-data");
 const http = require("http");
 const { execFile, spawn } = require("child_process");
 const path = require("path");
+const fs = require("fs");
 
 const app = express();
 const port = 3001;
 const upload = multer({ storage: multer.memoryStorage() });
+const LOG_FILE = path.join(__dirname, "server.log");
+
+function log(level, msg, fields = {}) {
+  const entry = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields });
+  fs.appendFileSync(LOG_FILE, entry + "\n");
+  if (level === "ERROR") {
+    console.error(`${new Date().toISOString()} ${level} [server] ${msg}`, Object.keys(fields).length ? fields : "");
+  } else {
+    console.log(`${new Date().toISOString()} ${level} [server] ${msg}`, Object.keys(fields).length ? fields : "");
+  }
+}
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 app.post("/api/document", upload.single("file"), async (req, res) => {
+  const t0 = Date.now();
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No file uploaded" });
@@ -30,17 +43,19 @@ app.post("/api/document", upload.single("file"), async (req, res) => {
       form,
       { headers: form.getHeaders() },
     );
+    log("INFO", "document upload", { elapsed_ms: Date.now() - t0, filename: req.file.originalname });
     res.json(response.data);
   } catch (error) {
-    console.error("Error uploading document:", error.message);
+    log("ERROR", "document upload failed", { elapsed_ms: Date.now() - t0, error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to upload document to bridge" });
   }
 });
 
 app.post("/api/chat", async (req, res) => {
+  const t0 = Date.now();
   try {
     const { messages, model, doc_ids } = req.body;
-
+    log("INFO", "chat request", { model: model || "gemma4-e4b", msg_count: messages?.length });
     const response = await axios.post(
       "http://localhost:9379/v1/chat/completions",
       {
@@ -50,22 +65,25 @@ app.post("/api/chat", async (req, res) => {
         stream: false,
       },
     );
+    log("INFO", "chat response", { elapsed_ms: Date.now() - t0 });
     res.json(response.data);
   } catch (error) {
-    console.error("Error communicating with LiteRT-LM:", error.message);
+    log("ERROR", "chat completion failed", { elapsed_ms: Date.now() - t0, error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to connect to Gemma 4 server" });
   }
 });
 
 app.post("/api/chat/stream", async (req, res) => {
+  const t0 = Date.now();
   try {
     const response = await axios.post(
       "http://localhost:9379/v1/chat/stream",
       req.body,
     );
+    log("INFO", "chat stream started", { elapsed_ms: Date.now() - t0 });
     res.json(response.data);
   } catch (error) {
-    console.error("Error starting unified chat stream:", error.message);
+    log("ERROR", "chat stream start failed", { elapsed_ms: Date.now() - t0, error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to start chat stream" });
   }
 });
@@ -87,7 +105,7 @@ app.get("/api/chat/stream/:taskId", (req, res) => {
     proxyRes.pipe(res);
   });
   proxyReq.on("error", (err) => {
-    console.error("SSE proxy error:", err);
+    log("ERROR", "SSE proxy error", { task_id: taskId, error: err.message });
     res.end();
   });
   req.on("close", () => proxyReq.destroy());
@@ -102,7 +120,7 @@ app.post("/api/title", async (req, res) => {
     });
     res.json(response.data);
   } catch (error) {
-    console.error("Error generating title:", error.message);
+    log("ERROR", "title generation failed", { error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to generate title" });
   }
 });
@@ -118,7 +136,7 @@ app.post("/api/agent/confirm/:taskId", async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error("Error confirming agent task:", error.message);
+    log("ERROR", "agent confirm failed", { task_id: req.params.taskId, error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to confirm agent task" });
   }
 });
@@ -130,7 +148,7 @@ app.get("/api/agent/schedule", async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error("Error fetching agent schedule:", error.message);
+    log("ERROR", "fetch schedule failed", { error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to fetch agent schedule" });
   }
 });
@@ -143,7 +161,7 @@ app.post("/api/agent/schedule", async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error("Error creating agent schedule:", error.message);
+    log("ERROR", "create schedule failed", { error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to create agent schedule" });
   }
 });
@@ -156,7 +174,7 @@ app.delete("/api/agent/schedule/:name", async (req, res) => {
     );
     res.json(response.data);
   } catch (error) {
-    console.error("Error deleting agent schedule:", error.message);
+    log("ERROR", "delete schedule failed", { name: req.params.name, error: error.message, upstream_status: error.response?.status });
     res.status(500).json({ error: "Failed to delete agent schedule" });
   }
 });
@@ -189,5 +207,5 @@ app.post("/api/backend/restart", (req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`Gemma Bridge running at http://localhost:${port}`);
+  log("INFO", "server started", { port });
 });
