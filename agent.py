@@ -29,6 +29,13 @@ router = APIRouter()
 scheduler = AsyncIOScheduler()
 logger = logging.getLogger(__name__)
 
+def estimate_tokens(messages: list) -> int:
+    """
+    Estimates the number of tokens in a list of messages.
+    Heuristic: total_tokens = sum(len(msg.get("content", "")) // 4 + 4 for msg in messages)
+    """
+    return sum(len(msg.get("content", "")) // 4 + 4 for msg in messages)
+
 from inference_engine import run_inference
 
 # per-task SSE queues and confirmation queues
