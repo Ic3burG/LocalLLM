@@ -36,6 +36,63 @@ def estimate_tokens(messages: list[dict]) -> int:
     """
     return sum(len(str(msg.get("content") or "")) // 4 + 4 for msg in messages)
 
+async def summarize_history(messages: list[dict]) -> list[dict]:
+    SOFT_LIMIT = 16000
+    HARD_LIMIT = 28000
+    
+    if estimate_tokens(messages) <= SOFT_LIMIT:
+        return messages
+
+    # Perform summarization
+    system_prompt_msg = messages[0] if messages and messages[0]["role"] == "system" else None
+    
+    if system_prompt_msg:
+        remaining = messages[1:]
+    else:
+        remaining = messages
+        
+    midpoint = len(remaining) // 2
+    to_summarize = remaining[:midpoint]
+    keep = remaining[midpoint:]
+
+    if to_summarize:
+        summary_prompt = (
+            "Please summarize the following conversation history concisely, "
+            "focusing on key decisions and outcomes:\n\n"
+            f"{json.dumps(to_summarize)}"
+        )
+
+        import inference_engine
+        summary = await inference_engine.run_inference(
+            [{"role": "user", "content": summary_prompt}],
+            model_id="gemma4-e4b"
+        )
+        
+        summary_text = f"\n\n[PERSISTENT SESSION CONTEXT: {summary}]"
+        
+        if system_prompt_msg:
+            # Merge into existing system message
+            new_system_content = system_prompt_msg["content"] + summary_text
+            new_messages = [{"role": "system", "content": new_system_content}] + keep
+        else:
+            # Create new system message at start
+            new_messages = [{"role": "system", "content": summary_text.strip()}] + keep
+    else:
+        new_messages = messages
+
+    # Apply HARD_LIMIT
+    while estimate_tokens(new_messages) > HARD_LIMIT and len(new_messages) > 1:
+        # Find first non-system message to drop (index 1 if messages[0] is system)
+        if new_messages[0]["role"] == "system":
+            if len(new_messages) > 1:
+                new_messages.pop(1)
+            else:
+                break # Can't drop the only system message
+        else:
+            new_messages.pop(0)
+            
+    return new_messages
+
 from inference_engine import run_inference
 
 # per-task SSE queues and confirmation queues
@@ -145,6 +202,7 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
         messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
 
     for _ in range(20):
+        messages = await summarize_history(messages)
         response_text = await run_inference(messages, model_id)
         messages.append({"role": "assistant", "content": response_text})
         parsed = parse_model_output(response_text)
@@ -186,6 +244,7 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
     try:
         for _ in range(20):
+            messages = await summarize_history(messages)
             response_text = await run_inference(messages, model_id)
             messages.append({"role": "assistant", "content": response_text})
 
