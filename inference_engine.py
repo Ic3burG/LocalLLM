@@ -7,6 +7,7 @@ import base64
 import tempfile
 import time
 import uuid
+from agent_utils import log_audit
 
 logger = logging.getLogger(__name__)
 
@@ -22,15 +23,23 @@ _inference_queue: queue.Queue = queue.Queue()
 _inference_ready = threading.Event()
 _mlx_vlm_load = None
 _mlx_vlm_generate = None
+_mlx_vlm_stream_generate = None
+
+# Watchdog state
+_last_inference_activity = time.monotonic()
+_stop_inference = threading.Event()
+_is_job_running = False
+_current_model_id = None
 
 def _inference_worker():
     """Long-lived thread that owns all mlx GPU state."""
-    global _mlx_vlm_load, _mlx_vlm_generate
+    global _mlx_vlm_load, _mlx_vlm_generate, _mlx_vlm_stream_generate, _is_job_running, _last_inference_activity, _current_model_id
     logger.info("Starting MLX inference worker thread...")
     try:
-        from mlx_vlm import load as _load, generate as _gen
+        from mlx_vlm import load as _load, generate as _gen, stream_generate as _stream_gen
         _mlx_vlm_load = _load
         _mlx_vlm_generate = _gen
+        _mlx_vlm_stream_generate = _stream_gen
         _inference_ready.set()
         logger.info("MLX inference worker thread ready.")
     except Exception as e:
@@ -39,15 +48,45 @@ def _inference_worker():
 
     while True:
         fn, args, future = _inference_queue.get()
+        _is_job_running = True
+        _last_inference_activity = time.monotonic()
+        _stop_inference.clear()
+        if args and isinstance(args[0], str):
+            _current_model_id = args[0]
+        else:
+            _current_model_id = "unknown"
+
         try:
             result = fn(*args)
             future.get_loop().call_soon_threadsafe(future.set_result, result)
         except Exception as exc:
             future.get_loop().call_soon_threadsafe(future.set_exception, exc)
+        finally:
+            _is_job_running = False
+            _current_model_id = None
+            _stop_inference.clear() # Reset stop event for next job
 
 # Start the worker thread exactly once
 _worker_thread = threading.Thread(target=_inference_worker, daemon=True, name="mlx-inference-worker")
 _worker_thread.start()
+
+def _watchdog_loop():
+    """Monitors inference activity and kills hung jobs."""
+    global _last_inference_activity, _stop_inference, _is_job_running, _current_model_id
+    logger.info("Starting inference watchdog loop...")
+    while True:
+        time.sleep(10)
+        if _is_job_running:
+            idle_time = time.monotonic() - _last_inference_activity
+            if idle_time > 180:
+                model_id = _current_model_id or "unknown"
+                logger.error(f"Inference watchdog: job hung for {int(idle_time)}s. Triggering stop.")
+                log_audit(f"WATCHDOG: Interrupted stalled inference for {model_id}")
+                _stop_inference.set()
+
+# Start the watchdog thread
+_watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True, name="inference-watchdog")
+_watchdog_thread.start()
 
 async def run_in_inference_thread(fn, *args):
     """Submit *fn(*args)* to the inference thread and await the result."""
@@ -157,12 +196,22 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
     has_image = temp_image_path is not None
     logger.info(f"Starting mlx_vlm inference for {model_id} (image={'yes' if has_image else 'no'})...")
     try:
-        result = _mlx_vlm_generate(
+        tokens = []
+        global _last_inference_activity
+        _last_inference_activity = time.monotonic()
+
+        for token in _mlx_vlm_stream_generate(
             model, processor, prompt,
             image=temp_image_path,
             max_tokens=2048,
-            verbose=False,
-        )
+        ):
+            if _stop_inference.is_set():
+                logger.warning(f"Inference watchdog triggered: stopping generation for {model_id}")
+                break
+            tokens.append(token)
+            _last_inference_activity = time.monotonic()
+        
+        generated_text = "".join(tokens)
     finally:
         if temp_image_path and os.path.exists(temp_image_path):
             try:
@@ -170,8 +219,6 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
             except Exception:
                 pass
 
-    # mlx_vlm.generate returns a GenerationResult object; extract text
-    generated_text = result.text if hasattr(result, "text") else str(result)
     return format_openai_response(model_id, generated_text)
 
 def format_openai_response(model_id, content):
