@@ -95,11 +95,11 @@ def test_setup_logging_replaces_existing_handlers(tmp_path):
     assert len(root.handlers) == 2  # always exactly two, regardless of what was there
 
 
-def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
+@pytest.mark.asyncio
+async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
     """RequestLoggingMiddleware emits a log record with method, path, status, elapsed_ms."""
     from unittest.mock import MagicMock, patch
     from fastapi import FastAPI
-    from starlette.testclient import TestClient
 
     with patch.dict("sys.modules", {
         "mlx_vlm": MagicMock(),
@@ -135,9 +135,13 @@ def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
     root.addHandler(handler)
     root.setLevel(logging.INFO)
 
+    # Use httpx.AsyncClient with ASGITransport instead of Starlette's TestClient
+    # to avoid the httpx._client AttributeError in older Starlette versions.
+    from httpx import AsyncClient, ASGITransport
+
     try:
-        with TestClient(test_app) as client:
-            resp = client.get("/ping")
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://testserver") as client:
+            resp = await client.get("/ping")
 
         assert resp.status_code == 200
         http_records = [r for r in records if r.getMessage() == "http request"]

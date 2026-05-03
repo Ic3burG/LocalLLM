@@ -219,10 +219,11 @@ async def test_react_loop_internal_executes_safe_tool(mock_deps):
 @pytest.mark.asyncio
 async def test_react_loop_internal_max_iterations(mock_deps):
     _, agent = mock_deps
-    # Model never outputs DONE
+    # Model always outputs a tool call, never DONE
     with patch.object(agent, "run_inference", new_callable=AsyncMock,
-                      return_value="thinking..."):
-        result = await agent._react_loop_internal([{"role": "user", "content": "loop forever"}])
+                      return_value='TOOL: shell("echo loop")'):
+        with patch.object(agent.TOOL_REGISTRY["shell"], "fn", new_callable=AsyncMock, return_value="looped"):
+            result = await agent._react_loop_internal([{"role": "user", "content": "loop forever"}])
     assert result == "Max iterations reached"
 
 # ── Scheduler CRUD tests ──────────────────────────────────
@@ -288,7 +289,8 @@ async def test_react_loop_internal_logs_tool_exception(mock_deps, caplog):
 async def test_react_loop_internal_logs_max_iterations(mock_deps, caplog):
     _, agent = mock_deps
     with patch.object(agent, "run_inference", new_callable=AsyncMock,
-                      return_value="thinking..."), \
+                      return_value='TOOL: shell("echo loop")'), \
+         patch.object(agent.TOOL_REGISTRY["shell"], "fn", new_callable=AsyncMock, return_value="looped"), \
          caplog.at_level(logging.WARNING):
         await agent._react_loop_internal([{"role": "user", "content": "loop"}])
     assert any("max iterations" in r.getMessage().lower() for r in caplog.records)

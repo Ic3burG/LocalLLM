@@ -112,9 +112,10 @@ MLX_MODELS_DIR = os.path.join(os.getcwd(), "mlx_models")
 _vlm_cache: dict = {}
 
 _MODEL_DIR_MAP = {
-    "gemma4-e4b":     "gemma-3-4b-it-4bit",
-    "gemma4-26b-mlx": "gemma-4-26b-it-4bit",
+    "gemma4-e4b":     "gemma-4-e4b-it-4bit",
+    "gemma4-26b-mlx": "gemma-4-26b-a4b-it-4bit",
     "gemma4-31b-mlx": "gemma-4-31b-it-4bit",
+    "phi4-mini":      "phi-4-mini-4bit",
 }
 
 def get_mlx_vlm_model(model_id: str):

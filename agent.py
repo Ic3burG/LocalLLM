@@ -22,7 +22,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent_utils import (
-    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output, register_tool, log_audit
+    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output, register_tool, log_audit,
+    strip_thinking_blocks,
 )
 
 router = APIRouter()
@@ -197,18 +198,32 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
     task_id_var.set(loop_id)
     logger.info("internal react loop started", extra={"model_id": model_id})
 
-    # Ensure system prompt is present
-    if not any(m["role"] == "system" and "autonomous agent" in m["content"] for m in messages):
-        messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
+    # Merge all system messages into a single agent system prompt to prevent
+    # consecutive system-role messages, which Gemma 3 rejects outright.
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    non_system = [m for m in messages if m.get("role") != "system"]
+    if not any("autonomous agent" in m["content"] for m in system_msgs):
+        extra = "\n\n".join(m["content"] for m in system_msgs if m["content"])
+        merged = f"{AGENT_SYSTEM_PROMPT}\n\n{extra}" if extra else AGENT_SYSTEM_PROMPT
+        messages.clear()
+        messages.append({"role": "system", "content": merged})
+        messages.extend(non_system)
+
+    # Prepend the current date/time so the model can resolve "today"/"tomorrow"
+    # without needing to call get_current_datetime() first.
+    now_str = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M:%S %Z")
+    messages[0]["content"] = f"Current date and time: {now_str}\n\n" + messages[0]["content"]
 
     for _ in range(20):
         messages = await summarize_history(messages)
         response_text = await run_inference(messages, model_id)
         messages.append({"role": "assistant", "content": response_text})
+        logger.info("model raw output", extra={"model_id": model_id, "preview": response_text[:500]})
         parsed = parse_model_output(response_text)
         if parsed is None:
-            logger.debug("unparseable model output", extra={"preview": response_text[:200]})
-            continue
+            clean_response = strip_thinking_blocks(response_text)
+            logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
+            return clean_response
         kind, name_or_msg, args = parsed
         if kind == "done":
             return name_or_msg
@@ -238,21 +253,35 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
     q = sse_queues[task_id]
 
-    # Ensure system prompt is present
-    if not any(m["role"] == "system" and "autonomous agent" in m["content"] for m in messages):
-        messages.insert(0, {"role": "system", "content": AGENT_SYSTEM_PROMPT})
+    # Merge all system messages into a single agent system prompt to prevent
+    # consecutive system-role messages, which Gemma 3 rejects outright.
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    non_system = [m for m in messages if m.get("role") != "system"]
+    if not any("autonomous agent" in m["content"] for m in system_msgs):
+        extra = "\n\n".join(m["content"] for m in system_msgs if m["content"])
+        merged = f"{AGENT_SYSTEM_PROMPT}\n\n{extra}" if extra else AGENT_SYSTEM_PROMPT
+        messages.clear()
+        messages.append({"role": "system", "content": merged})
+        messages.extend(non_system)
+
+    # Prepend the current date/time so the model can resolve "today"/"tomorrow"
+    # without needing to call get_current_datetime() first.
+    now_str = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M:%S %Z")
+    messages[0]["content"] = f"Current date and time: {now_str}\n\n" + messages[0]["content"]
 
     try:
         for _ in range(20):
             messages = await summarize_history(messages)
             response_text = await run_inference(messages, model_id)
             messages.append({"role": "assistant", "content": response_text})
+            logger.info("model raw output", extra={"model_id": model_id, "preview": response_text[:500]})
 
             parsed = parse_model_output(response_text)
             if parsed is None:
-                logger.debug("unparseable model output", extra={"preview": response_text[:200]})
-                await q.put(json.dumps({"type": "thinking", "text": response_text}))
-                continue
+                clean_response = strip_thinking_blocks(response_text)
+                logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
+                await q.put(json.dumps({"type": "done", "message": clean_response}))
+                return
 
             kind, name_or_msg, args = parsed
             if kind == "done":
