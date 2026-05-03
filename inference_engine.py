@@ -24,6 +24,11 @@ _inference_ready = threading.Event()
 _mlx_vlm_load = None
 _mlx_vlm_generate = None
 _mlx_vlm_stream_generate = None
+_mlx_lm_load = None
+_mlx_lm_stream_generate = None
+
+# Models that mlx_vlm doesn't support — routed through mlx_lm instead.
+_TEXT_ONLY_MODELS = {"phi4-mini"}
 
 # Watchdog state
 _last_inference_activity = time.monotonic()
@@ -33,18 +38,25 @@ _current_model_id = None
 
 def _inference_worker():
     """Long-lived thread that owns all mlx GPU state."""
-    global _mlx_vlm_load, _mlx_vlm_generate, _mlx_vlm_stream_generate, _is_job_running, _last_inference_activity, _current_model_id
+    global _mlx_vlm_load, _mlx_vlm_generate, _mlx_vlm_stream_generate, _mlx_lm_load, _mlx_lm_stream_generate, _is_job_running, _last_inference_activity, _current_model_id
     logger.info("Starting MLX inference worker thread...")
     try:
         from mlx_vlm import load as _load, generate as _gen, stream_generate as _stream_gen
         _mlx_vlm_load = _load
         _mlx_vlm_generate = _gen
         _mlx_vlm_stream_generate = _stream_gen
-        _inference_ready.set()
-        logger.info("MLX inference worker thread ready.")
     except Exception as e:
-        logger.error(f"Failed to initialize MLX worker: {e}", exc_info=True)
-        return
+        logger.error(f"Failed to import mlx_vlm: {e}", exc_info=True)
+
+    try:
+        from mlx_lm import load as _lm_load, stream_generate as _lm_stream_gen
+        _mlx_lm_load = _lm_load
+        _mlx_lm_stream_generate = _lm_stream_gen
+    except Exception as e:
+        logger.error(f"Failed to import mlx_lm: {e}", exc_info=True)
+
+    _inference_ready.set()
+    logger.info("MLX inference worker thread ready.")
 
     while True:
         fn, args, future = _inference_queue.get()
@@ -107,9 +119,9 @@ async def run_in_inference_thread(fn, *args):
 
 MLX_MODELS_DIR = os.path.join(os.getcwd(), "mlx_models")
 
-# Model cache: model_id -> (model, processor)
-# Only accessed from the single inference thread — no lock needed.
-_vlm_cache: dict = {}
+# Model caches — only accessed from the single inference thread, no lock needed.
+_vlm_cache: dict = {}   # model_id -> (model, processor)  for mlx_vlm
+_lm_cache: dict = {}    # model_id -> (model, tokenizer)  for mlx_lm
 
 _MODEL_DIR_MAP = {
     "gemma4-e4b":     "gemma-4-e4b-it-4bit",
@@ -146,7 +158,65 @@ def get_mlx_vlm_model(model_id: str):
     _vlm_cache[model_id] = (model, processor)
     return model, processor
 
+def get_mlx_lm_model(model_id: str):
+    """Must only be called from the inference thread."""
+    if model_id in _lm_cache:
+        val = _lm_cache.pop(model_id)
+        _lm_cache[model_id] = val
+        return val
+
+    if len(_lm_cache) >= 2:
+        lru_id = next(iter(_lm_cache))
+        logger.info(f"Evicting mlx_lm model {lru_id} from cache...")
+        del _lm_cache[lru_id]
+        import gc; gc.collect()
+
+    dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
+    model_path = os.path.join(MLX_MODELS_DIR, dir_name)
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"mlx_lm model directory not found: {model_path}")
+
+    logger.info(f"Loading mlx_lm model {model_id} from {model_path}...")
+    model, tokenizer = _mlx_lm_load(model_path)
+    _lm_cache[model_id] = (model, tokenizer)
+    return model, tokenizer
+
+
+def handle_mlx_lm_request(model_id: str, messages: list) -> dict:
+    """Text-only inference via mlx_lm (for architectures mlx_vlm doesn't support)."""
+    model, tokenizer = get_mlx_lm_model(model_id)
+
+    clean_messages = []
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if isinstance(content, list):
+            text = " ".join(c.get("text", "") for c in content if c.get("type") == "text")
+            clean_messages.append({"role": role, "content": text})
+        else:
+            clean_messages.append({"role": role, "content": content or ""})
+
+    prompt = tokenizer.apply_chat_template(
+        clean_messages, tokenize=False, add_generation_prompt=True
+    )
+
+    logger.info(f"Starting mlx_lm inference for {model_id}...")
+    global _last_inference_activity
+    _last_inference_activity = time.monotonic()
+    tokens = []
+    for token in _mlx_lm_stream_generate(model, tokenizer, prompt, max_tokens=2048):
+        if _stop_inference.is_set():
+            logger.warning(f"Inference watchdog triggered: stopping generation for {model_id}")
+            break
+        tokens.append(token.text if hasattr(token, 'text') else token)
+        _last_inference_activity = time.monotonic()
+
+    return format_openai_response(model_id, "".join(tokens))
+
+
 def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
+    if model_id in _TEXT_ONLY_MODELS:
+        return handle_mlx_lm_request(model_id, messages)
     model, processor = get_mlx_vlm_model(model_id)
 
     # Build clean message list; only the final message may carry an image
