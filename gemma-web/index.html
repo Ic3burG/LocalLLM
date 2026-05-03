@@ -71,6 +71,36 @@
             color: var(--color-text-muted);
         }
 
+        .reasoning-block {
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            margin-bottom: 8px;
+            overflow: hidden;
+        }
+        .reasoning-block summary {
+            cursor: pointer;
+            padding: 6px 12px;
+            font-size: 0.75em;
+            font-weight: 600;
+            color: var(--color-text-muted);
+            background: var(--color-surface);
+            user-select: none;
+            list-style: none;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .reasoning-block summary::before { content: "▶"; font-size: 0.65em; transition: transform 0.15s; }
+        .reasoning-block[open] summary::before { transform: rotate(90deg); }
+        .reasoning-block .reasoning-body {
+            padding: 10px 14px;
+            font-size: 0.82em;
+            font-style: italic;
+            color: var(--color-text-muted);
+            white-space: pre-wrap;
+            border-top: 1px solid var(--color-border);
+        }
+
         /* CSS variables for agent UI — light is default, html.dark overrides */
         :root {
             --color-bg:         #f8f9fa;
@@ -209,8 +239,8 @@
                         <select id="model-select" class="bg-transparent border-none text-[10px] text-gray-500 focus:ring-0 p-0 cursor-pointer hover:text-blue-500 transition-colors">
                             <option value="gemma4-e4b">Gemma 4 E4B (Fast)</option>
                             <option value="phi4-mini">Phi-4 Mini (Alternative)</option>
-                            <option value="gemma-4-26b-it-4bit">Gemma 4 26B A4B (Powerful)</option>
-                            <option value="gemma-4-31b-it-4bit">Gemma 4 31B Dense (Elite)</option>
+                            <option value="gemma4-26b-mlx">Gemma 4 26B A4B (Powerful)</option>
+                            <option value="gemma4-31b-mlx">Gemma 4 31B Dense (Elite)</option>
                         </select>
                     </div>
                 </div>
@@ -346,13 +376,13 @@
         });
 
         async function openSettings() {
+            settingsModal.classList.remove('hidden-modal');
             try {
-                const response = await fetch('http://localhost:9379/v1/memory');
+                const response = await fetch('http://localhost:3001/api/memory');
                 const data = await response.json();
                 memoryEditor.value = data.memory || '';
-                settingsModal.classList.remove('hidden-modal');
             } catch (e) {
-                alert("Failed to load memory from server.");
+                memoryEditor.value = '';
             }
         }
 
@@ -363,7 +393,7 @@
         async function saveMemory() {
             try {
                 saveMemoryBtn.disabled = true;
-                const response = await fetch('http://localhost:9379/v1/memory', {
+                const response = await fetch('http://localhost:3001/api/memory', {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ memory: memoryEditor.value })
@@ -1075,8 +1105,28 @@
 
         // ── Agent Event Handler ───────────────────────────────────────────────
 
+        function buildReasoningBlock(content) {
+            const details = document.createElement('details');
+            details.className = 'reasoning-block';
+            const summary = document.createElement('summary');
+            summary.textContent = 'Model reasoning';
+            const body = document.createElement('div');
+            body.className = 'reasoning-body';
+            body.textContent = content;
+            details.appendChild(summary);
+            details.appendChild(body);
+            return details;
+        }
+
         function handleAgentEvent(event, taskId, traceContainer, startTime, es, currentChat) {
             const stepCount = traceContainer.querySelectorAll('.trace-step').length;
+            if (event.type === 'thinking') {
+                // Attach reasoning block to the trace container so it shows inline
+                // while the user is waiting; hidden under a disclosure toggle.
+                traceContainer.dataset.pendingThinking = event.content;
+                setAgentStatus('Reasoning...');
+                return;
+            }
             if (event.type === 'step') {
                 addTraceStep(traceContainer, event.tool, event.args, event.result, event.elapsed_ms, undefined);
                 traceContainer.dataset.elapsed = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
@@ -1091,13 +1141,20 @@
             } else if (event.type === 'done') {
                 traceContainer.dataset.elapsed = ((Date.now() - startTime) / 1000).toFixed(1) + 's';
                 updateTraceSummary(traceContainer);
-                
+
+                // If the model reasoned before responding, prepend a collapsed reasoning block
+                const pendingThinking = traceContainer.dataset.pendingThinking;
+                if (pendingThinking) {
+                    appendToChat(buildReasoningBlock(pendingThinking));
+                    delete traceContainer.dataset.pendingThinking;
+                }
+
                 appendMessage('assistant', event.message);
                 if (currentChat) {
                     currentChat.messages.push({ role: 'assistant', content: event.message });
                     saveChats();
                 }
-                
+
                 clearAgentStatus();
                 es.close();
                 setTimeout(refreshMemoryPreview, 2000);

@@ -222,6 +222,10 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
         parsed = parse_model_output(response_text)
         if parsed is None:
             clean_response = strip_thinking_blocks(response_text)
+            if not clean_response:
+                logger.warning("empty response after stripping thinking, nudging model")
+                messages.append({"role": "user", "content": "Please provide your answer."})
+                continue
             logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
             return clean_response
         kind, name_or_msg, args = parsed
@@ -278,7 +282,20 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
             parsed = parse_model_output(response_text)
             if parsed is None:
+                # Extract thinking content before stripping so we can surface it in the UI
+                thinking_match = re.search(
+                    r'<\|channel\|?>thought\n?(.*?)(?:<\|?channel\|>|$)',
+                    response_text, flags=re.DOTALL
+                )
+                thinking_content = thinking_match.group(1).strip() if thinking_match else None
+                if thinking_content:
+                    await q.put(json.dumps({"type": "thinking", "content": thinking_content}))
+
                 clean_response = strip_thinking_blocks(response_text)
+                if not clean_response:
+                    logger.warning("empty response after stripping thinking, nudging model")
+                    messages.append({"role": "user", "content": "Please provide your answer."})
+                    continue
                 logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
                 await q.put(json.dumps({"type": "done", "message": clean_response}))
                 return
