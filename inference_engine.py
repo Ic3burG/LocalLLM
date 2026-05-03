@@ -209,9 +209,9 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
             if _stop_inference.is_set():
                 logger.warning(f"Inference watchdog triggered: stopping generation for {model_id}")
                 break
-            tokens.append(token)
+            tokens.append(token.text if hasattr(token, 'text') else token)
             _last_inference_activity = time.monotonic()
-        
+
         generated_text = "".join(tokens)
     finally:
         if temp_image_path and os.path.exists(temp_image_path):
