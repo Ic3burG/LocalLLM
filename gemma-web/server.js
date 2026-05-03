@@ -100,6 +100,8 @@ app.get("/api/chat/stream/:taskId", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.setHeader("X-Accel-Buffering", "no");
+  // Disable socket timeout — default 120s would kill long 26B inference connections.
+  res.socket && res.socket.setTimeout(0);
   res.flushHeaders();
   const proxyReq = http.request(options, (proxyRes) => {
     proxyRes.pipe(res);
@@ -179,6 +181,26 @@ app.delete("/api/agent/schedule/:name", async (req, res) => {
   }
 });
 
+app.get("/api/memory", async (req, res) => {
+  try {
+    const response = await axios.get("http://localhost:9379/v1/memory");
+    res.json(response.data);
+  } catch (e) {
+    log("ERROR", "memory fetch failed", { error: e.message });
+    res.status(502).json({ memory: "" });
+  }
+});
+
+app.put("/api/memory", async (req, res) => {
+  try {
+    const response = await axios.put("http://localhost:9379/v1/memory", req.body);
+    res.json(response.data);
+  } catch (e) {
+    log("ERROR", "memory save failed", { error: e.message });
+    res.status(502).json({ error: e.message });
+  }
+});
+
 app.get("/api/backend/status", async (req, res) => {
   try {
     await axios.get("http://localhost:9379/v1/models", { timeout: 3000 });
@@ -189,21 +211,24 @@ app.get("/api/backend/status", async (req, res) => {
 });
 
 app.post("/api/backend/restart", (req, res) => {
-  const projectDir = path.resolve(__dirname, "..");
-  const pythonPath = path.join(projectDir, ".venv/bin/python");
-  const bridgePath = path.join(projectDir, "gemma_bridge.py");
-
-  execFile("pkill", ["-f", "gemma_bridge.py"], () => {
+  const plist = `${process.env.HOME}/Library/LaunchAgents/com.gemini.litert.plist`;
+  // Use launchctl unload/load so launchd stays in sync — pkill alone causes
+  // the KeepAlive agent to fight the manually-spawned process for the port.
+  execFile("launchctl", ["unload", plist], () => {
     setTimeout(() => {
-      const child = spawn(pythonPath, [bridgePath], {
-        cwd: projectDir,
-        detached: true,
-        stdio: "ignore",
+      execFile("launchctl", ["load", plist], () => {
+        res.json({ ok: true });
       });
-      child.unref();
-      res.json({ ok: true });
-    }, 1500);
+    }, 1000);
   });
+});
+
+process.on("unhandledRejection", (reason) => {
+  log("ERROR", "unhandled promise rejection", { error: String(reason) });
+});
+
+process.on("uncaughtException", (err) => {
+  log("ERROR", "uncaught exception", { error: err.message, stack: err.stack });
 });
 
 app.listen(port, () => {
