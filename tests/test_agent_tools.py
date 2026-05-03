@@ -4,25 +4,26 @@ from agent_utils import _google_search, _web_fetch
 
 @pytest.mark.asyncio
 async def test_google_search():
-    with patch('googlesearch.search') as mock_search:
-        mock_search.return_value = [
-            "https://example.com/1",
-            "https://example.com/2",
-            "https://example.com/3",
-            "https://example.com/4",
-            "https://example.com/5"
+    with patch('ddgs.DDGS') as mock_ddgs_cls:
+        mock_ddgs = mock_ddgs_cls.return_value
+        mock_ddgs.text.return_value = [
+            {"title": "Title 1", "href": "https://example.com/1"},
+            {"title": "Title 2", "href": "https://example.com/2"},
+            {"title": "Title 3", "href": "https://example.com/3"},
+            {"title": "Title 4", "href": "https://example.com/4"},
+            {"title": "Title 5", "href": "https://example.com/5"}
         ]
         
         query = "test query"
         result = await _google_search(query)
         
-        mock_search.assert_called_once_with(query, num=5, stop=5)
-        expected = "\n".join([
-            "https://example.com/1",
-            "https://example.com/2",
-            "https://example.com/3",
-            "https://example.com/4",
-            "https://example.com/5"
+        mock_ddgs.text.assert_called_once_with(query, max_results=5)
+        expected = "\n\n".join([
+            "Title 1\nhttps://example.com/1",
+            "Title 2\nhttps://example.com/2",
+            "Title 3\nhttps://example.com/3",
+            "Title 4\nhttps://example.com/4",
+            "Title 5\nhttps://example.com/5"
         ])
         assert result == expected
 
