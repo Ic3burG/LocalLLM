@@ -7,9 +7,27 @@ import base64
 import tempfile
 import time
 import uuid
+import collections
 from agent_utils import log_audit
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Telemetry tracking
+# ---------------------------------------------------------------------------
+_inference_latencies = collections.deque(maxlen=10)
+_cache_lock = threading.Lock()
+
+def get_avg_latency():
+    """Returns the average latency of the last few inference calls in ms."""
+    if not _inference_latencies:
+        return 0
+    return sum(_inference_latencies) / len(_inference_latencies)
+
+def get_loaded_models():
+    """Returns a list of model IDs currently in cache. Thread-safe."""
+    with _cache_lock:
+        return list(_vlm_cache.keys()) + list(_lm_cache.keys())
 
 # ---------------------------------------------------------------------------
 # Single dedicated inference thread
@@ -102,9 +120,10 @@ _watchdog_thread.start()
 
 def is_model_loaded(model_id: str) -> bool:
     """Check whether a model is currently in cache. Safe to call from any thread."""
-    if model_id in _TEXT_ONLY_MODELS:
-        return model_id in _lm_cache
-    return model_id in _vlm_cache
+    with _cache_lock:
+        if model_id in _TEXT_ONLY_MODELS:
+            return model_id in _lm_cache
+        return model_id in _vlm_cache
 
 
 async def run_in_inference_thread(fn, *args):
@@ -145,18 +164,19 @@ def get_mlx_vlm_model(model_id: str):
     if not _inference_ready.wait(timeout=30):
         raise RuntimeError("Inference worker failed to start within 30 seconds")
     
-    if model_id in _vlm_cache:
-        # Move to end to track LRU (Python 3.7+ dicts preserve insertion order)
-        val = _vlm_cache.pop(model_id)
-        _vlm_cache[model_id] = val
-        return val
-    
-    if len(_vlm_cache) >= 2:
-        # Remove the oldest entry (first item in the dict)
-        lru_model_id = next(iter(_vlm_cache))
-        logger.info(f"Evicting model {lru_model_id} from VRAM...")
-        del _vlm_cache[lru_model_id]
-        import gc; gc.collect()
+    with _cache_lock:
+        if model_id in _vlm_cache:
+            # Move to end to track LRU (Python 3.7+ dicts preserve insertion order)
+            val = _vlm_cache.pop(model_id)
+            _vlm_cache[model_id] = val
+            return val
+        
+        if len(_vlm_cache) >= 2:
+            # Remove the oldest entry (first item in the dict)
+            lru_model_id = next(iter(_vlm_cache))
+            logger.info(f"Evicting model {lru_model_id} from VRAM...")
+            del _vlm_cache[lru_model_id]
+            import gc; gc.collect()
 
     dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
     model_path = os.path.join(MLX_MODELS_DIR, dir_name)
@@ -165,21 +185,23 @@ def get_mlx_vlm_model(model_id: str):
     
     logger.info(f"Loading mlx_vlm model {model_id} from {model_path}...")
     model, processor = _mlx_vlm_load(model_path)
-    _vlm_cache[model_id] = (model, processor)
+    with _cache_lock:
+        _vlm_cache[model_id] = (model, processor)
     return model, processor
 
 def get_mlx_lm_model(model_id: str):
     """Must only be called from the inference thread."""
-    if model_id in _lm_cache:
-        val = _lm_cache.pop(model_id)
-        _lm_cache[model_id] = val
-        return val
+    with _cache_lock:
+        if model_id in _lm_cache:
+            val = _lm_cache.pop(model_id)
+            _lm_cache[model_id] = val
+            return val
 
-    if len(_lm_cache) >= 2:
-        lru_id = next(iter(_lm_cache))
-        logger.info(f"Evicting mlx_lm model {lru_id} from cache...")
-        del _lm_cache[lru_id]
-        import gc; gc.collect()
+        if len(_lm_cache) >= 2:
+            lru_id = next(iter(_lm_cache))
+            logger.info(f"Evicting mlx_lm model {lru_id} from cache...")
+            del _lm_cache[lru_id]
+            import gc; gc.collect()
 
     dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
     model_path = os.path.join(MLX_MODELS_DIR, dir_name)
@@ -188,7 +210,8 @@ def get_mlx_lm_model(model_id: str):
 
     logger.info(f"Loading mlx_lm model {model_id} from {model_path}...")
     model, tokenizer = _mlx_lm_load(model_path)
-    _lm_cache[model_id] = (model, tokenizer)
+    with _cache_lock:
+        _lm_cache[model_id] = (model, tokenizer)
     return model, tokenizer
 
 
@@ -321,6 +344,7 @@ async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     logger.info("inference start", extra={"model_id": model_id, "msg_count": len(messages)})
     result = await run_in_inference_thread(handle_mlx_vlm_request, model_id, messages)
     elapsed_ms = int((time.monotonic() - t0) * 1000)
+    _inference_latencies.append(elapsed_ms)
     logger.info("inference complete", extra={"model_id": model_id, "elapsed_ms": elapsed_ms})
     try:
         return result["choices"][0]["message"]["content"]
