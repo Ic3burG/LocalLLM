@@ -194,11 +194,17 @@ async def _delete_cron(name: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _get_current_datetime() -> str:
+    now = datetime.now().astimezone()
+    return now.strftime("%A, %Y-%m-%d %H:%M:%S %Z")
+
+
 async def _google_search(query: str) -> str:
     try:
-        from googlesearch import search
-        results = list(search(query, num=5, stop=5))
-        return "\n".join(results)
+        from ddgs import DDGS
+        results = DDGS().text(query, max_results=5)
+        lines = [f"{r['title']}\n{r['href']}" for r in results]
+        return "\n\n".join(lines) if lines else "No results found."
     except Exception as e:
         logger.error("google_search failed: %s", e, extra={"query": query})
         return f"ERROR: {e}"
@@ -380,6 +386,7 @@ register_tool("clipboard_copy", "safe", "Copy text to system clipboard", _clipbo
 register_tool("clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste)
 register_tool("google_search", "safe", "Search Google for a query", _google_search)
 register_tool("web_fetch", "safe", "Fetch and clean text from a URL", _web_fetch)
+register_tool("get_current_datetime", "safe", "Get the current local date, time, and timezone", _get_current_datetime)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here 
 # because they depend on the scheduler in agent.py. 
@@ -395,7 +402,7 @@ AGENT_SYSTEM_PROMPT = """You are an autonomous agent. You have access to these t
   create_cron(name, schedule, command), delete_cron(name),
   list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt),
   git_status(), git_log(limit), clipboard_copy(text), clipboard_paste(),
-  google_search(query), web_fetch(url)
+  google_search(query), web_fetch(url), get_current_datetime()
 
 To call a tool, output EXACTLY one line:
   TOOL: tool_name("arg1", "arg2")
@@ -405,13 +412,31 @@ To finish, output:
 
 Think step by step. Only call one tool per response."""
 
+def strip_thinking_blocks(text: str) -> str:
+    """Strip all known thinking-block formats used by Gemma 4 and related models."""
+    # Gemma 4 channel format — complete blocks (closing tag present)
+    text = re.sub(r'<\|channel\|?>thought\n?.*?<\|?channel\|>', '', text, flags=re.DOTALL)
+    # Gemma 4 channel format — truncated/unclosed blocks (output hit token limit mid-thought)
+    text = re.sub(r'<\|channel\|?>thought\n?.*$', '', text, flags=re.DOTALL)
+    # Generic XML-style thinking blocks
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<thought>.*?</thought>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    return text.strip()
+
+
 def parse_model_output(text: str) -> tuple[str, str, list] | None:
     """Return (type, tool_or_message, args) or None if neither TOOL nor DONE found."""
+    # Strip all thinking block formats before parsing so that tool/done references
+    # inside thinking blocks don't trigger real tool calls or false done signals.
+    # The original text is preserved in the message history; only parsing uses clean_text.
+    clean_text = strip_thinking_blocks(text)
+
     # Native Gemma format: <|tool_call>call:tool_name("arg")<tool_call|>
-    native_match = re.search(r'<\|tool_call\>call:(\w+)\((.*?)\)<tool_call\|>', text, re.DOTALL)
+    native_match = re.search(r'<\|tool_call\>call:(\w+)\((.*?)\)<tool_call\|>', clean_text, re.DOTALL)
     # Text-based format: TOOL: tool_name("arg")
-    tool_match = re.search(r'TOOL:\s*(\w+)\((.*)\)\s*$', text, re.MULTILINE)
-    done_match = re.search(r'DONE:\s*(.+)', text, re.MULTILINE)
+    tool_match = re.search(r'TOOL:\s*(\w+)\((.*)\)\s*$', clean_text, re.MULTILINE)
+    done_match = re.search(r'DONE:\s*(.+)', clean_text, re.MULTILINE)
 
     active_match = native_match or tool_match
     if active_match:

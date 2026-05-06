@@ -1141,6 +1141,10 @@
 
         function handleAgentEvent(event, taskId, traceContainer, startTime, es, currentChat) {
             const stepCount = traceContainer.querySelectorAll('.trace-step').length;
+            if (event.type === 'status') {
+                setAgentStatus(event.message);
+                return;
+            }
             if (event.type === 'thinking') {
                 // Attach reasoning block to the trace container so it shows inline
                 // while the user is waiting; hidden under a disclosure toggle.

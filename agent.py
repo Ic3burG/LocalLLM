@@ -94,7 +94,7 @@ async def summarize_history(messages: list[dict]) -> list[dict]:
             
     return new_messages
 
-from inference_engine import run_inference
+from inference_engine import run_inference, is_model_loaded
 
 # per-task SSE queues and confirmation queues
 sse_queues: dict[str, asyncio.Queue] = {}
@@ -274,7 +274,13 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
     messages[0]["content"] = f"Current date and time: {now_str}\n\n" + messages[0]["content"]
 
     try:
+        empty_retries = 0
         for _ in range(20):
+            # Notify the UI when the model needs to be loaded from disk so the
+            # user sees a meaningful status instead of a silent "Thinking..." wait.
+            if not is_model_loaded(model_id):
+                await q.put(json.dumps({"type": "status", "message": f"Loading {model_id}…"}))
+
             messages = await summarize_history(messages)
             response_text = await run_inference(messages, model_id)
             messages.append({"role": "assistant", "content": response_text})
@@ -293,9 +299,15 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
                 clean_response = strip_thinking_blocks(response_text)
                 if not clean_response:
-                    logger.warning("empty response after stripping thinking, nudging model")
+                    empty_retries += 1
+                    logger.warning("empty response after stripping thinking", extra={"retry": empty_retries})
+                    if empty_retries >= 3:
+                        logger.error("model produced no response after 3 attempts, giving up")
+                        await q.put(json.dumps({"type": "error", "message": f"Model {model_id} produced no response after 3 attempts. Try a simpler query or a different model."}))
+                        return
                     messages.append({"role": "user", "content": "Please provide your answer."})
                     continue
+                empty_retries = 0
                 logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
                 await q.put(json.dumps({"type": "done", "message": clean_response}))
                 return
