@@ -842,20 +842,43 @@
 
                 console.log("[TRACE] Starting SSE stream for task:", task_id);
                 const es = new EventSource(`http://localhost:3001/api/chat/stream/${task_id}`);
+                let taskDone = false;
+
+                // Safety net: if the model takes extremely long (>10 min), surface it
+                // rather than leaving the UI frozen on "Thinking..." forever.
+                const stallTimer = setTimeout(() => {
+                    if (!taskDone) {
+                        setAgentStatus('Still working… (model may be loading)');
+                    }
+                }, 90000);
+
                 es.onopen = () => console.log("[TRACE] SSE stream opened");
                 es.onmessage = (e) => {
                     console.log("[TRACE] SSE event received:", e.data);
-                    const event = JSON.parse(e.data);
-                    handleAgentEvent(event, task_id, traceContainer, startTime, es, currentChat);
+                    try {
+                        const event = JSON.parse(e.data);
+                        if (event.type === 'done' || event.type === 'error') {
+                            taskDone = true;
+                            clearTimeout(stallTimer);
+                        }
+                        handleAgentEvent(event, task_id, traceContainer, startTime, es, currentChat);
+                    } catch (parseErr) {
+                        console.error("[TRACE] Failed to parse SSE event:", e.data, parseErr);
+                    }
                 };
                 es.onerror = (err) => {
+                    clearTimeout(stallTimer);
                     console.error("[TRACE] SSE stream error:", err);
-                    clearAgentStatus();
-                    es.close();
-                    const errEl = document.createElement('div');
-                    errEl.className = 'agent-error-message';
-                    errEl.textContent = '⚠ Connection to agent stream lost. Check server logs.';
-                    appendToChat(errEl);
+                    if (!taskDone) {
+                        clearAgentStatus();
+                        es.close();
+                        const errEl = document.createElement('div');
+                        errEl.className = 'agent-error-message';
+                        errEl.textContent = '⚠ Connection to agent stream lost. Check server logs.';
+                        appendToChat(errEl);
+                    } else {
+                        es.close();
+                    }
                 };
             } catch (error) { 
                 console.error("Chat Error:", error); 

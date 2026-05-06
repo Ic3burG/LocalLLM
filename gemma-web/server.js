@@ -106,6 +106,8 @@ app.get("/api/chat/stream/:taskId", (req, res) => {
   const proxyReq = http.request(options, (proxyRes) => {
     proxyRes.pipe(res);
   });
+  // Disable timeout on the Node→Python socket too (default 120s kills long 26B runs).
+  proxyReq.on("socket", (sock) => sock.setTimeout(0));
   proxyReq.on("error", (err) => {
     log("ERROR", "SSE proxy error", { task_id: taskId, error: err.message });
     res.end();
@@ -188,6 +190,21 @@ app.get("/api/memory", async (req, res) => {
   } catch (e) {
     log("ERROR", "memory fetch failed", { error: e.message });
     res.status(502).json({ memory: "" });
+  }
+});
+
+app.get("/api/stats", async (req, res) => {
+  try {
+    const response = await axios.get("http://localhost:9379/v1/stats", { timeout: 2000 });
+    res.json(response.data);
+  } catch (e) {
+    log("ERROR", "stats fetch failed", { error: e.message, code: e.code });
+    const status = e.response ? e.response.status : 503;
+    res.status(status).json({ 
+      error: "Failed to fetch stats from bridge",
+      detail: e.message,
+      online: false
+    });
   }
 });
 

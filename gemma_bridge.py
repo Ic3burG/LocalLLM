@@ -15,8 +15,21 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
+import psutil
+try:
+    import mlx.core as mx
+except ImportError:
+    mx = None
 import pdf_pipeline
-from inference_engine import run_inference, MLX_MODELS_DIR, _MODEL_DIR_MAP, handle_mlx_vlm_request, format_openai_response
+from inference_engine import (
+    run_inference, 
+    MLX_MODELS_DIR, 
+    _MODEL_DIR_MAP, 
+    handle_mlx_vlm_request, 
+    format_openai_response,
+    get_avg_latency,
+    get_loaded_models
+)
 from logging_config import setup_logging, task_id_var
 
 setup_logging()
@@ -76,6 +89,8 @@ app.add_middleware(RequestLoggingMiddleware)
 # Configuration
 MEMORY_FILE = os.path.join(os.getcwd(), "USER_MEMORY.md")
 PORT = 9379
+
+_current_process = psutil.Process(os.getpid())
 
 # In-memory document store: doc_id -> {filename, page_count, chunks, embeddings}
 doc_store: dict = {}
@@ -149,6 +164,9 @@ INSTRUCTIONS:
         updated_content = strip_thinking(raw_content)
         
         if updated_content.strip() and "# User Memory" in updated_content:
+            # Strip wrapping code fences the model sometimes adds
+            updated_content = re.sub(r'^```\w*\n', '', updated_content)
+            updated_content = re.sub(r'\n```$', '', updated_content)
             # Deduplicate horizontal lines
             updated_content = re.sub(r'\n---+\n---+', '\n---', updated_content)
             with open(MEMORY_FILE, "w") as f:
@@ -168,6 +186,29 @@ async def list_models():
                 model_id = _reverse_map.get(d, d)
                 available.append({"id": model_id, "object": "model", "provider": "mlx_vlm"})
     return {"data": available}
+
+@app.get("/v1/stats")
+async def get_stats():
+    """Exposes system and inference performance metrics."""
+    try:
+        ram_usage_mb = _current_process.memory_info().rss / (1024 * 1024)
+    except Exception:
+        ram_usage_mb = 0
+
+    vram_usage_mb = 0
+    if mx is not None:
+        try:
+            # mx.get_active_memory() is the preferred way now
+            vram_usage_mb = mx.get_active_memory() / (1024 * 1024)
+        except Exception as e:
+            logger.warning(f"Failed to gather MLX memory stats: {e}")
+
+    return {
+        "ram_usage_mb": round(ram_usage_mb, 2),
+        "vram_usage_mb": round(vram_usage_mb, 2),
+        "avg_latency_ms": round(get_avg_latency(), 2),
+        "model_cache": get_loaded_models()
+    }
 
 @app.get("/v1/memory")
 async def get_memory_endpoint():

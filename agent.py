@@ -314,6 +314,7 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
             kind, name_or_msg, args = parsed
             if kind == "done":
+                logger.info("DONE marker found, sending done event", extra={"model_id": model_id, "preview": name_or_msg[:200]})
                 await q.put(json.dumps({"type": "done", "message": name_or_msg}))
                 return
 
@@ -403,21 +404,33 @@ async def run_agent(req: AgentRequest):
 @router.get("/stream/{task_id}")
 async def stream_agent(task_id: str):
     if task_id not in sse_queues:
+        logger.warning("SSE stream requested for unknown task", extra={"task_id": task_id})
         raise HTTPException(status_code=404, detail="Task not found")
     q = sse_queues[task_id]
 
     async def event_gen():
         try:
             while True:
-                event = await q.get()
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    # Keepalive ping — flushes any pipeline buffers and prevents
+                    # idle connection timeouts on proxies / the browser side.
+                    yield ": ping\n\n"
+                    continue
                 if event is None:
                     break
                 yield f"data: {event}\n\n"
         finally:
+            logger.info("SSE stream closing", extra={"task_id": task_id})
             sse_queues.pop(task_id, None)
             confirm_queues.pop(task_id, None)
 
-    return StreamingResponse(event_gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.post("/confirm/{task_id}")
