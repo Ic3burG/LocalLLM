@@ -12,14 +12,12 @@ def has_internet():
         return False
 
 @pytest.mark.asyncio
+@pytest.mark.skipif(not has_internet(), reason="No internet connection")
 async def test_google_search_contract():
     """
     Verifies that _google_search returns expected data from DuckDuckGo.
     This is a contract test for the 'ddgs' library and our scraping logic.
     """
-    if not has_internet():
-        pytest.skip("No internet connection")
-
     query = "python programming"
     result = await _google_search(query)
     
