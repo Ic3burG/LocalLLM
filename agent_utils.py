@@ -202,8 +202,9 @@ async def _get_current_datetime() -> str:
 async def _google_search(query: str) -> str:
     try:
         from ddgs import DDGS
-        results = DDGS().text(query, max_results=5)
-        lines = [f"{r['title']}\n{r['href']}" for r in results]
+        loop = asyncio.get_running_loop()
+        results = await loop.run_in_executor(None, lambda: DDGS().text(query, max_results=5))
+        lines = [f"{r['title']}\n{r['href']}\n{r.get('body', '')}" for r in results]
         return "\n\n".join(lines) if lines else "No results found."
     except Exception as e:
         logger.error("google_search failed: %s", e, extra={"query": query})
@@ -232,20 +233,18 @@ async def _web_fetch(url: str) -> str:
         validate_url(url)
         import requests
         from bs4 import BeautifulSoup
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "html.parser")
+        loop = asyncio.get_running_loop()
 
-        # Remove script and style elements
-        for script_or_style in soup(["script", "style"]):
-            script_or_style.decompose()
+        def _sync_fetch():
+            resp = requests.get(url, timeout=10)
+            resp.raise_for_status()
+            soup = BeautifulSoup(resp.text, "html.parser")
+            for tag in soup(["script", "style"]):
+                tag.decompose()
+            lines = [l.strip() for l in soup.get_text(separator="\n").splitlines() if l.strip()]
+            return "\n".join(lines)[:5000]
 
-        # Get text and clean up whitespace
-        text = soup.get_text(separator="\n")
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        cleaned_text = "\n".join(lines)
-
-        return cleaned_text[:5000]
+        return await loop.run_in_executor(None, _sync_fetch)
     except Exception as e:
         logger.error("web_fetch failed: %s", e, extra={"url": url})
         return f"ERROR: {e}"
@@ -396,21 +395,34 @@ register_tool("get_current_datetime", "safe", "Get the current local date, time,
 # System prompt
 # ---------------------------------------------------------------------------
 
-AGENT_SYSTEM_PROMPT = """You are an autonomous agent. You have access to these tools:
-  read_file(path), list_dir(path), grep_search(pattern, path), write_file(path, content),
-  append_file(path, content), shell(command), python_interpreter(code), list_crons(),
-  create_cron(name, schedule, command), delete_cron(name),
-  list_scheduled_tasks(), create_scheduled_task(name, schedule, prompt),
-  git_status(), git_log(limit), clipboard_copy(text), clipboard_paste(),
-  google_search(query), web_fetch(url), get_current_datetime()
+AGENT_SYSTEM_PROMPT = """You are an autonomous agent with access to the internet and local tools.
 
-To call a tool, output EXACTLY one line:
-  TOOL: tool_name("arg1", "arg2")
+TOOLS AVAILABLE:
+  google_search(query)          — search the web for real-time information
+  web_fetch(url)                — fetch and read a webpage
+  get_current_datetime()        — get the current date and time
+  read_file(path)               — read a local file
+  list_dir(path)                — list directory contents
+  grep_search(pattern, path)    — search files for a pattern
+  write_file(path, content)     — write a file
+  append_file(path, content)    — append to a file
+  shell(command)                — run a shell command
+  python_interpreter(code)      — execute Python code
+  git_status()                  — git status
+  git_log(limit)                — git log
+  clipboard_copy(text)          — copy to clipboard
+  clipboard_paste()             — paste from clipboard
+  list_crons()                  — list cron jobs
+  create_cron(name, schedule, command)   — create a cron job
+  delete_cron(name)             — delete a cron job
+  list_scheduled_tasks()        — list in-app scheduled tasks
+  create_scheduled_task(name, schedule, prompt) — create a scheduled task
 
-To finish, output:
-  DONE: <concise summary of what was accomplished>
-
-Think step by step. Only call one tool per response."""
+RULES:
+- For any real-time query (scores, news, weather, prices, current events): ALWAYS call google_search. Never say you lack internet access — you have it.
+- To call a tool, output EXACTLY one line: TOOL: tool_name("arg1", "arg2")
+- To finish, output: DONE: <your answer or summary>
+- Think step by step. Only call one tool per response."""
 
 def strip_thinking_blocks(text: str) -> str:
     """Strip all known thinking-block formats used by Gemma 4 and related models."""
