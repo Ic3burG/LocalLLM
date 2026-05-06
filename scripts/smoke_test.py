@@ -1,6 +1,7 @@
 import requests
 import json
 import sys
+import argparse
 
 # Configuration
 NODE_URL = "http://localhost:3001"
@@ -10,11 +11,17 @@ MODEL_ID = "gemma4-e4b"
 # 2x2 opaque white PNG
 TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAASSURBVChTY/z//z8DDAA5EAMA6mQD/0mFmBwAAAAASUVORK5CYII="
 
+results = []
+json_mode = False
+
 def print_result(name, success, message=""):
-    status = "[PASS]" if success else "[FAIL]"
-    print(f"{status} {name}")
-    if message:
-        print(f"       {message}")
+    if json_mode:
+        results.append({"name": name, "success": success, "message": message})
+    else:
+        status = "[PASS]" if success else "[FAIL]"
+        print(f"{status} {name}")
+        if message:
+            print(f"       {message}")
 
 def test_node_health():
     """Checks if the Node.js proxy is up and reports the bridge as online."""
@@ -133,7 +140,15 @@ def test_vision_roundtrip():
     return False
 
 def main():
-    print("--- Gemma 4 Connectivity Smoke Test ---")
+    parser = argparse.ArgumentParser(description="Gemma 4 Connectivity Smoke Test")
+    parser.add_argument("--json", action="store_true", help="Output results as JSON")
+    args = parser.parse_args()
+
+    global json_mode
+    json_mode = args.json
+
+    if not json_mode:
+        print("--- Gemma 4 Connectivity Smoke Test ---")
     
     # Infrastructure checks
     node_ok = test_node_health()
@@ -147,16 +162,20 @@ def main():
         t2 = test_vision_roundtrip()
         all_passed = all_passed and t1 and t2
     else:
-        print("\n[SKIP] Functional tests skipped because Node.js health check failed.")
+        if not json_mode:
+            print("\n[SKIP] Functional tests skipped because Node.js health check failed.")
         all_passed = False
 
-    print("----------------------------------------")
-    if all_passed:
-        print("RESULT: All connectivity tests PASSED.")
-        sys.exit(0)
+    if json_mode:
+        print(json.dumps({"success": all_passed, "results": results}, indent=2))
     else:
-        print("RESULT: One or more connectivity tests FAILED.")
-        sys.exit(1)
+        print("----------------------------------------")
+        if all_passed:
+            print("RESULT: All connectivity tests PASSED.")
+        else:
+            print("RESULT: One or more connectivity tests FAILED.")
+    
+    sys.exit(0 if all_passed else 1)
 
 if __name__ == "__main__":
     main()
