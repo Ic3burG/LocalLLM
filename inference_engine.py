@@ -100,6 +100,13 @@ def _watchdog_loop():
 _watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True, name="inference-watchdog")
 _watchdog_thread.start()
 
+def is_model_loaded(model_id: str) -> bool:
+    """Check whether a model is currently in cache. Safe to call from any thread."""
+    if model_id in _TEXT_ONLY_MODELS:
+        return model_id in _lm_cache
+    return model_id in _vlm_cache
+
+
 async def run_in_inference_thread(fn, *args):
     """Submit *fn(*args)* to the inference thread and await the result."""
     if not _inference_ready.is_set():
@@ -107,11 +114,14 @@ async def run_in_inference_thread(fn, *args):
         is_ready = await loop.run_in_executor(None, lambda: _inference_ready.wait(timeout=60))
         if not is_ready:
             raise RuntimeError("Inference worker failed to start within 60 seconds")
-    
+
     loop = asyncio.get_running_loop()
     future: asyncio.Future = loop.create_future()
     _inference_queue.put((fn, args, future))
-    return await future
+    try:
+        return await asyncio.wait_for(asyncio.shield(future), timeout=900)
+    except asyncio.TimeoutError:
+        raise RuntimeError("Inference timed out after 900 seconds")
 
 # ---------------------------------------------------------------------------
 # MLX VLM Inference Logic
@@ -204,7 +214,7 @@ def handle_mlx_lm_request(model_id: str, messages: list) -> dict:
     global _last_inference_activity
     _last_inference_activity = time.monotonic()
     tokens = []
-    for token in _mlx_lm_stream_generate(model, tokenizer, prompt, max_tokens=2048):
+    for token in _mlx_lm_stream_generate(model, tokenizer, prompt, max_tokens=8192):
         if _stop_inference.is_set():
             logger.warning(f"Inference watchdog triggered: stopping generation for {model_id}")
             break
@@ -274,7 +284,7 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
         for token in _mlx_vlm_stream_generate(
             model, processor, prompt,
             image=temp_image_path,
-            max_tokens=2048,
+            max_tokens=8192,
         ):
             if _stop_inference.is_set():
                 logger.warning(f"Inference watchdog triggered: stopping generation for {model_id}")
