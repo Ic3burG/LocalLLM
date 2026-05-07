@@ -426,7 +426,14 @@ RULES:
 4. If a tool returns an error, try a different approach once. If it fails again, tell the user what went wrong.
 5. When you have enough information to answer, output:
    DONE: <your answer>
-6. Never invent tool results. Never assume you know a tool's output before calling it."""
+   Write your DONE answer as a complete, standalone response — as if the user never saw the intermediate tool calls.
+6. Never invent tool results. Never assume you know a tool's output before calling it.
+
+EXAMPLE:
+User: What's the weather in Austin right now?
+TOOL: google_search("Austin TX weather today")
+TOOL_RESULT: Austin, TX: 84°F, partly cloudy. High of 91°F expected.
+DONE: It's currently 84°F and partly cloudy in Austin, with a high of 91°F expected today."""
 
 def strip_thinking_blocks(text: str) -> str:
     """Strip all known thinking-block formats used by Gemma 4 and related models."""
