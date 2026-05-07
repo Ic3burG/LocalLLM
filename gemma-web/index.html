@@ -134,6 +134,7 @@
         .confirm-buttons { display: flex; gap: 8px; }
         .btn-allow { background: #22c55e; color: white; border: none; padding: 5px 14px; border-radius: 6px; cursor: pointer; }
         .btn-deny { background: #ef444422; color: #ef4444; border: 1px solid #ef4444; padding: 5px 14px; border-radius: 6px; cursor: pointer; }
+        .btn-always { background: transparent; color: var(--color-text-muted); border: 1px solid var(--color-border); padding: 5px 14px; border-radius: 6px; cursor: pointer; font-size: 11px; }
 
         /* Agent messages */
         .agent-done-message { padding: 8px 12px; color: #22c55e; font-size: 13px; }
@@ -238,6 +239,7 @@
                     <div class="flex items-center gap-2">
                         <select id="model-select" class="bg-transparent border-none text-[10px] text-gray-500 focus:ring-0 p-0 cursor-pointer hover:text-blue-500 transition-colors">
                             <option value="gemma4-e4b">Gemma 4 E4B (Fast)</option>
+                            <option value="deepseek-v4-mini">DeepSeek V4 Mini (7B Reasoning)</option>
                             <option value="phi4-mini">Phi-4 Mini (Alternative)</option>
                             <option value="gemma4-26b-mlx">Gemma 4 26B A4B (Powerful)</option>
                             <option value="gemma4-31b-mlx">Gemma 4 31B Dense (Elite)</option>
@@ -281,29 +283,68 @@
     <div id="settings-modal" class="fixed inset-0 z-[60] flex items-center justify-center modal-overlay hidden-modal">
         <div class="modal-content bg-white dark:bg-darkSurface w-full max-w-2xl max-h-[80vh] m-4 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             <div class="p-6 border-b border-gray-100 dark:border-[#3c3d40] flex justify-between items-center">
-                <div class="flex items-center gap-3">
-                    <div class="p-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4.5a2.5 2.5 0 0 0-4.96-.46 2.5 2.5 0 0 0-1.98 3 2.5 2.5 0 0 0 .98 4.96 2.5 2.5 0 0 0 0 5 2.5 2.5 0 0 0 0 5 2.5 2.5 0 0 0 4.96-.46 2.5 2.5 0 0 0 1.98-3 2.5 2.5 0 0 0-.98-4.96 2.5 2.5 0 0 0 0-5 2.5 2.5 0 0 0 0-5Z"/><path d="M12 4.5V19.5"/><path d="M8 12h8"/></svg>
-                    </div>
-                    <h2 class="text-xl font-bold">Long-Term Memory</h2>
+                <div class="flex items-center gap-6">
+                    <button id="tab-vitals" class="text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all">Vitals</button>
+                    <button id="tab-memory" class="text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all">Memory</button>
                 </div>
                 <button id="close-settings-btn" class="text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                 </button>
             </div>
-            <div class="p-6 flex-1 overflow-y-auto">
+            
+            <div id="vitals-pane" class="p-6 flex-1 overflow-y-auto">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Process RAM</div>
+                        <div id="vital-ram" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">GPU VRAM</div>
+                        <div id="vital-vram" class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400">--</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Latency</div>
+                        <div id="vital-latency" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
+                    </div>
+                </div>
+
+                <div class="mb-8">
+                    <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                        Loaded Models
+                    </h3>
+                    <div id="vital-models" class="flex flex-wrap gap-2 text-xs font-mono">
+                        <span class="text-gray-500 italic">None currently loaded</span>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-semibold flex items-center gap-2 text-gray-700 dark:text-gray-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+                            System Integrity
+                        </h3>
+                        <button id="run-check-btn" class="text-xs font-medium text-blue-600 hover:underline">Run Post-Update Check</button>
+                    </div>
+                    <div id="check-output" class="p-4 bg-gray-900 text-gray-300 rounded-xl font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto hidden">
+                        Running integrity tests...
+                    </div>
+                </div>
+            </div>
+
+            <div id="memory-pane" class="p-6 flex-1 overflow-y-auto hidden">
                 <p class="text-sm text-gray-500 mb-4">Gemma uses this file to remember your preferences and context. You can manually edit it below.</p>
                 <textarea id="memory-editor" class="w-full h-96 p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-xl font-mono text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none text-gray-800 dark:text-gray-200 resize-none"></textarea>
             </div>
             <div class="p-6 border-t border-gray-100 dark:border-[#3c3d40] flex justify-between items-center gap-3 bg-gray-50/50 dark:bg-[#0e0e11]/30">
-                <div class="flex items-center gap-3">
+                <div id="restart-container" class="flex items-center gap-3">
                     <button id="restart-backend-btn" class="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-[#3c3d40] text-sm font-medium text-gray-600 dark:text-gray-300 hover:border-red-400 hover:text-red-500 dark:hover:text-red-400 transition-all">
                         <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                         Restart Backend
                     </button>
                     <span id="restart-status" class="text-xs opacity-0 transition-opacity"></span>
                 </div>
-                <div class="flex items-center gap-3">
+                <div id="save-container" class="flex items-center gap-3">
                     <span id="save-status" class="text-xs text-green-500 flex items-center opacity-0 transition-opacity">Saved!</span>
                     <button id="save-memory-btn" class="bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-2 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg">Save Memory</button>
                 </div>
@@ -362,6 +403,7 @@
 
         // State
         let currentChatId = null;
+        const alwaysAllowedTools = new Set(); // tools auto-approved for this browser session
         let chats = JSON.parse(localStorage.getItem('gemma_chats') || '[]');
         let currentAttachments = [];
 
@@ -396,19 +438,108 @@
             updateThemeUI();
         });
 
-        async function openSettings() {
-            settingsModal.classList.remove('hidden-modal');
+        const tabVitals = document.getElementById('tab-vitals');
+        const tabMemory = document.getElementById('tab-memory');
+        const vitalsPane = document.getElementById('vitals-pane');
+        const memoryPane = document.getElementById('memory-pane');
+        const vitalRam = document.getElementById('vital-ram');
+        const vitalVram = document.getElementById('vital-vram');
+        const vitalLatency = document.getElementById('vital-latency');
+        const vitalModels = document.getElementById('vital-models');
+        const runCheckBtn = document.getElementById('run-check-btn');
+        const checkOutput = document.getElementById('check-output');
+
+        let vitalsInterval = null;
+
+        const restartContainer = document.getElementById('restart-container');
+        const saveContainer = document.getElementById('save-container');
+
+        function switchTab(tab) {
+            if (tab === 'vitals') {
+                tabVitals.className = 'text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all';
+                tabMemory.className = 'text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all';
+                vitalsPane.classList.remove('hidden');
+                memoryPane.classList.add('hidden');
+                restartContainer.classList.remove('hidden');
+                saveContainer.classList.add('hidden');
+                startVitalsPolling();
+            } else {
+                tabMemory.className = 'text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all';
+                tabVitals.className = 'text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all';
+                memoryPane.classList.remove('hidden');
+                vitalsPane.classList.add('hidden');
+                restartContainer.classList.add('hidden');
+                saveContainer.classList.remove('hidden');
+                stopVitalsPolling();
+                loadMemory();
+            }
+        }
+
+        tabVitals.addEventListener('click', () => switchTab('vitals'));
+        tabMemory.addEventListener('click', () => switchTab('memory'));
+
+        async function loadMemory() {
             try {
                 const response = await fetch('http://localhost:3001/api/memory');
                 const data = await response.json();
                 memoryEditor.value = data.memory || '';
+            } catch (e) { memoryEditor.value = ''; }
+        }
+
+        async function updateVitals() {
+            try {
+                const r = await fetch('http://localhost:3001/api/stats');
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const data = await r.json();
+                
+                if (data.error) {
+                    vitalRam.textContent = '--';
+                    vitalVram.textContent = '--';
+                    vitalLatency.textContent = '--';
+                    vitalModels.innerHTML = `<span class="text-red-500 italic">${data.error}</span>`;
+                    return;
+                }
+
+                vitalRam.textContent = typeof data.ram_usage_mb === 'number' ? `${data.ram_usage_mb.toFixed(0)} MB` : '--';
+                vitalVram.textContent = typeof data.vram_usage_mb === 'number' ? `${(data.vram_usage_mb / 1024).toFixed(1)} GB` : '--';
+                
+                if (data.status && data.status.is_busy) {
+                    vitalLatency.innerHTML = `<span class="flex items-center gap-2 text-yellow-500"><svg class="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Loading ${data.status.current_model || ''}</span>`;
+                } else {
+                    vitalLatency.textContent = (typeof data.avg_latency_ms === 'number' && data.avg_latency_ms > 0) ? `${data.avg_latency_ms.toFixed(0)}ms` : '--';
+                }
+                
+                vitalModels.innerHTML = (Array.isArray(data.model_cache) && data.model_cache.length > 0)
+                    ? data.model_cache.map(m => `<span class="px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-md border border-blue-100 dark:border-blue-800/50">${m}</span>`).join('')
+                    : '<span class="text-gray-500 italic">None currently loaded</span>';
             } catch (e) {
-                memoryEditor.value = '';
+                console.error("Failed to fetch vitals", e);
+                vitalRam.textContent = '--';
+                vitalVram.textContent = '--';
+                vitalLatency.textContent = '--';
+                vitalModels.innerHTML = '<span class="text-yellow-500 italic">Bridge busy or unreachable</span>';
             }
+        }
+
+        function startVitalsPolling() {
+            if (vitalsInterval) return;
+            updateVitals();
+            vitalsInterval = setInterval(updateVitals, 5000);
+        }
+
+        function stopVitalsPolling() {
+            clearInterval(vitalsInterval);
+            vitalsInterval = null;
+        }
+
+        async function openSettings() {
+            settingsModal.classList.remove('hidden-modal');
+            switchTab('vitals');
         }
 
         function closeSettings() {
             settingsModal.classList.add('hidden-modal');
+            stopVitalsPolling();
         }
 
         async function saveMemory() {
@@ -422,7 +553,6 @@
                 if (response.ok) {
                     saveStatus.style.opacity = '1';
                     setTimeout(() => saveStatus.style.opacity = '0', 2000);
-                    refreshMemoryPreview();
                 } else throw new Error("Save failed");
             } catch (e) { alert("Failed to save memory."); }
             finally { saveMemoryBtn.disabled = false; }
@@ -432,6 +562,31 @@
         // learnedMemoryBox.addEventListener('click', openSettings);
         closeSettingsBtn.addEventListener('click', closeSettings);
         saveMemoryBtn.addEventListener('click', saveMemory);
+
+        runCheckBtn.addEventListener('click', async () => {
+            runCheckBtn.disabled = true;
+            runCheckBtn.textContent = 'Running...';
+            checkOutput.classList.remove('hidden');
+            checkOutput.innerHTML = '<span class="text-blue-400">Starting integrity check...</span>';
+            
+            try {
+                const r = await fetch('http://localhost:3001/api/backend/check');
+                const data = await r.json();
+                
+                if (data.success) {
+                    checkOutput.innerHTML = `<span class="text-green-500 font-bold">ALL TESTS PASSED!</span>\n\n` + 
+                        data.results.map(res => `[${res.passed ? 'PASS' : 'FAIL'}] ${res.name}: ${res.details || 'OK'}`).join('\n');
+                } else {
+                    checkOutput.innerHTML = `<span class="text-red-500 font-bold">INTEGRITY CHECK FAILED</span>\n\n` + 
+                        (data.raw || data.error || 'Unknown error occurred.');
+                }
+            } catch (e) {
+                checkOutput.innerHTML = `<span class="text-red-500">Error: ${e.message}</span>`;
+            } finally {
+                runCheckBtn.disabled = false;
+                runCheckBtn.textContent = 'Run Post-Update Check';
+            }
+        });
         settingsModal.addEventListener('click', (e) => { if(e.target === settingsModal) closeSettings(); });
 
         document.getElementById('restart-backend-btn').addEventListener('click', async () => {
@@ -497,7 +652,7 @@
                 id: currentChatId,
                 title: 'New Chat',
                 model: modelSelect.value,
-                messages: [{ role: 'system', content: 'You are Gemma 4, a helpful and concise local AI assistant.' }],
+                messages: [{ role: 'system', content: `You are a helpful local AI assistant running on the user's machine.\n\nToday's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.\n\nBe direct and accurate. Prefer clear prose over bullet points unless structure genuinely helps. Admit uncertainty rather than guessing. When you don't know something recent, say so.` }],
                 timestamp: Date.now()
             };
             chats.unshift(newChat);
@@ -1020,8 +1175,13 @@
             const denyBtn = document.createElement('button');
             denyBtn.textContent = '✕ Deny';
             denyBtn.className = 'btn-deny';
+            const alwaysBtn = document.createElement('button');
+            alwaysBtn.textContent = '⟳ Always Allow';
+            alwaysBtn.className = 'btn-always';
+            alwaysBtn.title = 'Allow this tool for the rest of this session without asking';
             buttons.appendChild(allowBtn);
             buttons.appendChild(denyBtn);
+            buttons.appendChild(alwaysBtn);
 
             card.appendChild(header);
             card.appendChild(argsEl);
@@ -1030,8 +1190,30 @@
 
             allowBtn.addEventListener('click', () => resolveConfirm(taskId, true, card));
             denyBtn.addEventListener('click', () => resolveConfirm(taskId, false, card));
+            alwaysBtn.addEventListener('click', () => resolveConfirm(taskId, true, card, toolName));
 
             return card;
+        }
+
+        async function resolveConfirm(taskId, approved, card, toolToAlwaysAllow = null) {
+            if (toolToAlwaysAllow) alwaysAllowedTools.add(toolToAlwaysAllow);
+            fetch(`http://localhost:3001/api/agent/confirm/${taskId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ approved }),
+            }).catch(e => console.error('[Confirm] Failed:', e));
+            if (card) {
+                const buttons = card.querySelector('.confirm-buttons');
+                if (buttons) {
+                    while (buttons.firstChild) buttons.removeChild(buttons.firstChild);
+                    const label = document.createElement('span');
+                    label.style.color = approved ? '#22c55e' : '#ef4444';
+                    label.style.fontSize = '12px';
+                    label.textContent = (approved ? '✓ Allowed' : '✕ Denied') + (toolToAlwaysAllow ? ' (always)' : '');
+                    buttons.appendChild(label);
+                }
+                card.style.opacity = '0.6';
+            }
         }
 
         function setAgentStatus(text) {
@@ -1181,6 +1363,11 @@
                 updateTraceSummary(traceContainer);
                 setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
             } else if (event.type === 'confirm_request') {
+                if (alwaysAllowedTools.has(event.tool)) {
+                    resolveConfirm(taskId, true, null);
+                    setAgentStatus('Agent thinking… (auto-approved)');
+                    return;
+                }
                 setAgentStatus('⚠️ Waiting for your approval…');
                 const card = createConfirmCard(taskId, event.tool, event.args);
                 appendToChat(card);
