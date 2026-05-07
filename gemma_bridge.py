@@ -21,6 +21,11 @@ try:
 except ImportError:
     mx = None
 import pdf_pipeline
+from agent_utils import (
+    AGENT_SYSTEM_PROMPT,
+    log_audit,
+    strip_thinking_blocks,
+)
 from inference_engine import (
     run_inference, 
     MLX_MODELS_DIR, 
@@ -28,7 +33,8 @@ from inference_engine import (
     handle_mlx_vlm_request, 
     format_openai_response,
     get_avg_latency,
-    get_loaded_models
+    get_loaded_models,
+    get_status_info
 )
 from logging_config import setup_logging, task_id_var
 
@@ -136,6 +142,10 @@ async def startup():
     scheduler.start()
     load_scheduler_tasks_on_startup()
 
+@app.get("/v1/system_prompt")
+async def get_system_prompt_endpoint():
+    return {"system_prompt": AGENT_SYSTEM_PROMPT}
+
 async def update_memory_task(user_msg, assistant_msg):
     """Background task to learn from the interaction and update USER_MEMORY.md"""
     try:
@@ -190,6 +200,7 @@ async def list_models():
 @app.get("/v1/stats")
 async def get_stats():
     """Exposes system and inference performance metrics."""
+    status_info = get_status_info()
     try:
         ram_usage_mb = _current_process.memory_info().rss / (1024 * 1024)
     except Exception:
@@ -198,8 +209,11 @@ async def get_stats():
     vram_usage_mb = 0
     if mx is not None:
         try:
-            # mx.get_active_memory() is the preferred way now
-            vram_usage_mb = mx.get_active_memory() / (1024 * 1024)
+            # Try multiple common MLX locations for memory stats
+            if hasattr(mx, "get_active_memory"):
+                vram_usage_mb = mx.get_active_memory() / (1024 * 1024)
+            elif hasattr(mx, "metal") and hasattr(mx.metal, "get_active_memory"):
+                vram_usage_mb = mx.metal.get_active_memory() / (1024 * 1024)
         except Exception as e:
             logger.warning(f"Failed to gather MLX memory stats: {e}")
 
@@ -207,7 +221,8 @@ async def get_stats():
         "ram_usage_mb": round(ram_usage_mb, 2),
         "vram_usage_mb": round(vram_usage_mb, 2),
         "avg_latency_ms": round(get_avg_latency(), 2),
-        "model_cache": get_loaded_models()
+        "model_cache": get_loaded_models(),
+        "status": status_info
     }
 
 @app.get("/v1/memory")

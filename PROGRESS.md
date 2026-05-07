@@ -15,8 +15,8 @@ Today we transformed the local Gemma 4 environment from a broken prototype into 
 - **Active Models:**
   - **Gemma 4 E4B:** Optimized for speed and daily tasks (LiteRT).
   - **Phi-4 Mini:** Added as a high-quality 3.6B alternative (LiteRT).
-  - **Gemma 4 26B A4B (MoE):** Installed via MLX for high-level reasoning with MoE efficiency.
-  - **Gemma 4 31B Dense:** Installed via MLX as the "Elite" frontier model for maximum intelligence.
+  - **Gemma 4 26B A4B (MoE):** Installed via MLX for high-level reasoning and vision tasks.
+  - **Gemma 4 31B Dense:** Installed via MLX as the "Elite" frontier model for intelligence and vision.
 
 ## 🎨 UI & UX Enhancements
 
@@ -678,3 +678,303 @@ data: {"type": "done", "message": "Hello."}
 - **Proxy:** `server.js` (Express) on port 3001, managed by `com.gemini.gemma-bridge` launchd agent.
 - **SSE Pipeline:** Fully reliable across all models. Keepalive pings flush buffers every 15 seconds; both socket timeout directions disabled; `DONE:` path is now logged and traceable.
 - **26B Model:** Multi-step tool-calling requests (web search, etc.) now deliver results to the frontend correctly.
+
+---
+
+## 🛡️ Code Integrity & Health Roadmap — May 6, 2026
+
+Implemented a multi-layered verification and monitoring suite to protect the project from regressions, library rot, and performance degradation.
+
+### Connectivity & Functional Smoke Tests
+
+Developed a standalone CLI utility (`scripts/smoke_test.py`) that verifies the full network path and core model functionality.
+- **End-to-End Verification:** Pings Node.js, Python Bridge, and performs Text/Vision roundtrips.
+- **JSON Integration:** Supports a `--json` flag for structured reporting, enabling UI integration.
+- **CI/CD Ready:** Implements strict exit codes (0 on success, 1 on failure).
+
+### Dependency Contract Testing
+
+Established a new test category in `tests/contracts/` that verifies the actual behavior of upstream libraries without mocking.
+- **Search Contract:** Verifies DuckDuckGo HTML scraping structure (`agent_utils._google_search`).
+- **MLX/Inference Contract:** Verifies model loading, worker thread integration, and single-token generation (`inference_engine.run_inference`).
+- **Resilient Execution:** Tests automatically skip gracefully if internet or GPU hardware is unavailable.
+
+### Performance Telemetry & Vitals Dashboard
+
+Exposed internal system health through a real-time monitoring layer.
+- **Telemetry Endpoints:** Added `GET /v1/stats` (Python) and `/api/stats` (Node) to report RAM (psutil), VRAM (MLX Metal), and rolling inference latency.
+- **Vitals UI:** Redesigned the Settings modal into a tabbed interface. The new "Vitals" tab displays live stats and includes a "Run Integrity Check" button for on-demand smoke testing.
+- **Thread Safety:** Implemented `_cache_lock` in `inference_engine.py` to ensure thread-safe access to model caches across FastAPI and inference worker threads.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `scripts/smoke_test.py` | **New** — Connectivity and functional roundtrip utility with JSON support |
+| `tests/contracts/` | **New** — Suite of unmocked integration tests for external dependencies |
+| `inference_engine.py` | Added latency tracking, thread-safe cache locking, and telemetry helpers |
+| `gemma_bridge.py` | Added `/v1/stats` endpoint; cached `psutil.Process` for efficiency |
+| `gemma-web/server.js` | Added `/api/stats` and `/api/backend/check` proxy routes |
+| `gemma-web/index.html` | Redesigned Settings modal with tabbed interface and Vitals dashboard |
+| `requirements.txt` | Added `psutil` |
+
+## 📈 Current Status (as of May 6, 2026)
+
+- **Integrity:** Post-update connectivity is verifiable via a single command or UI button.
+- **Observability:** Real-time VRAM and RAM usage visible in the browser.
+- **Stability:** Contract tests catch breaking upstream changes before they hit production.
+- **Tests:** 67 passing (including 4 new contracts).
+
+---
+
+## 🎨 UI Polish & Stability Fixes — May 6, 2026 (Session 2)
+
+Refined the Vitals dashboard and Settings modal for better user experience and system resilience.
+
+### Vitals Dashboard Enhancements
+
+- **Real-Time Status:** Added a "Loading" indicator and model name display (e.g., "Loading gemma4-26b-mlx") to the Vitals tab, providing clear feedback during model swaps.
+- **Resilient Telemetry:** Hardened the frontend to handle backend busy states and timeouts gracefully. The dashboard now shows "Bridge busy or unreachable" instead of crashing or showing empty stats.
+- **Cross-Version VRAM Tracking:** Improved the backend logic to support multiple MLX library versions by checking both `mx.get_active_memory` and `mx.metal.get_active_memory`.
+- **Increased Stability Timeout:** Raised the stats fetch timeout to 5 seconds to ensure the dashboard remains responsive during heavy model loading.
+
+### Settings UI Refinement
+
+- **Tab-Aware Actions:** Fixed the Settings footer to show the "Restart Backend" button only on the Vitals tab and the "Save Memory" button only on the Memory tab, reducing UI clutter and preventing accidental actions.
+- **Clean Navigation:** Defaulted the Settings modal to the Vitals tab for immediate health visibility upon opening.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `gemma-web/index.html` | Implemented tab switching logic, loading indicators, and error handling for Vitals |
+| `gemma_bridge.py` | Added `get_status_info` to stats endpoint; hardened MLX memory tracking |
+| `inference_engine.py` | Implemented `get_status_info` helper to track busy state and current model |
+| `gemma-web/server.js` | Increased stats proxy timeout to 5000ms |
+
+## 📈 Current Status (as of May 6, 2026, Session 2)
+
+- **UI:** Settings modal is context-aware and informative; Vitals dashboard is resilient to backend load.
+- **Health:** All system metrics (RAM, VRAM, Latency, Status) are correctly exposed and visualized.
+- **Stability:** The full integrity suite (Smoke, Contract, Telemetry) is robust and verified.
+
+---
+
+## 🐛 Confirmation Gate Fix & "Always Allow" — May 6, 2026 (Session 3)
+
+Fixed a critical bug where the agent confirmation modal (Allow / Deny buttons) was completely non-functional, and added a session-level "Always Allow" option for any risky tool.
+
+### Root Cause
+
+`resolveConfirm` was called in event listeners on both the Allow and Deny buttons, but the function was **never defined anywhere** in `index.html`. Every click threw a silent `ReferenceError: resolveConfirm is not defined`, leaving the agent permanently stuck in `⚠️ Waiting for your approval…` with no way to proceed.
+
+The confirm card DOM, CSS, and backend endpoint (`POST /api/agent/confirm/:taskId`) were all correctly implemented — only the client-side handler function was missing.
+
+### Fixes
+
+**`gemma-web/index.html` — three coordinated changes:**
+
+1. **Added `resolveConfirm` function** (the missing piece):
+   - POSTs `{ approved: true/false }` to `/api/agent/confirm/${taskId}` via the Node proxy.
+   - Replaces the button row with a styled "✓ Allowed" or "✕ Denied" label using safe DOM methods (no `innerHTML`).
+   - Fades the card to 60% opacity to indicate it is resolved.
+   - Optionally records a tool name in `alwaysAllowedTools` when called with the always-allow flag.
+
+2. **Added "Always Allow" button** to `createConfirmCard`:
+   - A third `⟳ Always Allow` button appears on every confirmation card, styled with `--color-*` tokens so it respects the current theme.
+   - Clicking it calls `resolveConfirm(taskId, true, card, toolName)`, immediately approving the current request and adding the tool to the session Set.
+   - The resolved label shows "✓ Allowed (always)" to confirm the preference was recorded.
+
+3. **Auto-approve in `handleAgentEvent`**:
+   - Added `const alwaysAllowedTools = new Set()` at the top of the state block — a session-scoped (page-lifetime) Set, no server state needed.
+   - Before creating a new confirm card for a `confirm_request` event, checks `alwaysAllowedTools.has(event.tool)`.
+   - If the tool is already always-allowed, calls `resolveConfirm` silently and updates the status bar to "Agent thinking… (auto-approved)" without surfacing any card to the user.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `gemma-web/index.html` | Added `resolveConfirm`; added `alwaysAllowedTools` Set; added Always Allow button to confirm card; auto-approve intercept in `handleAgentEvent` |
+
+## 📈 Current Status (as of May 6, 2026, Session 3)
+
+- **Confirmation Gate:** Allow and Deny buttons now work correctly. The agent can resume after any risky tool request.
+- **Always Allow:** Clicking "⟳ Always Allow" on any confirm card permanently auto-approves that tool for the remainder of the browser session. Subsequent requests for the same tool are silently approved without showing a card.
+- **Security:** Always Allow is purely client-side and session-scoped — it resets on page reload. The backend still audits every approved tool call regardless.
+
+---
+
+## 🧠 DeepSeek-V4-Mini Integration — May 6, 2026 (Session 4)
+
+Integrated the latest DeepSeek reasoning capabilities into the Gemma 4 suite, providing a high-performance on-device reasoning alternative.
+
+### Model Integration & Research
+- **Model Selection:** Upgraded to the **DeepSeek-V4-Flash Distillation (9B)**, a dense reasoning model based on the Qwen3.5 architecture. This model inherits the V4 "Agentic" reasoning and 1M-token context capabilities.
+- **Engine Configuration:** Configured the model to use the **`mlx_lm` (Text-Only)** pipeline. This avoids errors with newer architectures (like Qwen3.5) that the vision-specific `mlx_vlm` engine does not yet support.
+- **UI Update:** Added "DeepSeek V4 Mini (7B Reasoning)" to the model selection dropdown in `gemma-web/index.html`.
+
+### Bug Fixes & Stability
+- **Resolved Architecture Incompatibility:** Fixed the "Model type not supported" error by ensuring the model is routed to the optimized `mlx_lm` loader, which natively supports the Qwen3.5 backbone.
+- **Weight Consistency Fix:** Verified that the model weights and configuration match perfectly, resolving the previous "Missing parameters" issues.
+- **Load Verification:** Successfully verified the model load and inference roundtrip using the `mlx_lm` stack.
+
+### Files Changed
+| File | Change |
+|---|---|
+| `inference_engine.py` | Added `deepseek-v4-mini` to `_TEXT_ONLY_MODELS` and `_MODEL_DIR_MAP` |
+| `gemma-web/index.html` | Added DeepSeek selection option to the chat interface |
+| `mlx_models/` | Installed **4.7GB** DeepSeek-V4 Distill Qwen 3.5 model |
+
+## 📈 Current Status (as of May 6, 2026, Session 4)
+- **Intelligence:** The app now features a true **DeepSeek-V4** generation reasoning model.
+- **Performance:** Optimized for speed on Apple Silicon using the latest `mlx_lm` features.
+- **Reliability:** Cross-engine routing ensures that each model uses its best-fit inference stack.
+
+---
+
+## 🔧 Gemma 4 26B/31B Vision Fix — May 6, 2026 (Session 5)
+
+Resolved a bug where the elite models (26B and 31B) were behaving as text-only despite having multimodal weights and configuration.
+
+### Root Cause
+In `inference_engine.py`, the `handle_mlx_vlm_request` function was flattening multimodal message content into a plain string before passing it to the `processor.apply_chat_template`. This stripped the `{"type": "image"}` token from the prompt. Without this token, the MLX-VLM engine would not insert the image embeddings into the correct position in the sequence, causing the model to ignore the image.
+
+### Fixes
+- **Prompt Construction:** Updated `handle_mlx_vlm_request` to preserve the `{"type": "image"}` dict within the message content list. This ensures the chat template correctly renders the `<|image|>` token.
+- **Documentation:** Updated the top-level "Active Models" summary to explicitly state that the 26B and 31B models support vision.
+
+### Verification
+- **Smoke Tests:** Verified vision support for both `gemma4-26b-mlx` and `gemma4-31b-mlx` using `scripts/smoke_test.py`. Both models now correctly identify image content (e.g., "The image is a solid white square").
+- **Backend Restart:** Successfully applied the fix by restarting the `com.gemini.litert` launchd agent.
+
+## 📈 Current Status (as of May 6, 2026, Session 5)
+- **Multimodal:** All Gemma 4 models (E4B, 26B A4B, 31B Dense) now fully support vision tasks.
+- **Reliability:** Validated end-to-end vision roundtrips for elite models.
+- **Intelligence:** DeepSeek-V4 Mini remains the primary reasoning-only model via `mlx_lm`.
+
+---
+
+## 🧠 System Prompt Improvements — May 6, 2026 (Session 6)
+
+Rewrote both system prompts to improve model behavior and ground responses in the current date.
+
+### Agent System Prompt (`agent_utils.py`)
+
+Replaced a loose set of bullet-point rules with a numbered, behavioral contract:
+
+- **Numbered rules** — models treat numbered lists as ordered sequences and are less likely to skip or merge items compared to unordered bullets.
+- **Explicit error handling** — added rule 4: retry a failed tool once with a different approach, then tell the user what went wrong. Previously, the model had no guidance on tool failure.
+- **Anti-hallucination rule** — added rule 6: never invent tool results or assume output before calling a tool. Prevents the model from fabricating search results or file contents.
+- **Cleaner tool table** — aligned all tool columns for readability.
+- Removed "Think step by step" — redundant for Gemma 4, which uses native thinking blocks (`<|channel|>thought`) already stripped by `strip_thinking_blocks()`.
+
+### Chat System Prompt (`gemma-web/index.html`)
+
+Replaced the generic persona string with a behavioral prompt that injects the current date dynamically:
+
+**Before:** `"You are Gemma 4, a helpful and concise local AI assistant."`
+
+**After:** A JS template literal in `createNewChat()` that stamps the real date at chat-creation time and sets behavioral guidance (directness, admitting uncertainty, prose over bullets).
+
+The date is evaluated once per conversation via `new Date().toLocaleDateString(...)` — correct granularity since the date doesn't change mid-chat.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent_utils.py` | Rewrote `AGENT_SYSTEM_PROMPT` — numbered rules, error handling, anti-hallucination rule, aligned tool table |
+| `gemma-web/index.html` | Replaced static persona string with dynamic JS template literal including current date |
+
+## 📈 Current Status (as of May 6, 2026, Session 6)
+- **Agent:** System prompt contract is explicit and numbered; model has clear guidance for tool failures and is instructed not to invent results.
+- **Chat:** Every new conversation is grounded with the current date. Model is directed toward directness and honesty over filler.
+- **Date Injection:** Agent loops inject date via `agent.py` lines 214–215/273–274; chat mode injects via JS `new Date()` at chat creation.
+
+---
+
+## 🔧 Tool Expansion — May 7, 2026
+
+Expanded the agent tool registry from 17 to 26 tools, filling gaps in file editing, git inspection, PDF reading, HTTP, system monitoring, SQLite, and notifications.
+
+### New Tools
+
+| Tool | Risk | Description |
+|---|---|---|
+| `git_diff(path?)` | safe | `git diff HEAD` — shows what changed vs the last commit; completes the git trio alongside `git_status` and `git_log` |
+| `find_file(pattern, path?)` | safe | Glob by filename (e.g. `"*.py"`); complements `grep_search` which searches file *contents* |
+| `edit_file(path, old_str, new_str)` | risky | Surgical single-occurrence string replacement — avoids full rewrites of large files via `write_file` |
+| `read_pdf(path)` | safe | Extracts text via `pdf_pipeline.extract_text_from_pdf` (pdfplumber); 10k char cap; lazy import |
+| `http_request(method, url, headers, body)` | risky | Full HTTP client for POST/PUT/DELETE; headers is a JSON string; SSRF-guarded via existing `validate_url` |
+| `notify(title, message)` | safe | macOS system notification via `osascript`; useful for alerting on long-running task completion |
+| `system_info()` | safe | CPU/RAM/disk via `psutil` (already a dependency); single-call snapshot |
+| `sqlite_query(db_path, sql)` | risky | Read-only SELECT queries; enforced at two layers — SELECT prefix check + SQLite URI `?mode=ro` |
+| `diff_files(path_a, path_b)` | safe | Unified diff of two local files via stdlib `difflib`; 8k char cap |
+
+### Risk breakdown
+
+- **Safe (auto-run):** `git_diff`, `find_file`, `read_pdf`, `notify`, `system_info`, `diff_files`
+- **Risky (confirmation gate):** `edit_file`, `http_request`, `sqlite_query`
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent_utils.py` | 9 new tool functions, 9 new `register_tool` calls, system prompt updated with new entries |
+| `TODO.md` | All backlog items marked complete |
+
+## 📈 Current Status (as of May 7, 2026)
+- **Tools:** 26 registered tools across file, git, web, system, and database categories.
+- **Security:** All new file tools go through `validate_path` (sandbox); all new HTTP tools go through `validate_url` (SSRF guard); `sqlite_query` enforces read-only at both the Python and driver level.
+
+---
+
+## 📄 PDF Read/Write Tools — May 7, 2026
+
+Implemented first-class PDF read and write capabilities for the agent, allowing it to interact with documents directly.
+
+### New Tools
+- **read_pdf(path)**: Extracts up to 10,000 characters of text from a local PDF file, preserving page structure.
+- **write_pdf(path, content)**: Generates a new PDF file from plain text content using the `fpdf2` library. Automatically handles multi-line text and page creation.
+
+### Implementation Details
+- **Dependency:** Added `fpdf2` to `requirements.txt`.
+- **Registry:** Added `read_pdf` and `write_pdf` to the `TOOL_REGISTRY` in `agent_utils.py`.
+- **System Prompt:** Updated the `AGENT_SYSTEM_PROMPT` to include both tools with clear descriptions.
+- **Verification:** Verified end-to-end functionality (write → read) with automated tests.
+
+### Files Changed
+| File | Change |
+|---|---|
+| `agent_utils.py` | Implemented `_write_pdf`; registered both PDF tools; updated system prompt |
+| `requirements.txt` | Added `fpdf2` |
+
+## 📈 Current Status (as of May 7, 2026)
+- **Tooling:** Agent can now read from and write to PDF files.
+- **Integrity:** 100% test pass rate for PDF core logic.
+- **Observability:** All PDF write actions are logged in the `audit.log`.
+
+---
+
+## 🛠️ System Prompt Transparency — May 7, 2026 (Session 2)
+
+Implemented a dedicated "Prompt" tab in the Settings UI to expose the core behavioral instructions of the LLM.
+
+### System Prompt Visibility
+
+- **Backend Exposure:** Added `GET /v1/system_prompt` to `gemma_bridge.py` to retrieve the `AGENT_SYSTEM_PROMPT` constant.
+- **Frontend Integration:** Added `/api/system_prompt` to `gemma-web/server.js` to proxy the request.
+- **User Interface:** Added a new "Prompt" tab in `gemma-web/index.html`. This tab features a read-only, syntax-highlighted textarea that automatically fetches and displays the system prompt when selected.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `gemma_bridge.py` | Exposed `AGENT_SYSTEM_PROMPT` via new endpoint; cleaned up imports |
+| `gemma-web/server.js` | Added proxy route for system prompt |
+| `gemma-web/index.html` | Implemented "Prompt" tab UI and fetch logic |
+
+## 📈 Current Status (as of May 7, 2026, Session 2)
+
+- **Transparency:** Users can now view the exact system instructions and tool definitions guiding the LLM.
+- **Integrity:** Verified via smoke test roundtrips (Text/Vision) and direct endpoint checks.
+- **UI:** Tabbed settings interface expanded with "Prompt" visibility.
