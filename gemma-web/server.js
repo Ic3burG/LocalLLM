@@ -193,9 +193,19 @@ app.get("/api/memory", async (req, res) => {
   }
 });
 
+app.get("/api/system_prompt", async (req, res) => {
+  try {
+    const response = await axios.get("http://localhost:9379/v1/system_prompt");
+    res.json(response.data);
+  } catch (e) {
+    log("ERROR", "system prompt fetch failed", { error: e.message });
+    res.status(502).json({ system_prompt: "" });
+  }
+});
+
 app.get("/api/stats", async (req, res) => {
   try {
-    const response = await axios.get("http://localhost:9379/v1/stats", { timeout: 2000 });
+    const response = await axios.get("http://localhost:9379/v1/stats", { timeout: 5000 });
     res.json(response.data);
   } catch (e) {
     log("ERROR", "stats fetch failed", { error: e.message, code: e.code });
@@ -225,6 +235,20 @@ app.get("/api/backend/status", async (req, res) => {
   } catch {
     res.json({ online: false });
   }
+});
+
+app.get("/api/backend/check", (req, res) => {
+  const scriptPath = path.join(__dirname, "..", "scripts", "smoke_test.py");
+  execFile("python3", [scriptPath, "--json"], (error, stdout, stderr) => {
+    // We don't return 500 on error because the script exits with 1 on test failure,
+    // which execFile considers an error. We want to parse the JSON stdout regardless.
+    try {
+      const data = JSON.parse(stdout);
+      res.json(data);
+    } catch (e) {
+      res.json({ success: false, raw: stdout + stderr, error: e.message });
+    }
+  });
 });
 
 app.post("/api/backend/restart", (req, res) => {

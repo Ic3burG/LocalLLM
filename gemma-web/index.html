@@ -285,6 +285,7 @@
             <div class="p-6 border-b border-gray-100 dark:border-[#3c3d40] flex justify-between items-center">
                 <div class="flex items-center gap-6">
                     <button id="tab-vitals" class="text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all">Vitals</button>
+                    <button id="tab-prompt" class="text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all">Prompt</button>
                     <button id="tab-memory" class="text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all">Memory</button>
                 </div>
                 <button id="close-settings-btn" class="text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors">
@@ -294,42 +295,14 @@
             
             <div id="vitals-pane" class="p-6 flex-1 overflow-y-auto">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
-                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Process RAM</div>
-                        <div id="vital-ram" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
-                    </div>
-                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
-                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">GPU VRAM</div>
-                        <div id="vital-vram" class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400">--</div>
-                    </div>
-                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
-                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Latency</div>
-                        <div id="vital-latency" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
+... (rest of vitals-pane content) ...
                     </div>
                 </div>
+            </div>
 
-                <div class="mb-8">
-                    <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-                        Loaded Models
-                    </h3>
-                    <div id="vital-models" class="flex flex-wrap gap-2 text-xs font-mono">
-                        <span class="text-gray-500 italic">None currently loaded</span>
-                    </div>
-                </div>
-
-                <div>
-                    <div class="flex justify-between items-center mb-3">
-                        <h3 class="text-sm font-semibold flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
-                            System Integrity
-                        </h3>
-                        <button id="run-check-btn" class="text-xs font-medium text-blue-600 hover:underline">Run Post-Update Check</button>
-                    </div>
-                    <div id="check-output" class="p-4 bg-gray-900 text-gray-300 rounded-xl font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto hidden">
-                        Running integrity tests...
-                    </div>
-                </div>
+            <div id="system-prompt-pane" class="p-6 flex-1 overflow-y-auto hidden">
+                <p class="text-sm text-gray-500 mb-4">This is the core instruction set (System Prompt) that guides Gemma's behavior and tool usage.</p>
+                <textarea id="system-prompt-display" readonly class="w-full h-96 p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-xl font-mono text-sm text-gray-600 dark:text-gray-400 focus:outline-none resize-none"></textarea>
             </div>
 
             <div id="memory-pane" class="p-6 flex-1 overflow-y-auto hidden">
@@ -439,9 +412,12 @@
         });
 
         const tabVitals = document.getElementById('tab-vitals');
+        const tabPrompt = document.getElementById('tab-prompt');
         const tabMemory = document.getElementById('tab-memory');
         const vitalsPane = document.getElementById('vitals-pane');
+        const systemPromptPane = document.getElementById('system-prompt-pane');
         const memoryPane = document.getElementById('memory-pane');
+        const systemPromptDisplay = document.getElementById('system-prompt-display');
         const vitalRam = document.getElementById('vital-ram');
         const vitalVram = document.getElementById('vital-vram');
         const vitalLatency = document.getElementById('vital-latency');
@@ -455,19 +431,26 @@
         const saveContainer = document.getElementById('save-container');
 
         function switchTab(tab) {
+            // Reset all tabs
+            [tabVitals, tabPrompt, tabMemory].forEach(t => t.className = 'text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all');
+            [vitalsPane, systemPromptPane, memoryPane].forEach(p => p.classList.add('hidden'));
+            
             if (tab === 'vitals') {
                 tabVitals.className = 'text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all';
-                tabMemory.className = 'text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all';
                 vitalsPane.classList.remove('hidden');
-                memoryPane.classList.add('hidden');
                 restartContainer.classList.remove('hidden');
                 saveContainer.classList.add('hidden');
                 startVitalsPolling();
+            } else if (tab === 'prompt') {
+                tabPrompt.className = 'text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all';
+                systemPromptPane.classList.remove('hidden');
+                restartContainer.classList.add('hidden');
+                saveContainer.classList.add('hidden');
+                stopVitalsPolling();
+                loadSystemPrompt();
             } else {
                 tabMemory.className = 'text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all';
-                tabVitals.className = 'text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all';
                 memoryPane.classList.remove('hidden');
-                vitalsPane.classList.add('hidden');
                 restartContainer.classList.add('hidden');
                 saveContainer.classList.remove('hidden');
                 stopVitalsPolling();
@@ -476,6 +459,7 @@
         }
 
         tabVitals.addEventListener('click', () => switchTab('vitals'));
+        tabPrompt.addEventListener('click', () => switchTab('prompt'));
         tabMemory.addEventListener('click', () => switchTab('memory'));
 
         async function loadMemory() {
@@ -484,6 +468,14 @@
                 const data = await response.json();
                 memoryEditor.value = data.memory || '';
             } catch (e) { memoryEditor.value = ''; }
+        }
+
+        async function loadSystemPrompt() {
+            try {
+                const response = await fetch('http://localhost:3001/api/system_prompt');
+                const data = await response.json();
+                systemPromptDisplay.value = data.system_prompt || '';
+            } catch (e) { systemPromptDisplay.value = 'Failed to load system prompt.'; }
         }
 
         async function updateVitals() {
