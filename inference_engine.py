@@ -24,6 +24,13 @@ def get_avg_latency():
         return 0
     return sum(_inference_latencies) / len(_inference_latencies)
 
+def get_status_info():
+    """Returns information about the current engine status. Thread-safe."""
+    return {
+        "is_busy": _is_job_running,
+        "current_model": _current_model_id if _is_job_running else None
+    }
+
 def get_loaded_models():
     """Returns a list of model IDs currently in cache. Thread-safe."""
     with _cache_lock:
@@ -46,7 +53,7 @@ _mlx_lm_load = None
 _mlx_lm_stream_generate = None
 
 # Models that mlx_vlm doesn't support — routed through mlx_lm instead.
-_TEXT_ONLY_MODELS = {"phi4-mini"}
+_TEXT_ONLY_MODELS = {"phi4-mini", "deepseek-v4-mini", "deepseek-v4-mini-7b-4bit"}
 
 # Watchdog state
 _last_inference_activity = time.monotonic()
@@ -157,6 +164,7 @@ _MODEL_DIR_MAP = {
     "gemma4-26b-mlx": "gemma-4-26b-a4b-it-4bit",
     "gemma4-31b-mlx": "gemma-4-31b-it-4bit",
     "phi4-mini":      "phi-4-mini-4bit",
+    "deepseek-v4-mini": "deepseek-v4-mini-7b-4bit",
 }
 
 def get_mlx_vlm_model(model_id: str):
@@ -264,6 +272,10 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
         if isinstance(content, list):
             text_parts = [c.get("text", "") for c in content if c.get("type") == "text"]
             text = " ".join(text_parts)
+            
+            # Preserve the multimodal structure for the chat template
+            msg_content = [{"type": "text", "text": text}]
+            
             if is_last and temp_image_path is None:
                 for c in content:
                     if c.get("type") == "image_url":
@@ -279,10 +291,12 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
                                     tmp.write(data)
                                     temp_image_path = tmp.name
                                 logger.info(f"Saved temp image for mlx_vlm: {temp_image_path}")
+                                # Add the image token to the content list
+                                msg_content.insert(0, {"type": "image"})
                             except Exception as e:
                                 logger.error(f"Failed to decode image, continuing text-only: {e}")
                             break
-            clean_messages.append({"role": role, "content": text})
+            clean_messages.append({"role": role, "content": msg_content})
         else:
             clean_messages.append({"role": role, "content": content or ""})
 
