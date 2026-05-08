@@ -494,6 +494,26 @@ async def _write_word(path: str, spec: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _write_excel(path: str, spec: str) -> str:
+    log_audit(f"WRITE_EXCEL: {path}")
+    try:
+        p = validate_path(path, must_exist=False)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+        spec_dict = _json.loads(spec) if isinstance(spec, str) else spec
+        loop = asyncio.get_running_loop()
+        from office_pipeline import write_excel_document
+
+        def _sync():
+            write_excel_document(p, spec_dict)
+            return f"OK: wrote Excel file to {path}"
+
+        return await loop.run_in_executor(None, _sync)
+    except Exception as e:
+        logger.error("write_excel failed: %s", e, extra={"path": path})
+        return f"ERROR: {e}"
+
+
 async def _http_request(method: str, url: str, headers: str = "{}", body: str = "") -> str:
     log_audit(f"HTTP_REQUEST: {method.upper()} {url}")
     try:
@@ -702,6 +722,7 @@ register_tool("write_pdf", "risky", "Create a PDF file from text content", _writ
 register_tool("read_word", "safe", "Extract text and annotations from a Word (.docx) file", _read_word)
 register_tool("read_excel", "safe", "Extract text and annotations from an Excel (.xlsx) file", _read_excel)
 register_tool("write_word", "risky", "Create a Word (.docx) file from a JSON spec", _write_word)
+register_tool("write_excel", "risky", "Create an Excel (.xlsx) file from a JSON spec", _write_excel)
 register_tool("http_request", "risky", "Make an HTTP request (GET/POST/PUT/DELETE)", _http_request)
 register_tool("notify", "safe", "Send a macOS system notification", _notify)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
@@ -742,6 +763,7 @@ TOOLS AVAILABLE:
   read_word(path)                               — extract text, comments, tracked changes, footnotes, and metadata from a Word (.docx) file
   read_excel(path)                              — extract cell values, formulas, notes, and threaded comments from an Excel (.xlsx) file
   write_word(path, spec)                        — create a Word file from a JSON spec dict (sections with headings, paragraphs, tables, footnotes)
+  write_excel(path, spec)                       — create an Excel file from a JSON spec dict (sheets, cells, merges, charts)
   http_request(method, url, headers, body)       — make an HTTP request; headers is JSON string
   notify(title, message)                         — send a macOS system notification
   system_info()                                  — get CPU, RAM, and disk usage
