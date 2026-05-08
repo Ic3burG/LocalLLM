@@ -523,10 +523,14 @@ def write_excel_document(path, spec: dict) -> None:
             chart.title = chart_spec.get("title", "")
             data_range = chart_spec.get("data_range", "")
             if data_range:
-                min_col, min_row, max_col, max_row = range_boundaries(data_range)
+                cell_range = data_range.split("!")[-1]
+                min_col, min_row, max_col, max_row = range_boundaries(cell_range)
                 data = Reference(ws, min_col=min_col, min_row=min_row, max_col=max_col, max_row=max_row)
                 chart.add_data(data, titles_from_data=True)
             ws.add_chart(chart, chart_spec.get("anchor", "E1"))
+
+    if not wb.worksheets:
+        wb.create_sheet("Sheet1")
 
     wb.save(str(path))
 
