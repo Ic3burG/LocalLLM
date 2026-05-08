@@ -142,3 +142,55 @@ def test_extract_word_tracked_changes():
     assert len(inserts) >= 1
     assert inserts[0]["author"] == "Bob"
     assert "Inserted text" in inserts[0]["text"]
+
+
+def _make_excel_bytes_simple() -> bytes:
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Results"
+    ws["A1"] = "Name"
+    ws["B1"] = "Score"
+    ws["A2"] = "Alice"
+    ws["B2"] = 95
+    ws["A3"] = "Bob"
+    ws["B3"] = 87
+    ws2 = wb.create_sheet("Summary")
+    ws2["A1"] = "Total"
+    ws2["B1"] = 2
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_excel_returns_sheets():
+    from office_pipeline import extract_text_from_excel
+    sheets, metadata = extract_text_from_excel(_make_excel_bytes_simple())
+    assert len(sheets) == 2
+    names = [name for name, _ in sheets]
+    assert "Results" in names
+    assert "Summary" in names
+
+
+def test_extract_excel_cell_values_in_text():
+    from office_pipeline import extract_text_from_excel
+    sheets, _ = extract_text_from_excel(_make_excel_bytes_simple())
+    results_text = next(text for name, text in sheets if name == "Results")
+    assert "Alice" in results_text
+    assert "95" in results_text
+    assert "Bob" in results_text
+
+
+def test_extract_excel_metadata_has_required_keys():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_simple())
+    for key in ("cell_notes", "threaded_comments", "formulas", "embedded_objects", "properties"):
+        assert key in metadata, f"Missing key: {key}"
+
+
+def test_extract_excel_empty_annotations_are_lists():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_simple())
+    assert metadata["cell_notes"] == []
+    assert metadata["threaded_comments"] == []
+    assert metadata["embedded_objects"] == []
