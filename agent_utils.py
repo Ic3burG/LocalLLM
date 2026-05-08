@@ -444,6 +444,36 @@ async def _write_pdf(path: str, content: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _read_word(path: str) -> str:
+    try:
+        p = validate_path(path)
+        from office_pipeline import extract_text_from_word, format_office_read_output
+        loop = asyncio.get_running_loop()
+        file_bytes = p.read_bytes()
+        sections, metadata = await loop.run_in_executor(
+            None, extract_text_from_word, file_bytes
+        )
+        return format_office_read_output(sections, metadata, "word")
+    except Exception as e:
+        logger.error("read_word failed: %s", e, extra={"path": path})
+        return f"ERROR: {e}"
+
+
+async def _read_excel(path: str) -> str:
+    try:
+        p = validate_path(path)
+        from office_pipeline import extract_text_from_excel, format_office_read_output
+        loop = asyncio.get_running_loop()
+        file_bytes = p.read_bytes()
+        sheets, metadata = await loop.run_in_executor(
+            None, extract_text_from_excel, file_bytes
+        )
+        return format_office_read_output(sheets, metadata, "excel")
+    except Exception as e:
+        logger.error("read_excel failed: %s", e, extra={"path": path})
+        return f"ERROR: {e}"
+
+
 async def _http_request(method: str, url: str, headers: str = "{}", body: str = "") -> str:
     log_audit(f"HTTP_REQUEST: {method.upper()} {url}")
     try:
@@ -649,6 +679,8 @@ register_tool("find_file", "safe", "Find files by name/glob pattern", _find_file
 register_tool("edit_file", "risky", "Replace a specific string in a file (first occurrence)", _edit_file)
 register_tool("read_pdf", "safe", "Extract text from a PDF file", _read_pdf)
 register_tool("write_pdf", "risky", "Create a PDF file from text content", _write_pdf)
+register_tool("read_word", "safe", "Extract text and annotations from a Word (.docx) file", _read_word)
+register_tool("read_excel", "safe", "Extract text and annotations from an Excel (.xlsx) file", _read_excel)
 register_tool("http_request", "risky", "Make an HTTP request (GET/POST/PUT/DELETE)", _http_request)
 register_tool("notify", "safe", "Send a macOS system notification", _notify)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
@@ -686,6 +718,10 @@ TOOLS AVAILABLE:
   edit_file(path, old_str, new_str)              — replace first occurrence of old_str in file
   read_pdf(path)                                 — extract text from a local PDF file
   write_pdf(path, content)                       — create a PDF file from text content
+  read_word(path)                               — extract text, comments, tracked changes, footnotes, and metadata from a Word (.docx) file
+  write_word(path, spec)                        — create a Word file from a JSON spec dict (sections with headings, paragraphs, tables, footnotes)
+  read_excel(path)                              — extract cell values, formulas, notes, and threaded comments from an Excel (.xlsx) file
+  write_excel(path, spec)                       — create an Excel file from a JSON spec dict (sheets, cells, merges, charts)
   http_request(method, url, headers, body)       — make an HTTP request; headers is JSON string
   notify(title, message)                         — send a macOS system notification
   system_info()                                  — get CPU, RAM, and disk usage
