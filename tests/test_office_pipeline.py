@@ -284,3 +284,51 @@ def test_ingest_office_empty_word_returns_none():
     doc.save(buf)
     result = ingest_office(buf.getvalue(), "empty.docx")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_read_word_tool_returns_text(tmp_path):
+    from agent_utils import _read_word
+    import os
+    # Write inside project sandbox (cwd)
+    project_tmp = os.path.join(os.getcwd(), "tmp_test_word.docx")
+    try:
+        with open(project_tmp, "wb") as f:
+            f.write(_make_word_bytes_simple())
+        result = await _read_word(project_tmp)
+        assert "ERROR" not in result
+        assert "Hello world paragraph" in result
+    finally:
+        if os.path.exists(project_tmp):
+            os.remove(project_tmp)
+
+
+@pytest.mark.asyncio
+async def test_read_excel_tool_returns_text(tmp_path):
+    from agent_utils import _read_excel
+    import os
+    # Write inside project sandbox (cwd)
+    project_tmp = os.path.join(os.getcwd(), "tmp_test_excel.xlsx")
+    try:
+        with open(project_tmp, "wb") as f:
+            f.write(_make_excel_bytes_simple())
+        result = await _read_excel(project_tmp)
+        assert "ERROR" not in result
+        assert "Alice" in result
+    finally:
+        if os.path.exists(project_tmp):
+            os.remove(project_tmp)
+
+
+@pytest.mark.asyncio
+async def test_read_word_tool_missing_file():
+    from agent_utils import _read_word
+    result = await _read_word("/tmp/does_not_exist_abc123.docx")
+    assert result.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_read_excel_tool_missing_file():
+    from agent_utils import _read_excel
+    result = await _read_excel("/tmp/does_not_exist_abc123.xlsx")
+    assert result.startswith("ERROR")
