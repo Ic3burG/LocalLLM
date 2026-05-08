@@ -457,6 +457,76 @@ def write_word_document(path, spec: dict) -> None:
     doc.save(str(path))
 
 
+def write_excel_document(path, spec: dict) -> None:
+    """Create a .xlsx file from a structured spec dict."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+    from openpyxl.utils.cell import range_boundaries
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    props = spec.get("properties", {})
+    if props.get("title"):
+        wb.properties.title = props["title"]
+    if props.get("author"):
+        wb.properties.creator = props["author"]
+    if props.get("keywords"):
+        wb.properties.keywords = props["keywords"]
+
+    for sheet_spec in spec.get("sheets", []):
+        ws = wb.create_sheet(title=sheet_spec.get("name", "Sheet"))
+        rows_data = sheet_spec.get("rows", [])
+
+        for r_idx, row in enumerate(rows_data, start=1):
+            for c_idx, cell_spec in enumerate(row, start=1):
+                if cell_spec is None:
+                    continue
+                cell = ws.cell(row=r_idx, column=c_idx)
+                if isinstance(cell_spec, dict):
+                    val = cell_spec.get("formula") if "formula" in cell_spec else cell_spec.get("value")
+                    cell.value = val
+                    font_kw: dict = {}
+                    if cell_spec.get("bold"):
+                        font_kw["bold"] = True
+                    if cell_spec.get("italic"):
+                        font_kw["italic"] = True
+                    if font_kw:
+                        cell.font = Font(**font_kw)
+                    if cell_spec.get("bg_color"):
+                        cell.fill = PatternFill(fill_type="solid", fgColor=cell_spec["bg_color"])
+                    if cell_spec.get("number_format"):
+                        cell.number_format = cell_spec["number_format"]
+                    if cell_spec.get("alignment"):
+                        cell.alignment = Alignment(horizontal=cell_spec["alignment"])
+                else:
+                    cell.value = cell_spec
+
+        for merge_range in sheet_spec.get("merges", []):
+            ws.merge_cells(merge_range)
+
+        for chart_spec in sheet_spec.get("charts", []):
+            ctype = chart_spec.get("type", "bar")
+            if ctype == "bar":
+                chart = BarChart()
+            elif ctype == "line":
+                chart = LineChart()
+            elif ctype == "pie":
+                chart = PieChart()
+            else:
+                continue
+            chart.title = chart_spec.get("title", "")
+            data_range = chart_spec.get("data_range", "")
+            if data_range:
+                min_col, min_row, max_col, max_row = range_boundaries(data_range)
+                data = Reference(ws, min_col=min_col, min_row=min_row, max_col=max_col, max_row=max_row)
+                chart.add_data(data, titles_from_data=True)
+            ws.add_chart(chart, chart_spec.get("anchor", "E1"))
+
+    wb.save(str(path))
+
+
 def format_office_read_output(sections_or_sheets: list[tuple], metadata: dict, filetype: str) -> str:
     """Format extraction results into a single readable string for the agent."""
     parts = []

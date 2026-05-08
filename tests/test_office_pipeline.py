@@ -393,3 +393,73 @@ async def test_write_word_roundtrip_table():
     finally:
         if os.path.exists(path):
             os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_write_excel_roundtrip_cells():
+    import json, os
+    from agent_utils import _write_excel
+    from openpyxl import load_workbook
+
+    spec = {
+        "properties": {"title": "Q1 Results"},
+        "sheets": [
+            {
+                "name": "Data",
+                "rows": [
+                    [{"value": "Name"}, {"value": "Revenue", "bold": True}],
+                    [{"value": "Alice"}, {"value": 50000}],
+                    [{"value": "Bob"}, {"value": 35000}],
+                ],
+                "merges": [],
+                "charts": []
+            }
+        ]
+    }
+    path = os.path.join(os.getcwd(), "tmp_test_write_excel.xlsx")
+    try:
+        result = await _write_excel(path, json.dumps(spec))
+        assert "ERROR" not in result
+
+        wb = load_workbook(path)
+        assert "Data" in wb.sheetnames
+        ws = wb["Data"]
+        assert ws["A1"].value == "Name"
+        assert ws["A2"].value == "Alice"
+        assert ws["B3"].value == 35000
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_write_excel_roundtrip_formula():
+    import json, os
+    from agent_utils import _write_excel
+    from openpyxl import load_workbook
+
+    spec = {
+        "sheets": [
+            {
+                "name": "Calc",
+                "rows": [
+                    [{"value": 10}],
+                    [{"value": 20}],
+                    [{"formula": "=A1+A2"}],
+                ],
+                "merges": [],
+                "charts": []
+            }
+        ]
+    }
+    path = os.path.join(os.getcwd(), "tmp_test_write_excel_formula.xlsx")
+    try:
+        result = await _write_excel(path, json.dumps(spec))
+        assert "ERROR" not in result
+
+        wb = load_workbook(path, data_only=False)
+        ws = wb["Calc"]
+        assert ws["A3"].value == "=A1+A2"
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
