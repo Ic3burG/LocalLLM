@@ -231,7 +231,9 @@ def _extract_excel_threaded_comments(file_bytes: bytes) -> list[dict]:
             for tf in thread_files:
                 ns = {"tc": "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"}
                 root = ET.parse(z.open(tf)).getroot()
-                threads: dict[str, dict] = {}
+
+                # First pass: collect all entries by their own id
+                all_entries: dict[str, dict] = {}
                 for tc in root.findall(".//tc:threadedComment", ns):
                     tc_id = tc.get("id", "")
                     ref = tc.get("ref", "")
@@ -239,11 +241,24 @@ def _extract_excel_threaded_comments(file_bytes: bytes) -> list[dict]:
                     author_id = tc.get("personId", "")
                     text_el = tc.find("tc:text", ns)
                     text = text_el.text if text_el is not None else ""
-                    entry = {"author_id": author_id, "text": text or ""}
+                    all_entries[tc_id] = {
+                        "id": tc_id,
+                        "ref": ref,
+                        "parent_id": parent_id,
+                        "entry": {"author_id": author_id, "text": text or ""},
+                    }
+
+                # Second pass: build thread structure
+                threads: dict[str, dict] = {}
+                for tc_id, item in all_entries.items():
+                    parent_id = item["parent_id"]
                     if not parent_id:
-                        threads[tc_id] = {"cell": ref, "thread": [entry]}
-                    elif parent_id in threads:
-                        threads[parent_id]["thread"].append(entry)
+                        threads[tc_id] = {"cell": item["ref"], "thread": [item["entry"]]}
+                for tc_id, item in all_entries.items():
+                    parent_id = item["parent_id"]
+                    if parent_id and parent_id in threads:
+                        threads[parent_id]["thread"].append(item["entry"])
+
                 results.extend(threads.values())
     except Exception:
         pass
