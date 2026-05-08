@@ -358,6 +358,264 @@ async def _python_interpreter(code: str) -> str:
     output = new_stdout.getvalue()
     return output if output else "OK: executed"
 
+
+async def _git_diff(path: str = ".") -> str:
+    try:
+        cmd = ["git", "diff", "HEAD"]
+        if path != ".":
+            cmd.append(path)
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        return result.stdout.strip() if result.stdout.strip() else "No changes vs HEAD."
+    except Exception as e:
+        logger.error("git_diff failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _find_file(pattern: str, path: str = ".") -> str:
+    try:
+        base_path = validate_path(path)
+        skip_dirs = {".git", ".venv", "node_modules", "__pycache__", ".pytest_cache"}
+        matches = []
+        for root, dirs, _ in os.walk(base_path):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            for p in Path(root).glob(pattern):
+                if p.is_file():
+                    matches.append(str(p))
+                    if len(matches) >= 100:
+                        return "\n".join(matches) + "\n(truncated at 100)"
+        return "\n".join(matches) if matches else "No files found."
+    except Exception as e:
+        logger.error("find_file failed: %s", e, extra={"pattern": pattern, "path": path})
+        return f"ERROR: {e}"
+
+
+async def _edit_file(path: str, old_str: str, new_str: str) -> str:
+    log_audit(f"EDIT_FILE: {path}")
+    try:
+        p = validate_path(path)
+        content = p.read_text()
+        if old_str not in content:
+            return "ERROR: old_str not found in file"
+        updated = content.replace(old_str, new_str, 1)
+        p.write_text(updated)
+        return "OK: replaced 1 occurrence"
+    except Exception as e:
+        logger.error("edit_file failed: %s", e, extra={"path": path})
+        return f"ERROR: {e}"
+
+
+async def _read_pdf(path: str) -> str:
+    try:
+        p = validate_path(path)
+        from pdf_pipeline import extract_text_from_pdf
+        loop = asyncio.get_running_loop()
+        file_bytes = p.read_bytes()
+        pages = await loop.run_in_executor(None, extract_text_from_pdf, file_bytes)
+        if not pages:
+            return "No text extracted from PDF."
+        parts = [f"[Page {num}]\n{text}" for num, text in pages]
+        result = "\n\n".join(parts)
+        return result[:10000] if len(result) > 10000 else result
+    except Exception as e:
+        logger.error("read_pdf failed: %s", e, extra={"path": path})
+        return f"ERROR: {e}"
+
+
+async def _write_pdf(path: str, content: str) -> str:
+    log_audit(f"WRITE_PDF: {path}")
+    try:
+        p = validate_path(path, must_exist=False)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        from fpdf import FPDF
+        loop = asyncio.get_running_loop()
+
+        def _sync_write():
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Helvetica", size=12)
+            for line in content.splitlines():
+                pdf.multi_cell(w=pdf.epw, h=10, text=line)
+            pdf.output(str(p))
+            return f"OK: wrote PDF to {path}"
+
+        return await loop.run_in_executor(None, _sync_write)
+    except Exception as e:
+        logger.error("write_pdf failed: %s", e, extra={"path": path})
+        return f"ERROR: {e}"
+
+
+async def _http_request(method: str, url: str, headers: str = "{}", body: str = "") -> str:
+    log_audit(f"HTTP_REQUEST: {method.upper()} {url}")
+    try:
+        validate_url(url)
+        import requests
+        import json as _json
+        loop = asyncio.get_running_loop()
+        parsed_headers = _json.loads(headers) if headers.strip() else {}
+
+        def _sync_request():
+            resp = requests.request(
+                method.upper(),
+                url,
+                headers=parsed_headers,
+                data=body.encode() if body else None,
+                timeout=15,
+            )
+            text = resp.text[:5000]
+            return f"Status: {resp.status_code}\n{text}"
+
+        return await loop.run_in_executor(None, _sync_request)
+    except Exception as e:
+        logger.error("http_request failed: %s", e, extra={"method": method, "url": url})
+        return f"ERROR: {e}"
+
+
+async def _notify(title: str, message: str) -> str:
+    try:
+        script = f'display notification "{message}" with title "{title}"'
+        subprocess.run(["osascript", "-e", script], check=True, capture_output=True)
+        return "OK: notification sent"
+    except Exception as e:
+        logger.error("notify failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _system_info() -> str:
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=0.5)
+        mem = psutil.virtual_memory()
+        disk = psutil.disk_usage("/")
+        return (
+            f"CPU: {cpu}%\n"
+            f"RAM: {mem.used / 1e9:.1f} GB used / {mem.total / 1e9:.1f} GB total ({mem.percent}%)\n"
+            f"Disk: {disk.used / 1e9:.1f} GB used / {disk.total / 1e9:.1f} GB total ({disk.percent}%)"
+        )
+    except Exception as e:
+        logger.error("system_info failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _sqlite_query(db_path: str, sql: str) -> str:
+    log_audit(f"SQLITE_QUERY: {db_path} — {sql[:200]}")
+    try:
+        p = validate_path(db_path)
+        # Enforce read-only: only SELECT statements permitted
+        if not sql.strip().upper().startswith("SELECT"):
+            return "ERROR: only SELECT queries are allowed"
+        import sqlite3
+        loop = asyncio.get_running_loop()
+
+        def _sync_query():
+            conn = sqlite3.connect(f"file:{p}?mode=ro", uri=True)
+            try:
+                cur = conn.execute(sql)
+                cols = [d[0] for d in cur.description] if cur.description else []
+                rows = cur.fetchmany(200)
+                lines = ["\t".join(cols)] + ["\t".join(str(v) for v in row) for row in rows]
+                suffix = "\n(truncated at 200 rows)" if len(rows) == 200 else ""
+                return "\n".join(lines) + suffix
+            finally:
+                conn.close()
+
+        return await loop.run_in_executor(None, _sync_query)
+    except Exception as e:
+        logger.error("sqlite_query failed: %s", e, extra={"db_path": db_path})
+        return f"ERROR: {e}"
+
+
+async def _diff_files(path_a: str, path_b: str) -> str:
+    try:
+        a = validate_path(path_a)
+        b = validate_path(path_b)
+        import difflib
+        lines_a = a.read_text().splitlines(keepends=True)
+        lines_b = b.read_text().splitlines(keepends=True)
+        diff = list(difflib.unified_diff(lines_a, lines_b, fromfile=str(a), tofile=str(b)))
+        if not diff:
+            return "Files are identical."
+        result = "".join(diff)
+        return result[:8000] if len(result) > 8000 else result
+    except Exception as e:
+        logger.error("diff_files failed: %s", e, extra={"path_a": path_a, "path_b": path_b})
+        return f"ERROR: {e}"
+
+
+def _parse_cli_output(stdout: str, stderr: str) -> str:
+    """Return pretty-printed JSON if stdout is valid JSON, otherwise raw combined output."""
+    try:
+        parsed = json.loads(stdout)
+        return json.dumps(parsed, indent=2)
+    except (json.JSONDecodeError, ValueError):
+        return (stdout + stderr).strip()
+
+
+async def _gh_run(args: str) -> str:
+    log_audit(f"GH_RUN: {args}")
+    try:
+        import shlex
+        result = subprocess.run(
+            ["gh"] + shlex.split(args),
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        output = _parse_cli_output(result.stdout, result.stderr)
+        return output[:6000] if len(output) > 6000 else output
+    except subprocess.TimeoutExpired:
+        logger.error("gh_run timed out", extra={"args": args})
+        return "ERROR: timed out after 60s"
+    except FileNotFoundError:
+        return "ERROR: gh not found — install with: brew install gh"
+    except Exception as e:
+        logger.error("gh_run failed: %s", e, extra={"args": args})
+        return f"ERROR: {e}"
+
+
+async def _aws_run(args: str) -> str:
+    log_audit(f"AWS_RUN: {args}")
+    try:
+        import shlex
+        result = subprocess.run(
+            ["aws"] + shlex.split(args),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        output = _parse_cli_output(result.stdout, result.stderr)
+        return output[:6000] if len(output) > 6000 else output
+    except subprocess.TimeoutExpired:
+        logger.error("aws_run timed out", extra={"args": args})
+        return "ERROR: timed out after 120s"
+    except FileNotFoundError:
+        return "ERROR: aws not found — install with: brew install awscli"
+    except Exception as e:
+        logger.error("aws_run failed: %s", e, extra={"args": args})
+        return f"ERROR: {e}"
+
+
+async def _hf_run(args: str) -> str:
+    log_audit(f"HF_RUN: {args}")
+    try:
+        import shlex
+        result = subprocess.run(
+            ["huggingface-cli"] + shlex.split(args),
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        output = _parse_cli_output(result.stdout, result.stderr)
+        return output[:6000] if len(output) > 6000 else output
+    except subprocess.TimeoutExpired:
+        logger.error("hf_run timed out", extra={"args": args})
+        return "ERROR: timed out after 300s — for large downloads use shell() instead"
+    except FileNotFoundError:
+        return "ERROR: huggingface-cli not found — install with: pip install huggingface_hub[cli]"
+    except Exception as e:
+        logger.error("hf_run failed: %s", e, extra={"args": args})
+        return f"ERROR: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
@@ -386,6 +644,19 @@ register_tool("clipboard_paste", "risky", "Paste text from system clipboard", _c
 register_tool("google_search", "safe", "Search Google for a query", _google_search)
 register_tool("web_fetch", "safe", "Fetch and clean text from a URL", _web_fetch)
 register_tool("get_current_datetime", "safe", "Get the current local date, time, and timezone", _get_current_datetime)
+register_tool("git_diff", "safe", "Show git diff vs HEAD", _git_diff)
+register_tool("find_file", "safe", "Find files by name/glob pattern", _find_file)
+register_tool("edit_file", "risky", "Replace a specific string in a file (first occurrence)", _edit_file)
+register_tool("read_pdf", "safe", "Extract text from a PDF file", _read_pdf)
+register_tool("write_pdf", "risky", "Create a PDF file from text content", _write_pdf)
+register_tool("http_request", "risky", "Make an HTTP request (GET/POST/PUT/DELETE)", _http_request)
+register_tool("notify", "safe", "Send a macOS system notification", _notify)
+register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
+register_tool("sqlite_query", "risky", "Run a SELECT query against a local SQLite database", _sqlite_query)
+register_tool("diff_files", "safe", "Show a unified diff of two files", _diff_files)
+register_tool("gh_run", "risky", "Run a GitHub CLI command (gh)", _gh_run)
+register_tool("aws_run", "risky", "Run an AWS CLI command (aws)", _aws_run)
+register_tool("hf_run", "risky", "Run a Hugging Face CLI command (huggingface-cli)", _hf_run)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here 
 # because they depend on the scheduler in agent.py. 
@@ -410,6 +681,19 @@ TOOLS AVAILABLE:
   python_interpreter(code)                       — execute Python code
   git_status()                                   — git status
   git_log(limit)                                 — git log
+  git_diff(path)                                 — show changes vs HEAD (optional path)
+  find_file(pattern, path)                       — find files by name/glob (e.g. "*.py")
+  edit_file(path, old_str, new_str)              — replace first occurrence of old_str in file
+  read_pdf(path)                                 — extract text from a local PDF file
+  write_pdf(path, content)                       — create a PDF file from text content
+  http_request(method, url, headers, body)       — make an HTTP request; headers is JSON string
+  notify(title, message)                         — send a macOS system notification
+  system_info()                                  — get CPU, RAM, and disk usage
+  sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
+  diff_files(path_a, path_b)                     — show a unified diff of two files
+  gh_run(args)                                   — run a GitHub CLI command, e.g. "pr list --limit 10"
+  aws_run(args)                                  — run an AWS CLI command, e.g. "s3 ls s3://my-bucket"
+  hf_run(args)                                   — run a Hugging Face CLI command, e.g. "download org/model"
   clipboard_copy(text)                           — copy to clipboard
   clipboard_paste()                              — paste from clipboard
   list_crons()                                   — list cron jobs

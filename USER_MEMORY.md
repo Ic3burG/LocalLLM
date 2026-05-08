@@ -1,4 +1,3 @@
-```markdown
 # User Memory & Context
 
 This file contains facts, preferences, and context learned about the user over time. It is used to provide a personalized experience.
@@ -19,3 +18,7 @@ This file contains facts, preferences, and context learned about the user over t
 - **Tooling Inquiry:** User is now interested in whether Gemma can use bash.
 
 ### 🔎 Research & Tools
+
+- Recently requested a detailed essay on quantum computing, demonstrating interest in advanced technical topics.
+- Recently engaged in a detailed quantitative problem-solving session (rate/proportion problem), indicating a need for step-by-step logical derivations.
+- **Multimodal Interaction:** User has tested the system's image processing capability by asking for an image description.
