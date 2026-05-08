@@ -978,3 +978,50 @@ Implemented a dedicated "Prompt" tab in the Settings UI to expose the core behav
 - **Transparency:** Users can now view the exact system instructions and tool definitions guiding the LLM.
 - **Integrity:** Verified via smoke test roundtrips (Text/Vision) and direct endpoint checks.
 - **UI:** Tabbed settings interface expanded with "Prompt" visibility.
+
+---
+
+## 🖥️ CLI Tool Wrappers: gh, aws, hf — May 7, 2026 (Session 3)
+
+Added dedicated wrapper tools for the three most-used CLI ecosystems, replacing the need to route these through the generic `shell` tool.
+
+### Motivation
+
+The generic `shell` tool has a 30-second timeout and returns raw stdout+stderr as a single string. This causes three problems for CLI tools specifically:
+- AWS CLI returns dense single-line JSON that models can't reliably parse
+- Long operations (S3 transfers, HF downloads) hard-kill mid-transfer at 30s
+- Interactive auth commands (`gh auth login`, `aws configure`) would hang with no stdin
+
+The new wrappers fix all three while keeping `shell` available as a fallback.
+
+### New Tools
+
+| Tool | Risk | Timeout | Binary |
+|---|---|---|---|
+| `gh_run(args)` | risky | 60s | `gh` |
+| `aws_run(args)` | risky | 120s | `aws` |
+| `hf_run(args)` | risky | 300s | `huggingface-cli` |
+
+### Implementation Details
+
+- **`shlex.split(args)`** — parses the args string correctly, preserving quoted arguments (e.g. `--title "My PR"` is not shattered into separate tokens).
+- **`_parse_cli_output(stdout, stderr)`** — shared helper that attempts `json.loads(stdout)`; on success returns `json.dumps(..., indent=2)` for readable AWS/GH JSON responses; on failure returns raw combined output.
+- **6000-char output cap** — prevents large paginated responses from flooding the model context.
+- **Helpful `FileNotFoundError` messages** — each tool catches `FileNotFoundError` separately and returns a `brew install` / `pip install` hint rather than a bare Python traceback.
+- **HF timeout fallback hint** — the 300s timeout error message explicitly tells the model to use `shell()` instead for large downloads that will exceed the cap.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent_utils.py` | Added `_parse_cli_output` helper; added `_gh_run`, `_aws_run`, `_hf_run`; registered all three; updated system prompt |
+
+## 📈 Current Status (as of May 7, 2026, Session 3)
+- **CLI Tools:** `gh_run`, `aws_run`, `hf_run` available in the agent with per-CLI timeouts and automatic JSON pretty-printing.
+- **Tool Count:** 29 registered tools across file, git, web, system, database, and CLI categories.
+
+### UI Fixes — May 7, 2026 (Session 2, Cont.)
+
+- **Sidebar Restoration**: Fixed a structural HTML error (extra closing `div`) that caused the chat history to disappear.
+- **Settings Modal Restoration**: Fixed the "messed up" Settings pane by restoring the full HTML content for the Vitals tab, which had been accidentally replaced with a placeholder.
+- **Verification**: UI integrity confirmed via manual inspection of the restored components. System connectivity remains stable (100% pass on smoke tests).
