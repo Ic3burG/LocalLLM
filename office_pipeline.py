@@ -292,3 +292,124 @@ def _extract_excel_embedded_objects(file_bytes: bytes) -> list[dict]:
     except Exception:
         pass
     return results
+
+
+def ingest_office(file_bytes: bytes, filename: str) -> dict | None:
+    """Ingest a Word or Excel file into the RAG document store.
+
+    Returns the same dict shape as pdf_pipeline.ingest_pdf, or None if
+    the file type is unrecognised or produces no text.
+    """
+    from pdf_pipeline import chunk_text, embed_texts
+
+    ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    if ext == "docx":
+        sections, metadata = extract_text_from_word(file_bytes)
+        pages = list(sections)
+        # Only include metadata page when there is body content
+        if pages:
+            extra = _format_word_metadata_text(metadata)
+            if extra:
+                pages.append((len(pages) + 1, extra))
+    elif ext == "xlsx":
+        sheets, metadata = extract_text_from_excel(file_bytes)
+        pages = [(i + 1, text) for i, (_, text) in enumerate(sheets)]
+        extra = _format_excel_metadata_text(metadata)
+        if extra:
+            pages.append((len(pages) + 1, extra))
+    else:
+        return None
+
+    if not pages:
+        return None
+
+    chunks = chunk_text(pages)
+    if not chunks:
+        return None
+
+    texts = [c["text"] for c in chunks]
+    embeddings = embed_texts(texts)
+
+    doc_id = uuid.uuid4().hex[:8]
+    page_count = pages[-1][0] if pages else 0
+    return {
+        "doc_id": doc_id,
+        "filename": filename,
+        "page_count": page_count,
+        "chunks": chunks,
+        "embeddings": embeddings,
+    }
+
+
+def _format_word_metadata_text(metadata: dict) -> str:
+    parts = []
+    if metadata.get("comments"):
+        parts.append("## Comments")
+        for c in metadata["comments"]:
+            parts.append(f"[{c['author']}, {c['date']}]: {c['text']}")
+    if metadata.get("tracked_changes"):
+        parts.append("## Tracked Changes")
+        for tc in metadata["tracked_changes"]:
+            parts.append(f"[{tc['type'].upper()} by {tc['author']} on {tc['date']}]: {tc['text']}")
+    if metadata.get("footnotes"):
+        parts.append("## Footnotes")
+        for fn in metadata["footnotes"]:
+            parts.append(f"[{fn['ref_num']}]: {fn['text']}")
+    if metadata.get("endnotes"):
+        parts.append("## Endnotes")
+        for en in metadata["endnotes"]:
+            parts.append(f"[{en['ref_num']}]: {en['text']}")
+    if metadata.get("properties"):
+        p = metadata["properties"]
+        kv = ", ".join(f"{k}: {v}" for k, v in p.items() if v)
+        if kv:
+            parts.append(f"## Document Properties\n{kv}")
+    return "\n".join(parts)
+
+
+def _format_excel_metadata_text(metadata: dict) -> str:
+    parts = []
+    if metadata.get("cell_notes"):
+        parts.append("## Cell Notes")
+        for n in metadata["cell_notes"]:
+            parts.append(f"[{n['sheet']}!{n['cell']}, {n['author']}]: {n['text']}")
+    if metadata.get("threaded_comments"):
+        parts.append("## Threaded Comments")
+        for tc in metadata["threaded_comments"]:
+            for reply in tc.get("thread", []):
+                parts.append(f"[{tc['cell']}]: {reply['text']}")
+    if metadata.get("formulas"):
+        parts.append("## Formulas")
+        for f in metadata["formulas"]:
+            parts.append(f"[{f['sheet']}!{f['cell']}] {f['formula']} = {f['cached_value']}")
+    if metadata.get("embedded_objects"):
+        parts.append("## Embedded Objects")
+        for obj in metadata["embedded_objects"]:
+            if obj.get("flagged"):
+                parts.append("WARNING: VBA macro detected (not executed)")
+            else:
+                parts.append(f"[{obj['type']}]: {obj['extracted_text']}")
+    if metadata.get("properties"):
+        p = metadata["properties"]
+        kv = ", ".join(f"{k}: {v}" for k, v in p.items() if v)
+        if kv:
+            parts.append(f"## Document Properties\n{kv}")
+    return "\n".join(parts)
+
+
+def format_office_read_output(sections_or_sheets: list[tuple], metadata: dict, filetype: str) -> str:
+    """Format extraction results into a single readable string for the agent."""
+    parts = []
+    label = "Section" if filetype == "word" else "Sheet"
+    for key, text in sections_or_sheets:
+        parts.append(f"[{label} {key}]\n{text}")
+    annotation_text = (
+        _format_word_metadata_text(metadata)
+        if filetype == "word"
+        else _format_excel_metadata_text(metadata)
+    )
+    if annotation_text:
+        parts.append(annotation_text)
+    result = "\n\n".join(parts)
+    return result[:15000] if len(result) > 15000 else result
