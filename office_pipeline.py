@@ -398,6 +398,65 @@ def _format_excel_metadata_text(metadata: dict) -> str:
     return "\n".join(parts)
 
 
+def write_word_document(path, spec: dict) -> None:
+    """Create a .docx file from a structured spec dict."""
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document()
+
+    props = spec.get("properties", {})
+    core = doc.core_properties
+    if props.get("title"):
+        core.title = props["title"]
+    if props.get("author"):
+        core.author = props["author"]
+    if props.get("subject"):
+        core.subject = props["subject"]
+    if props.get("keywords"):
+        core.keywords = props["keywords"]
+
+    for section in spec.get("sections", []):
+        stype = section.get("type", "paragraph")
+
+        if stype == "heading":
+            level = min(max(int(section.get("level", 1)), 1), 6)
+            doc.add_heading(section.get("text", ""), level=level)
+
+        elif stype == "paragraph":
+            p = doc.add_paragraph()
+            run = p.add_run(section.get("text", ""))
+            if section.get("bold"):
+                run.bold = True
+            if section.get("italic"):
+                run.italic = True
+            if section.get("underline"):
+                run.underline = True
+
+        elif stype == "table":
+            rows_data = section.get("rows", [])
+            if rows_data:
+                n_cols = max((len(r) for r in rows_data), default=1)
+                table = doc.add_table(rows=len(rows_data), cols=n_cols)
+                for i, row in enumerate(rows_data):
+                    for j, cell_val in enumerate(row):
+                        if j < n_cols:
+                            table.cell(i, j).text = str(cell_val) if cell_val is not None else ""
+                for merge in section.get("merge", []):
+                    r, c = merge["row"], merge["col"]
+                    rs, cs = merge["rowspan"], merge["colspan"]
+                    table.cell(r, c).merge(table.cell(r + rs - 1, c + cs - 1))
+
+        elif stype in ("footnote", "endnote"):
+            # python-docx has no public footnote/endnote API; render as labelled paragraph
+            label = "Footnote" if stype == "footnote" else "Endnote"
+            p = doc.add_paragraph()
+            run = p.add_run(f"[{label} {section.get('ref_paragraph', '')}]: {section.get('text', '')}")
+            run.font.size = Pt(9)
+
+    doc.save(str(path))
+
+
 def format_office_read_output(sections_or_sheets: list[tuple], metadata: dict, filetype: str) -> str:
     """Format extraction results into a single readable string for the agent."""
     parts = []
