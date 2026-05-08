@@ -61,3 +61,85 @@ def test_extract_word_empty_annotations_are_lists():
     assert metadata["tracked_changes"] == []
     assert metadata["footnotes"] == []
     assert metadata["endnotes"] == []
+
+
+def _make_word_bytes_with_comments() -> bytes:
+    """Build a .docx that contains a comment using lxml directly."""
+    from docx import Document
+    from lxml import etree
+
+    doc = Document()
+    doc.add_paragraph("This text has a comment.")
+
+    # Build comments XML part manually
+    comments_xml = (
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+        '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+        '<w:comment w:id="1" w:author="Alice" w:date="2026-01-01T00:00:00Z">'
+        '<w:p><w:r><w:t>Great point!</w:t></w:r></w:p>'
+        '</w:comment>'
+        '</w:comments>'
+    )
+
+    # Inject comments part into the docx package
+    from docx.opc.part import Part
+    from docx.opc.packuri import PackURI
+    comments_part = Part(
+        PackURI("/word/comments.xml"),
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
+        comments_xml.encode(),
+        doc.part.package,
+    )
+    rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
+    doc.part.relate_to(comments_part, rel_type)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _make_word_bytes_with_tracked_changes() -> bytes:
+    """Build a .docx with a tracked insertion."""
+    from docx import Document
+    from docx.oxml.ns import qn
+    from lxml import etree
+
+    doc = Document()
+    para = doc.add_paragraph()
+
+    # Add a normal run
+    run = para.add_run("Original text. ")
+
+    # Add a tracked insertion run
+    ins_xml = (
+        '<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+        'w:id="1" w:author="Bob" w:date="2026-01-02T00:00:00Z">'
+        '<w:r><w:t>Inserted text.</w:t></w:r>'
+        '</w:ins>'
+    )
+    ins_el = etree.fromstring(ins_xml)
+    para._element.append(ins_el)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_word_comments():
+    from office_pipeline import extract_text_from_word
+    _, metadata = extract_text_from_word(_make_word_bytes_with_comments())
+    assert len(metadata["comments"]) == 1
+    c = metadata["comments"][0]
+    assert c["author"] == "Alice"
+    assert "Great point" in c["text"]
+    assert "date" in c
+    assert "ref_text" in c
+
+
+def test_extract_word_tracked_changes():
+    from office_pipeline import extract_text_from_word
+    _, metadata = extract_text_from_word(_make_word_bytes_with_tracked_changes())
+    inserts = [tc for tc in metadata["tracked_changes"] if tc["type"] == "insert"]
+    assert len(inserts) >= 1
+    assert inserts[0]["author"] == "Bob"
+    assert "Inserted text" in inserts[0]["text"]
