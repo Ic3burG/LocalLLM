@@ -194,3 +194,93 @@ def test_extract_excel_empty_annotations_are_lists():
     assert metadata["cell_notes"] == []
     assert metadata["threaded_comments"] == []
     assert metadata["embedded_objects"] == []
+
+
+def _make_excel_bytes_with_formulas() -> bytes:
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Calc"
+    ws["A1"] = 10
+    ws["A2"] = 20
+    ws["A3"] = "=A1+A2"
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _make_excel_bytes_with_cell_note() -> bytes:
+    from openpyxl import Workbook
+    from openpyxl.comments import Comment
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Notes"
+    ws["A1"] = "Value"
+    comment = Comment("Remember to update this quarterly.", "Finance Team")
+    ws["A1"].comment = comment
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_excel_formulas():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_with_formulas())
+    formulas = metadata["formulas"]
+    assert len(formulas) >= 1
+    f = next(x for x in formulas if x["formula"] == "=A1+A2")
+    assert f["sheet"] == "Calc"
+    assert f["cell"] == "A3"
+    assert "formula" in f
+    assert "cached_value" in f
+
+
+def test_extract_excel_cell_notes():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_with_cell_note())
+    notes = metadata["cell_notes"]
+    assert len(notes) >= 1
+    n = notes[0]
+    assert n["sheet"] == "Notes"
+    assert "A1" in n["cell"]
+    assert "Finance Team" in n["author"]
+    assert "quarterly" in n["text"]
+
+
+def test_ingest_office_word_shape():
+    from office_pipeline import ingest_office
+    doc = ingest_office(_make_word_bytes_simple(), "test.docx")
+    assert doc is not None
+    assert "doc_id" in doc
+    assert "filename" in doc
+    assert "page_count" in doc
+    assert "chunks" in doc
+    assert "embeddings" in doc
+    assert doc["filename"] == "test.docx"
+    assert len(doc["chunks"]) >= 1
+    assert doc["embeddings"].shape[0] == len(doc["chunks"])
+
+
+def test_ingest_office_excel_shape():
+    from office_pipeline import ingest_office
+    doc = ingest_office(_make_excel_bytes_simple(), "data.xlsx")
+    assert doc is not None
+    assert doc["filename"] == "data.xlsx"
+    assert len(doc["chunks"]) >= 1
+    assert doc["embeddings"].shape[0] == len(doc["chunks"])
+
+
+def test_ingest_office_unknown_extension_returns_none():
+    from office_pipeline import ingest_office
+    result = ingest_office(b"garbage", "file.txt")
+    assert result is None
+
+
+def test_ingest_office_empty_word_returns_none():
+    from office_pipeline import ingest_office
+    from docx import Document
+    doc = Document()
+    buf = io.BytesIO()
+    doc.save(buf)
+    result = ingest_office(buf.getvalue(), "empty.docx")
+    assert result is None
