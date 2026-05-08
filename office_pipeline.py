@@ -494,6 +494,10 @@ def write_excel_document(path, spec: dict) -> None:
                         font_kw["italic"] = True
                     if font_kw:
                         cell.font = Font(**font_kw)
+                    if cell_spec.get("border"):
+                        from openpyxl.styles import Border, Side
+                        _side = Side(border_style="thin")
+                        cell.border = Border(left=_side, right=_side, top=_side, bottom=_side)
                     if cell_spec.get("bg_color"):
                         cell.fill = PatternFill(fill_type="solid", fgColor=cell_spec["bg_color"])
                     if cell_spec.get("number_format"):
