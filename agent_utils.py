@@ -719,9 +719,7 @@ TOOLS AVAILABLE:
   read_pdf(path)                                 — extract text from a local PDF file
   write_pdf(path, content)                       — create a PDF file from text content
   read_word(path)                               — extract text, comments, tracked changes, footnotes, and metadata from a Word (.docx) file
-  write_word(path, spec)                        — create a Word file from a JSON spec dict (sections with headings, paragraphs, tables, footnotes)
   read_excel(path)                              — extract cell values, formulas, notes, and threaded comments from an Excel (.xlsx) file
-  write_excel(path, spec)                       — create an Excel file from a JSON spec dict (sheets, cells, merges, charts)
   http_request(method, url, headers, body)       — make an HTTP request; headers is JSON string
   notify(title, message)                         — send a macOS system notification
   system_info()                                  — get CPU, RAM, and disk usage
