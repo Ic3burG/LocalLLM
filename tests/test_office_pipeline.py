@@ -66,7 +66,6 @@ def test_extract_word_empty_annotations_are_lists():
 def _make_word_bytes_with_comments() -> bytes:
     """Build a .docx that contains a comment using lxml directly."""
     from docx import Document
-    from lxml import etree
 
     doc = Document()
     doc.add_paragraph("This text has a comment.")
