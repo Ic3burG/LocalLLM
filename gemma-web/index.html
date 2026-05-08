@@ -180,9 +180,9 @@
                 <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2 px-2">History</div>
                 <div id="history-list" class="space-y-1"></div>
             </div>
-            </div>
 
-            <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">            <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2">Settings</div>
+            <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">
+                <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2">Settings</div>
             <button id="theme-toggle" class="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm">
                 <span id="theme-icon-container"></span>
                 <span id="theme-text">Toggle Theme</span>
@@ -295,7 +295,40 @@
             
             <div id="vitals-pane" class="p-6 flex-1 overflow-y-auto">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-... (rest of vitals-pane content) ...
+                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Process RAM</div>
+                        <div id="vital-ram" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">GPU VRAM</div>
+                        <div id="vital-vram" class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400">--</div>
+                    </div>
+                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Latency</div>
+                        <div id="vital-latency" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
+                    </div>
+                </div>
+
+                <div class="mb-8">
+                    <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                        Loaded Models
+                    </h3>
+                    <div id="vital-models" class="flex flex-wrap gap-2 text-xs font-mono">
+                        <span class="text-gray-500 italic">None currently loaded</span>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-sm font-semibold flex items-center gap-2 text-gray-700 dark:text-gray-200">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+                            System Integrity
+                        </h3>
+                        <button id="run-check-btn" class="text-xs font-medium text-blue-600 hover:underline">Run Post-Update Check</button>
+                    </div>
+                    <div id="check-output" class="p-4 bg-gray-900 text-gray-300 rounded-xl font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto hidden">
+                        Running integrity tests...
                     </div>
                 </div>
             </div>
