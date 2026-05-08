@@ -11,3 +11,6 @@ beautifulsoup4
 pyperclip
 psutil
 fpdf2
+python-docx
+openpyxl
+oletools
