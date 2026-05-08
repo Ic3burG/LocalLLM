@@ -332,3 +332,64 @@ async def test_read_excel_tool_missing_file():
     from agent_utils import _read_excel
     result = await _read_excel("/tmp/does_not_exist_abc123.xlsx")
     assert result.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_write_word_roundtrip_body():
+    import tempfile, json, os
+    from agent_utils import _write_word
+    from office_pipeline import extract_text_from_word
+
+    spec = {
+        "properties": {"title": "My Report", "author": "Omar"},
+        "sections": [
+            {"type": "heading", "level": 1, "text": "Executive Summary"},
+            {"type": "paragraph", "text": "Revenue grew 15% this quarter.", "bold": False},
+            {"type": "paragraph", "text": "Key finding.", "bold": True},
+        ]
+    }
+    path = os.path.join(os.getcwd(), "tmp_test_write_word.docx")
+    try:
+        result = await _write_word(path, json.dumps(spec))
+        assert "ERROR" not in result
+
+        file_bytes = open(path, "rb").read()
+        sections, metadata = extract_text_from_word(file_bytes)
+        all_text = " ".join(t for _, t in sections)
+        assert "Executive Summary" in all_text
+        assert "Revenue grew" in all_text
+        assert metadata["properties"]["title"] == "My Report"
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+
+
+@pytest.mark.asyncio
+async def test_write_word_roundtrip_table():
+    import tempfile, json, os
+    from agent_utils import _write_word
+
+    spec = {
+        "sections": [
+            {
+                "type": "table",
+                "rows": [["Name", "Score"], ["Alice", "95"], ["Bob", "87"]],
+                "header_row": True,
+                "merge": []
+            }
+        ]
+    }
+    path = os.path.join(os.getcwd(), "tmp_test_write_word_table.docx")
+    try:
+        result = await _write_word(path, json.dumps(spec))
+        assert "ERROR" not in result
+
+        from docx import Document
+        doc = Document(path)
+        tables = doc.tables
+        assert len(tables) == 1
+        assert tables[0].cell(0, 0).text == "Name"
+        assert tables[0].cell(1, 0).text == "Alice"
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
