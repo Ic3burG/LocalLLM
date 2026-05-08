@@ -286,7 +286,13 @@ async def upload_document(file: UploadFile = File(...)):
         file_bytes = await file.read()
         filename = file.filename or "document.pdf"
 
-        doc = pdf_pipeline.ingest_pdf(file_bytes, filename)
+        ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+        if ext in ("docx", "xlsx"):
+            import office_pipeline
+            doc = office_pipeline.ingest_office(file_bytes, filename)
+        else:
+            doc = pdf_pipeline.ingest_pdf(file_bytes, filename)
 
         if doc is None:
             return JSONResponse(
