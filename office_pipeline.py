@@ -24,6 +24,7 @@ def extract_text_from_word(file_bytes: bytes) -> tuple[list[tuple[int, str]], di
     for para in doc.paragraphs:
         if para.style.name.startswith("Heading"):
             if current_lines:
+                section_num += 1
                 sections.append((section_num, "\n".join(current_lines)))
                 current_lines = []
             section_num += 1
@@ -34,6 +35,7 @@ def extract_text_from_word(file_bytes: bytes) -> tuple[list[tuple[int, str]], di
                 current_lines.append(para.text)
 
     if current_lines:
+        section_num += 1
         sections.append((section_num, "\n".join(current_lines)))
 
     # If no headings produced sections, return body as single section
@@ -56,6 +58,8 @@ def extract_text_from_word(file_bytes: bytes) -> tuple[list[tuple[int, str]], di
 
     # --- Document properties ---
     props = doc.core_properties
+    # Note: python-docx exposes dc:description as .comments in some versions,
+    # so we check .description first, then fall back to .comments if needed.
     properties = {
         "title": props.title or "",
         "author": props.author or "",
