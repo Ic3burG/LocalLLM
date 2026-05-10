@@ -215,6 +215,69 @@
         .task-input { width: 100%; background: var(--color-surface); border: 1px solid var(--color-border); color: var(--color-text); padding: 4px 8px; border-radius: 4px; font-size: 11px; margin-top: 4px; box-sizing: border-box; }
         .btn-save-task { background: var(--color-accent); color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; }
         .btn-cancel-task { background: var(--color-surface); color: var(--color-text-muted); border: 1px solid var(--color-border); padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+
+        /* Image mode */
+        .mode-pill { display: flex; background: #f3f4f6; border-radius: 20px; padding: 3px; gap: 2px; flex-shrink: 0; }
+        .dark .mode-pill { background: #2a2a35; }
+        .mode-btn { padding: 4px 12px; border-radius: 16px; font-size: 11px; font-weight: 600; border: none; cursor: pointer; transition: all 0.15s; background: none; color: #9ca3af; }
+        .mode-btn.active-chat { background: white; color: #111827; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+        .dark .mode-btn.active-chat { background: #3c3d40; color: white; }
+        .mode-btn.active-image { background: #7c3aed; color: white; box-shadow: 0 1px 3px rgba(124,58,237,0.3); }
+        .image-controls-row { display: none; padding-top: 8px; border-top: 1px solid #f3f4f6; margin-top: 6px; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .dark .image-controls-row { border-top-color: #3c3d40; }
+        .image-controls-row.visible { display: flex; }
+        .img-ctrl { display: flex; align-items: center; gap: 5px; background: #f9fafb; border-radius: 8px; padding: 4px 10px; font-size: 11px; }
+        .dark .img-ctrl { background: #2a2a35; }
+        .img-ctrl label { color: #9ca3af; font-weight: 600; }
+        .img-ctrl select { border: none; background: transparent; font-size: 11px; color: #111827; font-weight: 600; cursor: pointer; outline: none; }
+        .img-ctrl input[type=range] { width: 56px; accent-color: #7c3aed; border: none; background: transparent; cursor: pointer; }
+        .dark .img-ctrl select { color: white; }
+        .img-ctrl .steps-val { color: #111827; font-weight: 700; min-width: 20px; }
+        .dark .img-ctrl .steps-val { color: white; }
+        .warmup-banner { display: none; background: #f5f0ff; border: 1px solid #d8b4fe; border-radius: 10px; padding: 7px 12px; font-size: 11px; color: #6d28d9; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .warmup-banner.visible { display: flex; }
+        .warmup-dot { width: 6px; height: 6px; background: #7c3aed; border-radius: 50%; animation: wdot 1s ease-in-out infinite alternate; }
+        @keyframes wdot { from { opacity: 0.4; } to { opacity: 1; } }
+
+        /* Image card */
+        .img-card { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 14px 14px 14px 3px; overflow: hidden; max-width: 420px; }
+        .dark .img-card { background: #1e1e28; border-color: #3c3d40; }
+        .img-card-shimmer { height: 220px; background: linear-gradient(90deg,#f0f0f0 25%,#e0e0e0 50%,#f0f0f0 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+        .dark .img-card-shimmer { background: linear-gradient(90deg,#2a2a35 25%,#3c3d40 50%,#2a2a35 75%); }
+        @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+        .img-spinner { width: 24px; height: 24px; border: 2px solid #d1d5db; border-top-color: #7c3aed; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        .dark .img-spinner { border-color: #3c3d40; border-top-color: #7c3aed; }
+        .img-gen-label { font-size: 11px; color: #9ca3af; font-weight: 600; }
+        .img-thumb-wrap { position: relative; cursor: pointer; }
+        .img-thumb-wrap:hover .img-expand { opacity: 1; }
+        .img-expand { position: absolute; inset: 0; background: rgba(0,0,0,0.35); display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; font-weight: 600; opacity: 0; transition: opacity 0.18s; pointer-events: none; border-radius: 0; }
+        .img-thumb { width: 100%; display: block; }
+        .img-meta { padding: 6px 12px; font-size: 11px; color: #9ca3af; border-bottom: 1px solid #e5e7eb; }
+        .dark .img-meta { border-color: #3c3d40; }
+        .img-actions { display: flex; }
+        .img-action-btn { flex: 1; padding: 7px 0; font-size: 11px; font-weight: 600; color: #6b7280; background: none; border: none; border-right: 1px solid #e5e7eb; cursor: pointer; transition: background 0.12s, color 0.12s; }
+        .dark .img-action-btn { color: #9ca3af; border-right-color: #3c3d40; }
+        .img-action-btn:last-child { border-right: none; }
+        .img-action-btn:hover { background: #eff6ff; color: #3b5bdb; }
+        .dark .img-action-btn:hover { background: #1a1a2e; color: #818cf8; }
+
+        /* Lightbox */
+        .lightbox-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 200; display: none; align-items: center; justify-content: center; padding: 24px; }
+        .lightbox-overlay.open { display: flex; }
+        .lightbox-inner { display: flex; gap: 20px; max-width: 900px; width: 100%; align-items: flex-start; }
+        .lightbox-img-wrap { flex: 1; min-width: 0; }
+        .lightbox-img-wrap img { width: 100%; border-radius: 10px; display: block; }
+        .lightbox-sidebar { width: 180px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; padding-top: 4px; }
+        .lb-title { color: white; font-size: 14px; font-weight: 700; }
+        .lb-prompt-text { color: #9ca3af; font-size: 12px; line-height: 1.5; word-break: break-word; }
+        .lb-meta-text { color: #6b7280; font-size: 11px; }
+        .lb-btn { padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; width: 100%; text-align: center; }
+        .lb-btn-primary { background: #7c3aed; color: white; }
+        .lb-btn-primary:hover { background: #6d28d9; }
+        .lb-btn-secondary { background: rgba(255,255,255,0.1); color: white; margin-top: 4px; }
+        .lb-btn-secondary:hover { background: rgba(255,255,255,0.18); }
+        .lb-close-btn { color: #6b7280; font-size: 12px; text-align: center; cursor: pointer; margin-top: 6px; background: none; border: none; width: 100%; }
+        .lb-close-btn:hover { color: white; }
     </style>
 </head>
 <body class="bg-lightBg text-gray-900 dark:bg-darkBg dark:text-gray-200 flex h-screen overflow-hidden">
@@ -350,9 +413,19 @@
                 </div>
             </div>
 
+            <div class="warmup-banner" id="warmup-banner">
+              <div class="warmup-dot"></div>
+              <span>Image model ready · text model will reload on switch back</span>
+              <button type="button" id="warmup-close-btn" style="margin-left:auto;background:none;border:none;cursor:pointer;color:#9ca3af;font-size:13px">✕</button>
+            </div>
+
             <form id="chat-form"
- class="flex items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl">
+ class="flex flex-wrap items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl">
                 <input type="file" id="file-input" class="hidden" multiple>
+                <div class="mode-pill" id="mode-pill">
+                  <button type="button" class="mode-btn active-chat" id="mode-chat-btn">💬 Chat</button>
+                  <button type="button" class="mode-btn" id="mode-image-btn">🎨 Image</button>
+                </div>
                 <button type="button" id="attach-btn" class="text-gray-400 hover:text-blue-500 p-2 rounded-xl transition-colors flex-shrink-0" title="Attach file">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                 </button>
@@ -360,6 +433,30 @@
                 <button type="submit" class="bg-gray-900 text-white dark:bg-white dark:text-black p-2 rounded-xl hover:opacity-90 transition-colors disabled:opacity-50 flex-shrink-0" id="send-btn">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
                 </button>
+                <div class="image-controls-row w-full" id="image-controls-row">
+                  <div class="img-ctrl">
+                    <label for="img-size">Size</label>
+                    <select id="img-size">
+                      <option value="512x512">512×512</option>
+                      <option value="768x768">768×768</option>
+                      <option value="512x768">512×768</option>
+                    </select>
+                  </div>
+                  <div class="img-ctrl">
+                    <label for="img-steps">Steps</label>
+                    <input type="range" id="img-steps" min="1" max="12" value="4">
+                    <span class="steps-val" id="img-steps-val">4</span>
+                  </div>
+                  <div class="img-ctrl">
+                    <label for="img-style">Style</label>
+                    <select id="img-style">
+                      <option value="default">Default</option>
+                      <option value="photorealistic">Photorealistic</option>
+                      <option value="anime">Anime</option>
+                      <option value="sketch">Sketch</option>
+                    </select>
+                  </div>
+                </div>
             </form>
             <p class="text-center text-[10px] text-gray-500 mt-4">Local AI Interface • Intelligent Memory Active</p>
         </footer>
@@ -579,6 +676,25 @@
         </div>
     </div>
 
+    <div class="lightbox-overlay" id="lightbox-overlay">
+      <div class="lightbox-inner" id="lightbox-inner">
+        <div class="lightbox-img-wrap">
+          <img id="lightbox-img" src="" alt="Generated image">
+        </div>
+        <div class="lightbox-sidebar">
+          <div class="lb-title">Generated Image</div>
+          <div class="lb-prompt-text" id="lb-prompt-text"></div>
+          <div class="lb-meta-text" id="lb-meta-text"></div>
+          <div style="display:flex;flex-direction:column;margin-top:8px">
+            <button class="lb-btn lb-btn-primary" id="lb-save-btn" type="button">⬇ Save to disk</button>
+            <button class="lb-btn lb-btn-secondary" id="lb-regen-btn" type="button">🔄 Regenerate</button>
+            <button class="lb-btn lb-btn-secondary" id="lb-edit-btn" type="button">✏ Edit prompt</button>
+          </div>
+          <button class="lb-close-btn" id="lb-close-btn" type="button">✕ Close</button>
+        </div>
+      </div>
+    </div>
+
     <script>
         const chatBox = document.getElementById('chat-box');
         const chatForm = document.getElementById('chat-form');
@@ -599,7 +715,184 @@
         const welcomeMessage = document.getElementById('welcome-message');
         const modelSelect = document.getElementById('model-select');
         // const memoryPreview = document.getElementById('memory-preview');
-        
+
+        // ── Image mode state ──────────────────────────────────────────────
+        let currentMode = 'chat';
+
+        const _imageStore = new Map();
+        let _imageIdCounter = 0;
+        function _storeImageData(data) {
+            const id = String(++_imageIdCounter);
+            _imageStore.set(id, data);
+            return id;
+        }
+
+        let _lightboxImageId = null;
+
+        function setMode(mode) {
+            currentMode = mode;
+            const chatBtn = document.getElementById('mode-chat-btn');
+            const imageBtn = document.getElementById('mode-image-btn');
+            const controls = document.getElementById('image-controls-row');
+            if (mode === 'image') {
+                chatBtn.className = 'mode-btn';
+                imageBtn.className = 'mode-btn active-image';
+                controls.classList.add('visible');
+                userInput.placeholder = 'Describe an image…';
+                sendBtn.style.background = '#7c3aed';
+                sendBtn.style.color = 'white';
+            } else {
+                chatBtn.className = 'mode-btn active-chat';
+                imageBtn.className = 'mode-btn';
+                controls.classList.remove('visible');
+                userInput.placeholder = 'Ask anything...';
+                sendBtn.style.background = '';
+                sendBtn.style.color = '';
+                document.getElementById('warmup-banner').classList.remove('visible');
+            }
+        }
+
+        function appendImageShimmer(isWarmup) {
+            const wrap = document.createElement('div');
+            wrap.className = 'message-gemma p-2 max-w-[95%]';
+            const card = document.createElement('div');
+            card.className = 'img-card';
+            const shimmer = document.createElement('div');
+            shimmer.className = 'img-card-shimmer';
+            const spinner = document.createElement('div');
+            spinner.className = 'img-spinner';
+            const label = document.createElement('div');
+            label.className = 'img-gen-label';
+            label.textContent = isWarmup ? 'Warming up image model… ~16s est.' : 'Generating… ~5s est.';
+            shimmer.append(spinner, label);
+            card.appendChild(shimmer);
+            wrap.appendChild(card);
+            chatBox.appendChild(wrap);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return wrap;
+        }
+
+        function appendImageCard(data) {
+            const imageId = _storeImageData(data);
+            const src = 'data:image/png;base64,' + data.image_b64;
+            const elapsedSec = (data.elapsed_ms / 1000).toFixed(1);
+            const stylePart = (data.style && data.style !== 'default') ? ' · ' + data.style : '';
+            const metaText = data.width + '×' + data.height + ' · ' + data.steps + ' steps · ' + elapsedSec + 's' + stylePart;
+
+            const wrap = document.createElement('div');
+            wrap.className = 'message-gemma p-2 max-w-[95%]';
+            const card = document.createElement('div');
+            card.className = 'img-card';
+
+            const thumbWrap = document.createElement('div');
+            thumbWrap.className = 'img-thumb-wrap';
+            thumbWrap.dataset.imageId = imageId;
+
+            const img = document.createElement('img');
+            img.src = src;
+            img.className = 'img-thumb';
+            img.alt = 'Generated: ' + data.prompt;
+
+            const expand = document.createElement('div');
+            expand.className = 'img-expand';
+            expand.textContent = '🔍 Expand';
+
+            const meta = document.createElement('div');
+            meta.className = 'img-meta';
+            meta.textContent = metaText;
+
+            const actions = document.createElement('div');
+            actions.className = 'img-actions';
+
+            const saveBtn2 = document.createElement('button');
+            saveBtn2.className = 'img-action-btn';
+            saveBtn2.type = 'button';
+            saveBtn2.textContent = '⬇ Save';
+            saveBtn2.dataset.imageId = imageId;
+
+            const regenBtn = document.createElement('button');
+            regenBtn.className = 'img-action-btn';
+            regenBtn.type = 'button';
+            regenBtn.textContent = '🔄 Regenerate';
+            regenBtn.dataset.imageId = imageId;
+
+            const editBtn = document.createElement('button');
+            editBtn.className = 'img-action-btn';
+            editBtn.type = 'button';
+            editBtn.textContent = '✏ Edit prompt';
+            editBtn.dataset.imageId = imageId;
+
+            actions.append(saveBtn2, regenBtn, editBtn);
+            thumbWrap.append(img, expand);
+            card.append(thumbWrap, meta, actions);
+            wrap.appendChild(card);
+            chatBox.appendChild(wrap);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return wrap;
+        }
+
+        function openLightbox(imageId) {
+            const data = _imageStore.get(imageId);
+            if (!data) return;
+            _lightboxImageId = imageId;
+            const src = 'data:image/png;base64,' + data.image_b64;
+            document.getElementById('lightbox-img').src = src;
+            document.getElementById('lb-prompt-text').textContent = data.prompt;
+            const elapsedSec = (data.elapsed_ms / 1000).toFixed(1);
+            const stylePart = (data.style && data.style !== 'default') ? ' · ' + data.style : '';
+            document.getElementById('lb-meta-text').textContent =
+                data.width + '×' + data.height + ' · ' + data.steps + ' steps · ' + elapsedSec + 's' + stylePart;
+            document.getElementById('lightbox-overlay').classList.add('open');
+            document.addEventListener('keydown', _lbKeyHandler);
+        }
+
+        function closeLightbox() {
+            document.getElementById('lightbox-overlay').classList.remove('open');
+            document.removeEventListener('keydown', _lbKeyHandler);
+            _lightboxImageId = null;
+        }
+
+        function _lbKeyHandler(e) {
+            if (e.key === 'Escape') closeLightbox();
+        }
+
+        async function submitImageGeneration(prompt, size, steps, style) {
+            if (!prompt) return;
+            appendMessage('user', prompt);
+            let isWarmup = false;
+            try {
+                const modelsRes = await fetch('/api/image/models');
+                const modelsData = await modelsRes.json();
+                isWarmup = modelsData.downloaded.length === 0;
+            } catch (_) {}
+            if (isWarmup) document.getElementById('warmup-banner').classList.add('visible');
+            const shimmer = appendImageShimmer(isWarmup);
+            try {
+                const res = await fetch('/api/image/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, size, steps: parseInt(steps, 10), style }),
+                });
+                const data = await res.json();
+                shimmer.remove();
+                document.getElementById('warmup-banner').classList.remove('visible');
+                if (!res.ok || data.error) {
+                    const errorMessages = {
+                        model_not_found: 'Image model not downloaded. Run scripts/download_sd.sh to install it.',
+                        insufficient_memory: 'Not enough memory. Try a smaller size or switch to a lighter text model.',
+                        timeout: 'Generation timed out. Try fewer steps or a smaller size.',
+                    };
+                    appendMessage('assistant', errorMessages[data.error] || 'Image generation failed: ' + data.error);
+                    return;
+                }
+                appendImageCard({ ...data, prompt, size, style });
+            } catch (err) {
+                shimmer.remove();
+                appendMessage('assistant', 'Image generation error: ' + err.message);
+            }
+        }
+        // ── end image mode ────────────────────────────────────────────────
+
         const settingsModal = document.getElementById('settings-modal');
         const statusDot   = document.getElementById('status-dot');
         const statusLabel = document.getElementById('status-label');
@@ -1372,6 +1665,17 @@
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (currentMode === 'image') {
+                const text = userInput.value.trim();
+                if (!text) return;
+                const size = document.getElementById('img-size').value;
+                const steps = document.getElementById('img-steps').value;
+                const style = document.getElementById('img-style').value;
+                userInput.value = '';
+                userInput.style.height = 'auto';
+                await submitImageGeneration(text, size, steps, style);
+                return;
+            }
             const text = userInput.value.trim();
             if (!text && currentAttachments.length === 0) return;
             if (!currentChatId) createNewChat();
@@ -2005,6 +2309,17 @@
                 clearAgentStatus();
                 es.close();
                 setTimeout(refreshMemoryPreview, 2000);
+            } else if (event.type === 'image') {
+                appendImageCard({
+                    image_b64: event.image_b64,
+                    width: event.width,
+                    height: event.height,
+                    steps: event.steps,
+                    elapsed_ms: event.elapsed_ms,
+                    prompt: event.prompt,
+                    size: event.size || '512x512',
+                    style: 'default',
+                });
             } else if (event.type === 'error') {
                 const errEl = document.createElement('div');
                 errEl.className = 'agent-error-message';
@@ -2014,6 +2329,69 @@
                 es.close();
             }
         }
+
+        // ── Image mode event wiring ───────────────────────────────────────
+        document.getElementById('mode-chat-btn').addEventListener('click', () => setMode('chat'));
+        document.getElementById('mode-image-btn').addEventListener('click', () => setMode('image'));
+        document.getElementById('warmup-close-btn').addEventListener('click', () => {
+            document.getElementById('warmup-banner').classList.remove('visible');
+        });
+        document.getElementById('img-steps').addEventListener('input', function() {
+            document.getElementById('img-steps-val').textContent = this.value;
+        });
+
+        chatBox.addEventListener('click', function(e) {
+            const thumbWrap = e.target.closest('.img-thumb-wrap');
+            if (thumbWrap) {
+                openLightbox(thumbWrap.dataset.imageId);
+                return;
+            }
+            const btn = e.target.closest('.img-action-btn');
+            if (!btn) return;
+            const imageId = btn.dataset.imageId;
+            const data = _imageStore.get(imageId);
+            if (!data) return;
+            if (btn.textContent.includes('Save')) {
+                const a = document.createElement('a');
+                a.href = 'data:image/png;base64,' + data.image_b64;
+                a.download = 'generated.png';
+                a.click();
+            } else if (btn.textContent.includes('Regenerate')) {
+                submitImageGeneration(data.prompt, data.size || '512x512', data.steps || 4, data.style || 'default');
+            } else if (btn.textContent.includes('Edit')) {
+                setMode('image');
+                userInput.value = data.prompt;
+                userInput.focus();
+            }
+        });
+
+        document.getElementById('lightbox-overlay').addEventListener('click', function(e) {
+            if (e.target === this) closeLightbox();
+        });
+        document.getElementById('lb-close-btn').addEventListener('click', closeLightbox);
+        document.getElementById('lb-save-btn').addEventListener('click', function() {
+            const data = _imageStore.get(_lightboxImageId);
+            if (!data) return;
+            const a = document.createElement('a');
+            a.href = 'data:image/png;base64,' + data.image_b64;
+            a.download = 'generated.png';
+            a.click();
+        });
+        document.getElementById('lb-regen-btn').addEventListener('click', function() {
+            const data = _imageStore.get(_lightboxImageId);
+            if (!data) return;
+            closeLightbox();
+            submitImageGeneration(data.prompt, data.size || '512x512', data.steps || 4, data.style || 'default');
+        });
+        document.getElementById('lb-edit-btn').addEventListener('click', function() {
+            const data = _imageStore.get(_lightboxImageId);
+            if (!data) return;
+            closeLightbox();
+            setMode('image');
+            userInput.value = data.prompt;
+            userInput.focus();
+        });
+        // ── end image mode wiring ─────────────────────────────────────────
     </script>
 </body>
 </html>
