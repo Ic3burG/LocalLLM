@@ -1,8 +1,11 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
-from pdf_pipeline import chunk_text, retrieve_chunks, build_document_context
+
+from pdf_pipeline import build_document_context, chunk_text, retrieve_chunks
 
 
 def test_chunk_text_single_short_page():

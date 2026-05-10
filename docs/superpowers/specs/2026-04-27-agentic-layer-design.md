@@ -42,10 +42,12 @@ Browser (index.html)
 ## Files
 
 ### New
+
 - `agent.py` — FastAPI router; all agentic logic lives here
 - `scheduler_tasks.json` — persisted in-app scheduled task definitions
 
 ### Modified
+
 - `gemma_bridge.py` — add `app.include_router(agent_router, prefix="/v1/agent")`
 - `server.js` — proxy routes for `/api/agent`, `/api/agent/confirm/:id`, `/api/agent/schedule/*`
 - `index.html` — agent mode toggle, hybrid trace UI, confirmation modal, scheduled tasks sidebar panel
@@ -58,22 +60,22 @@ Tools are defined as Python dataclasses with a `risk_level` field. The confirmat
 
 ### Safe (auto-run, no prompt)
 
-| Tool | Description |
-|---|---|
-| `read_file(path)` | Read any file and return its contents |
-| `list_dir(path)` | List files and folders at a path |
-| `list_crons()` | Read and return current user crontab |
-| `list_scheduled_tasks()` | List all in-app APScheduler tasks |
+| Tool                     | Description                           |
+| ------------------------ | ------------------------------------- |
+| `read_file(path)`        | Read any file and return its contents |
+| `list_dir(path)`         | List files and folders at a path      |
+| `list_crons()`           | Read and return current user crontab  |
+| `list_scheduled_tasks()` | List all in-app APScheduler tasks     |
 
 ### Risky (pause and ask user before executing)
 
-| Tool | Description |
-|---|---|
-| `write_file(path, content)` | Create or overwrite a file |
-| `append_file(path, content)` | Append text to an existing file |
-| `shell(command)` | Run any shell command |
-| `create_cron(name, schedule, command)` | Add a named entry to user crontab |
-| `delete_cron(name)` | Remove a named crontab entry |
+| Tool                                            | Description                                           |
+| ----------------------------------------------- | ----------------------------------------------------- |
+| `write_file(path, content)`                     | Create or overwrite a file                            |
+| `append_file(path, content)`                    | Append text to an existing file                       |
+| `shell(command)`                                | Run any shell command                                 |
+| `create_cron(name, schedule, command)`          | Add a named entry to user crontab                     |
+| `delete_cron(name)`                             | Remove a named crontab entry                          |
 | `create_scheduled_task(name, schedule, prompt)` | Schedule a recurring Gemma agent task via APScheduler |
 
 ---
@@ -83,6 +85,7 @@ Tools are defined as Python dataclasses with a `risk_level` field. The confirmat
 The agent uses text-based tool invocation since Gemma via LiteRT/MLX does not emit structured function-call JSON natively.
 
 ### System prompt injected for all agent requests
+
 ```
 You are an autonomous agent. You have access to these tools:
   read_file(path), list_dir(path), write_file(path, content),
@@ -100,6 +103,7 @@ Think step by step. Only call one tool per response.
 ```
 
 ### Loop execution (in `agent.py`)
+
 1. Add system prompt + user message to conversation history
 2. Call model → get response text
 3. Parse response:
@@ -119,6 +123,7 @@ Think step by step. Only call one tool per response.
 Each agent run is assigned a `task_id` (UUID) at start.
 
 **Flow for risky tools:**
+
 1. Agent emits SSE event: `{"type": "confirm_request", "task_id": "...", "tool": "shell", "args": {"command": "rm ..."}}`
 2. Frontend renders confirmation modal showing exact tool call and args
 3. User clicks Allow or Deny → `POST /v1/agent/confirm/{task_id}` with `{"approved": true|false}`
@@ -144,6 +149,7 @@ Pending confirmations stored in a module-level dict: `pending_confirmations: dic
 ```
 
 The frontend hybrid trace UI reads this stream and renders:
+
 - Collapsed: `⚙ N steps · Xs` with a single `DONE` summary line
 - Expanded: each `step` event shown as `→ tool_name(args)` with its result
 
@@ -152,6 +158,7 @@ The frontend hybrid trace UI reads this stream and renders:
 ## Dual Scheduler
 
 ### In-App Scheduler (APScheduler)
+
 - Uses `AsyncIOScheduler` (not `BackgroundScheduler`) to run inside FastAPI's asyncio event loop without a separate thread
 - Task definitions loaded from `scheduler_tasks.json` on startup
 - Each task is a cron-scheduled job that fires `run_agent_task(prompt, model_id)` — running a full ReAct agent loop internally
@@ -159,6 +166,7 @@ The frontend hybrid trace UI reads this stream and renders:
 - CRUD exposed via `/v1/agent/schedule` endpoints
 
 ### System Crontab Manager
+
 - `list_crons()` runs `crontab -l` and parses output
 - `create_cron(name, schedule, command)` reads current crontab, appends a tagged comment `# gemma:<name>` + the cron entry, writes back via `crontab -`
 - `delete_cron(name)` removes lines matching `# gemma:<name>` tag
@@ -169,21 +177,28 @@ The frontend hybrid trace UI reads this stream and renders:
 ## UI Changes
 
 ### 1. Agent Mode Toggle
+
 Pill-style toggle above the chat input (`💬 Chat` / `🤖 Agent`). Agent mode routes the send button to `/api/agent` instead of `/api/chat` and opens the SSE stream on response.
 
 ### 2. Hybrid Trace
+
 Rendered above the final assistant message bubble:
+
 - **Collapsed (default):** `⚙ N steps · Xs ▼ expand`
 - **Expanded:** each step shown as `→ tool_name(args)` indented block with its result; risky steps show approval status
 
 ### 3. Confirmation Modal
+
 Inline card rendered inside the chat flow (not a browser alert/dialog):
+
 - Shows tool name, exact args, and a plain-English description of the risk
 - Two buttons: `✓ Allow` and `✕ Deny`
 - Modal disappears and trace resumes once the user responds
 
 ### 4. Scheduled Tasks Panel
+
 New collapsible section at the bottom of the existing sidebar, below conversation history:
+
 - **In-App Tasks:** list of APScheduler tasks with name, schedule, prompt preview, active indicator; `+ Add` opens inline form
 - **System Cron:** list of agent-managed crontab entries with name and schedule expression; `+ Add` opens inline form
 - Both sections have a delete (trash) button per entry

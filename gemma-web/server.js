@@ -14,12 +14,23 @@ const upload = multer({ storage: multer.memoryStorage() });
 const LOG_FILE = path.join(__dirname, "server.log");
 
 function log(level, msg, fields = {}) {
-  const entry = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields });
+  const entry = JSON.stringify({
+    ts: new Date().toISOString(),
+    level,
+    msg,
+    ...fields,
+  });
   fs.appendFileSync(LOG_FILE, entry + "\n");
   if (level === "ERROR") {
-    console.error(`${new Date().toISOString()} ${level} [server] ${msg}`, Object.keys(fields).length ? fields : "");
+    console.error(
+      `${new Date().toISOString()} ${level} [server] ${msg}`,
+      Object.keys(fields).length ? fields : ""
+    );
   } else {
-    console.log(`${new Date().toISOString()} ${level} [server] ${msg}`, Object.keys(fields).length ? fields : "");
+    console.log(
+      `${new Date().toISOString()} ${level} [server] ${msg}`,
+      Object.keys(fields).length ? fields : ""
+    );
   }
 }
 
@@ -41,12 +52,19 @@ app.post("/api/document", upload.single("file"), async (req, res) => {
     const response = await axios.post(
       "http://localhost:9379/v1/document",
       form,
-      { headers: form.getHeaders() },
+      { headers: form.getHeaders() }
     );
-    log("INFO", "document upload", { elapsed_ms: Date.now() - t0, filename: req.file.originalname });
+    log("INFO", "document upload", {
+      elapsed_ms: Date.now() - t0,
+      filename: req.file.originalname,
+    });
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "document upload failed", { elapsed_ms: Date.now() - t0, error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "document upload failed", {
+      elapsed_ms: Date.now() - t0,
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to upload document to bridge" });
   }
 });
@@ -55,7 +73,10 @@ app.post("/api/chat", async (req, res) => {
   const t0 = Date.now();
   try {
     const { messages, model, doc_ids } = req.body;
-    log("INFO", "chat request", { model: model || "gemma4-e4b", msg_count: messages?.length });
+    log("INFO", "chat request", {
+      model: model || "gemma4-e4b",
+      msg_count: messages?.length,
+    });
     const response = await axios.post(
       "http://localhost:9379/v1/chat/completions",
       {
@@ -63,12 +84,16 @@ app.post("/api/chat", async (req, res) => {
         messages: messages,
         doc_ids: doc_ids || [],
         stream: false,
-      },
+      }
     );
     log("INFO", "chat response", { elapsed_ms: Date.now() - t0 });
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "chat completion failed", { elapsed_ms: Date.now() - t0, error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "chat completion failed", {
+      elapsed_ms: Date.now() - t0,
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to connect to Gemma 4 server" });
   }
 });
@@ -78,12 +103,16 @@ app.post("/api/chat/stream", async (req, res) => {
   try {
     const response = await axios.post(
       "http://localhost:9379/v1/chat/stream",
-      req.body,
+      req.body
     );
     log("INFO", "chat stream started", { elapsed_ms: Date.now() - t0 });
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "chat stream start failed", { elapsed_ms: Date.now() - t0, error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "chat stream start failed", {
+      elapsed_ms: Date.now() - t0,
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to start chat stream" });
   }
 });
@@ -124,7 +153,10 @@ app.post("/api/title", async (req, res) => {
     });
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "title generation failed", { error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "title generation failed", {
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to generate title" });
   }
 });
@@ -136,23 +168,28 @@ app.post("/api/agent/confirm/:taskId", async (req, res) => {
     const { taskId } = req.params;
     const response = await axios.post(
       `http://localhost:9379/v1/agent/confirm/${taskId}`,
-      req.body,
+      req.body
     );
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "agent confirm failed", { task_id: req.params.taskId, error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "agent confirm failed", {
+      task_id: req.params.taskId,
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to confirm agent task" });
   }
 });
 
 app.get("/api/agent/schedule", async (req, res) => {
   try {
-    const response = await axios.get(
-      "http://localhost:9379/v1/agent/schedule",
-    );
+    const response = await axios.get("http://localhost:9379/v1/agent/schedule");
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "fetch schedule failed", { error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "fetch schedule failed", {
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to fetch agent schedule" });
   }
 });
@@ -161,11 +198,14 @@ app.post("/api/agent/schedule", async (req, res) => {
   try {
     const response = await axios.post(
       "http://localhost:9379/v1/agent/schedule",
-      req.body,
+      req.body
     );
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "create schedule failed", { error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "create schedule failed", {
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to create agent schedule" });
   }
 });
@@ -174,11 +214,15 @@ app.delete("/api/agent/schedule/:name", async (req, res) => {
   try {
     const { name } = req.params;
     const response = await axios.delete(
-      `http://localhost:9379/v1/agent/schedule/${name}`,
+      `http://localhost:9379/v1/agent/schedule/${name}`
     );
     res.json(response.data);
   } catch (error) {
-    log("ERROR", "delete schedule failed", { name: req.params.name, error: error.message, upstream_status: error.response?.status });
+    log("ERROR", "delete schedule failed", {
+      name: req.params.name,
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
     res.status(500).json({ error: "Failed to delete agent schedule" });
   }
 });
@@ -205,22 +249,27 @@ app.get("/api/system_prompt", async (req, res) => {
 
 app.get("/api/stats", async (req, res) => {
   try {
-    const response = await axios.get("http://localhost:9379/v1/stats", { timeout: 5000 });
+    const response = await axios.get("http://localhost:9379/v1/stats", {
+      timeout: 5000,
+    });
     res.json(response.data);
   } catch (e) {
     log("ERROR", "stats fetch failed", { error: e.message, code: e.code });
     const status = e.response ? e.response.status : 503;
-    res.status(status).json({ 
+    res.status(status).json({
       error: "Failed to fetch stats from bridge",
       detail: e.message,
-      online: false
+      online: false,
     });
   }
 });
 
 app.put("/api/memory", async (req, res) => {
   try {
-    const response = await axios.put("http://localhost:9379/v1/memory", req.body);
+    const response = await axios.put(
+      "http://localhost:9379/v1/memory",
+      req.body
+    );
     res.json(response.data);
   } catch (e) {
     log("ERROR", "memory save failed", { error: e.message });

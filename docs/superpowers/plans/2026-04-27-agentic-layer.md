@@ -12,26 +12,28 @@
 
 ## File Map
 
-| File | Action | Responsibility |
-|---|---|---|
-| `agent.py` | Create | Tool registry, ReAct loop, confirmation gate, SSE endpoints, scheduler CRUD |
-| `scheduler_tasks.json` | Create | Persisted in-app scheduled task definitions |
-| `gemma_bridge.py` | Modify | Extract `run_inference()` helper; mount agent router; start scheduler |
-| `server.js` | Modify | Proxy routes for agent run/stream/confirm/schedule |
+| File                   | Action | Responsibility                                                                   |
+| ---------------------- | ------ | -------------------------------------------------------------------------------- |
+| `agent.py`             | Create | Tool registry, ReAct loop, confirmation gate, SSE endpoints, scheduler CRUD      |
+| `scheduler_tasks.json` | Create | Persisted in-app scheduled task definitions                                      |
+| `gemma_bridge.py`      | Modify | Extract `run_inference()` helper; mount agent router; start scheduler            |
+| `server.js`            | Modify | Proxy routes for agent run/stream/confirm/schedule                               |
 | `gemma-web/index.html` | Modify | Agent toggle, hybrid trace UI, confirmation modal, scheduled tasks sidebar panel |
-| `requirements.txt` | Modify | Add `apscheduler` |
-| `tests/test_agent.py` | Create | Unit tests for tools, parser, and ReAct loop |
+| `requirements.txt`     | Modify | Add `apscheduler`                                                                |
+| `tests/test_agent.py`  | Create | Unit tests for tools, parser, and ReAct loop                                     |
 
 ---
 
 ## Task 1: Add `apscheduler` to requirements and install
 
 **Files:**
+
 - Modify: `requirements.txt`
 
 - [ ] **Step 1: Add apscheduler to requirements.txt**
 
 Append so the file reads:
+
 ```
 pdfplumber
 sentence-transformers
@@ -67,6 +69,7 @@ git add requirements.txt && git commit -m "chore: add apscheduler dependency"
 ## Task 2: Extract `run_inference` helper from `gemma_bridge.py`
 
 **Files:**
+
 - Modify: `gemma_bridge.py`
 - Create: `tests/test_agent.py`
 
@@ -113,7 +116,7 @@ In `chat_completions`, find the routing block:
 
 ```python
         is_mlx = "26b" in model_id.lower() or "31b" in model_id.lower() or "mlx" in model_id.lower()
-        
+
         if is_mlx:
             response = await handle_mlx_request(model_id, messages)
         else:
@@ -146,6 +149,7 @@ git add gemma_bridge.py tests/test_agent.py && git commit -m "refactor: extract 
 ## Task 3: Create `agent.py` with full implementation
 
 **Files:**
+
 - Create: `agent.py`
 - Modify: `tests/test_agent.py`
 
@@ -578,6 +582,7 @@ git add agent.py tests/test_agent.py && git commit -m "feat: create agent.py wit
 ## Task 4: Test tool implementations
 
 **Files:**
+
 - Modify: `tests/test_agent.py`
 
 - [ ] **Step 1: Write tool tests**
@@ -650,6 +655,7 @@ git add tests/test_agent.py && git commit -m "test: tool implementation coverage
 ## Task 5: Test parser and ReAct loop
 
 **Files:**
+
 - Modify: `tests/test_agent.py`
 
 - [ ] **Step 1: Write parser and loop tests**
@@ -743,6 +749,7 @@ git add tests/test_agent.py && git commit -m "test: parser, ReAct loop, and sche
 ## Task 6: Mount agent router in `gemma_bridge.py`
 
 **Files:**
+
 - Modify: `gemma_bridge.py`
 
 - [ ] **Step 1: Add startup event and router mount**
@@ -803,6 +810,7 @@ git add gemma_bridge.py && git commit -m "feat: mount agent router and start Asy
 ## Task 7: Add proxy routes to `server.js`
 
 **Files:**
+
 - Modify: `gemma-web/server.js`
 
 - [ ] **Step 1: Add proxy routes**
@@ -812,7 +820,10 @@ In `gemma-web/server.js`, add before the `app.listen(...)` line:
 ```javascript
 app.post("/api/agent", async (req, res) => {
   try {
-    const response = await axios.post("http://localhost:9379/v1/agent/run", req.body);
+    const response = await axios.post(
+      "http://localhost:9379/v1/agent/run",
+      req.body
+    );
     res.json(response.data);
   } catch (error) {
     console.error("Agent run error:", error.message);
@@ -832,7 +843,11 @@ app.get("/api/agent/stream/:taskId", async (req, res) => {
     response.data.pipe(res);
     req.on("close", () => response.data.destroy());
   } catch (error) {
-    res.write("data: " + JSON.stringify({ type: "error", message: error.message }) + "\n\n");
+    res.write(
+      "data: " +
+        JSON.stringify({ type: "error", message: error.message }) +
+        "\n\n"
+    );
     res.end();
   }
 });
@@ -860,7 +875,10 @@ app.get("/api/agent/schedule", async (req, res) => {
 
 app.post("/api/agent/schedule", async (req, res) => {
   try {
-    const response = await axios.post("http://localhost:9379/v1/agent/schedule", req.body);
+    const response = await axios.post(
+      "http://localhost:9379/v1/agent/schedule",
+      req.body
+    );
     res.json(response.data);
   } catch (error) {
     res.status(500).json({ error: "Failed to create scheduled task" });
@@ -898,6 +916,7 @@ git add gemma-web/server.js && git commit -m "feat: add agent proxy routes to se
 ## Task 8: UI — Agent mode toggle, trace, and confirmation
 
 **Files:**
+
 - Modify: `gemma-web/index.html`
 
 **Security note:** All dynamic content from the agent (tool names, args, results) must be escaped before insertion into the page. Use the `escapeHtml` helper below for all untrusted values.
@@ -907,12 +926,36 @@ git add gemma-web/server.js && git commit -m "feat: add agent proxy routes to se
 Inside `<style>` in `index.html`, add:
 
 ```css
-.agent-trace { border-left: 2px solid #7c3aed; margin-bottom: 8px; padding: 6px 10px; border-radius: 0 6px 6px 0; background: rgba(124,58,237,0.05); font-size: 12px; }
-.dark .agent-trace { background: rgba(124,58,237,0.1); }
-.agent-trace-steps { margin-top: 6px; font-family: monospace; font-size: 11px; line-height: 1.8; display: none; }
-.agent-trace-steps.open { display: block; }
-.confirm-card { border: 1px solid #f59e0b; border-radius: 8px; padding: 12px; background: rgba(245,158,11,0.05); }
-.dark .confirm-card { background: rgba(245,158,11,0.08); }
+.agent-trace {
+  border-left: 2px solid #7c3aed;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  border-radius: 0 6px 6px 0;
+  background: rgba(124, 58, 237, 0.05);
+  font-size: 12px;
+}
+.dark .agent-trace {
+  background: rgba(124, 58, 237, 0.1);
+}
+.agent-trace-steps {
+  margin-top: 6px;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.8;
+  display: none;
+}
+.agent-trace-steps.open {
+  display: block;
+}
+.confirm-card {
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(245, 158, 11, 0.05);
+}
+.dark .confirm-card {
+  background: rgba(245, 158, 11, 0.08);
+}
 ```
 
 - [ ] **Step 2: Add toggle HTML above the chat form**
@@ -921,12 +964,18 @@ Find `<form id="chat-form"` and add immediately before it:
 
 ```html
 <div class="flex gap-2 mb-2 px-1">
-  <button id="mode-chat" onclick="setMode('chat')"
-    class="px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white transition-colors">
+  <button
+    id="mode-chat"
+    onclick="setMode('chat')"
+    class="px-3 py-1 rounded-full text-xs font-medium bg-blue-600 text-white transition-colors"
+  >
     💬 Chat
   </button>
-  <button id="mode-agent" onclick="setMode('agent')"
-    class="px-3 py-1 rounded-full text-xs font-medium bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2a2b2c] transition-colors">
+  <button
+    id="mode-agent"
+    onclick="setMode('agent')"
+    class="px-3 py-1 rounded-full text-xs font-medium bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2a2b2c] transition-colors"
+  >
     🤖 Agent
   </button>
 </div>
@@ -937,10 +986,10 @@ Find `<form id="chat-form"` and add immediately before it:
 Add these functions to the script block (near the top, after variable declarations). Note: `escapeHtml` must be defined first as other helpers depend on it.
 
 ```javascript
-let currentMode = 'chat';
+let currentMode = "chat";
 
 function escapeHtml(str) {
-  const el = document.createElement('div');
+  const el = document.createElement("div");
   el.textContent = String(str);
   return el.textContent; // returns safe text — use with textContent, not as HTML
 }
@@ -948,56 +997,68 @@ function escapeHtml(str) {
 // Use this when you need to embed a safe string inside an HTML template
 function escapeHtmlAttr(str) {
   return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 function setMode(mode) {
   currentMode = mode;
-  const on  = 'px-3 py-1 rounded-full text-xs font-medium text-white transition-colors ';
-  const off = 'px-3 py-1 rounded-full text-xs font-medium bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2a2b2c] transition-colors';
-  document.getElementById('mode-chat').className  = mode === 'chat'  ? on + 'bg-blue-600'   : off;
-  document.getElementById('mode-agent').className = mode === 'agent' ? on + 'bg-purple-600' : off;
+  const on =
+    "px-3 py-1 rounded-full text-xs font-medium text-white transition-colors ";
+  const off =
+    "px-3 py-1 rounded-full text-xs font-medium bg-transparent text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2a2b2c] transition-colors";
+  document.getElementById("mode-chat").className =
+    mode === "chat" ? on + "bg-blue-600" : off;
+  document.getElementById("mode-agent").className =
+    mode === "agent" ? on + "bg-purple-600" : off;
 }
 
-const SAFE_TOOLS = new Set(['read_file','list_dir','list_crons','list_scheduled_tasks']);
+const SAFE_TOOLS = new Set([
+  "read_file",
+  "list_dir",
+  "list_crons",
+  "list_scheduled_tasks",
+]);
 
 function toggleTrace(id) {
   const el = document.getElementById(id);
-  const tog = document.getElementById(id + '-toggle');
-  el.classList.toggle('open');
-  tog.textContent = el.classList.contains('open') ? '▲ collapse' : '▼ expand';
+  const tog = document.getElementById(id + "-toggle");
+  el.classList.toggle("open");
+  tog.textContent = el.classList.contains("open") ? "▲ collapse" : "▼ expand";
 }
 
 function buildAgentTrace(steps) {
-  const id = 'trace-' + Date.now();
+  const id = "trace-" + Date.now();
   const elapsed = steps.reduce((s, e) => s + (e.elapsed_ms || 0), 0);
-  const wrap = document.createElement('div');
-  wrap.className = 'agent-trace';
+  const wrap = document.createElement("div");
+  wrap.className = "agent-trace";
 
-  const header = document.createElement('div');
-  header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;cursor:pointer;color:#6b7280';
-  header.setAttribute('onclick', `toggleTrace('${id}')`);
-  const countSpan = document.createElement('span');
-  countSpan.textContent = `⚙ ${steps.length} step${steps.length!==1?'s':''} · ${(elapsed/1000).toFixed(1)}s`;
-  const togSpan = document.createElement('span');
-  togSpan.id = id + '-toggle';
-  togSpan.textContent = '▼ expand';
+  const header = document.createElement("div");
+  header.style.cssText =
+    "display:flex;justify-content:space-between;align-items:center;cursor:pointer;color:#6b7280";
+  header.setAttribute("onclick", `toggleTrace('${id}')`);
+  const countSpan = document.createElement("span");
+  countSpan.textContent = `⚙ ${steps.length} step${steps.length !== 1 ? "s" : ""} · ${(elapsed / 1000).toFixed(1)}s`;
+  const togSpan = document.createElement("span");
+  togSpan.id = id + "-toggle";
+  togSpan.textContent = "▼ expand";
   header.appendChild(countSpan);
   header.appendChild(togSpan);
 
-  const stepsEl = document.createElement('div');
+  const stepsEl = document.createElement("div");
   stepsEl.id = id;
-  stepsEl.className = 'agent-trace-steps';
-  steps.forEach(s => {
-    const row = document.createElement('div');
-    const label = document.createElement('span');
-    label.style.color = SAFE_TOOLS.has(s.tool) ? '#22c55e' : '#f59e0b';
-    const argsStr = (s.args || []).map(a => JSON.stringify(a)).join(', ');
+  stepsEl.className = "agent-trace-steps";
+  steps.forEach((s) => {
+    const row = document.createElement("div");
+    const label = document.createElement("span");
+    label.style.color = SAFE_TOOLS.has(s.tool) ? "#22c55e" : "#f59e0b";
+    const argsStr = (s.args || []).map((a) => JSON.stringify(a)).join(", ");
     label.textContent = `→ ${s.tool}(${argsStr})`;
-    const result = document.createElement('div');
-    result.style.cssText = 'padding-left:14px;color:#6b7280';
-    result.textContent = String(s.result || '').substring(0, 120);
+    const result = document.createElement("div");
+    result.style.cssText = "padding-left:14px;color:#6b7280";
+    result.textContent = String(s.result || "").substring(0, 120);
     row.appendChild(label);
     row.appendChild(result);
     stepsEl.appendChild(row);
@@ -1009,34 +1070,38 @@ function buildAgentTrace(steps) {
 }
 
 function buildConfirmCard(task_id, event) {
-  const card = document.createElement('div');
-  card.className = 'confirm-card';
+  const card = document.createElement("div");
+  card.className = "confirm-card";
 
-  const title = document.createElement('div');
-  title.style.cssText = 'font-weight:600;margin-bottom:8px';
-  title.textContent = '⚠️ Agent wants to call a risky tool';
+  const title = document.createElement("div");
+  title.style.cssText = "font-weight:600;margin-bottom:8px";
+  title.textContent = "⚠️ Agent wants to call a risky tool";
 
-  const argVals = Object.values(event.args || {}).map(a => JSON.stringify(a)).join(', ');
-  const code = document.createElement('code');
-  code.style.cssText = 'font-size:11px;background:rgba(0,0,0,0.1);padding:2px 6px;border-radius:4px';
+  const argVals = Object.values(event.args || {})
+    .map((a) => JSON.stringify(a))
+    .join(", ");
+  const code = document.createElement("code");
+  code.style.cssText =
+    "font-size:11px;background:rgba(0,0,0,0.1);padding:2px 6px;border-radius:4px";
   code.textContent = `${event.tool}(${argVals})`;
 
-  const desc = document.createElement('div');
-  desc.style.cssText = 'font-size:12px;color:#6b7280;margin:8px 0';
-  desc.textContent = 'This action may modify your system. Allow it?';
+  const desc = document.createElement("div");
+  desc.style.cssText = "font-size:12px;color:#6b7280;margin:8px 0";
+  desc.textContent = "This action may modify your system. Allow it?";
 
-  const btnRow = document.createElement('div');
-  btnRow.style.display = 'flex';
-  btnRow.style.gap = '8px';
+  const btnRow = document.createElement("div");
+  btnRow.style.display = "flex";
+  btnRow.style.gap = "8px";
 
-  const allow = document.createElement('button');
-  allow.className = 'px-3 py-1 bg-green-600 text-white rounded text-sm';
-  allow.textContent = '✓ Allow';
+  const allow = document.createElement("button");
+  allow.className = "px-3 py-1 bg-green-600 text-white rounded text-sm";
+  allow.textContent = "✓ Allow";
   allow.onclick = () => sendConfirm(task_id, true, allow);
 
-  const deny = document.createElement('button');
-  deny.className = 'px-3 py-1 bg-red-100 text-red-600 border border-red-400 rounded text-sm';
-  deny.textContent = '✕ Deny';
+  const deny = document.createElement("button");
+  deny.className =
+    "px-3 py-1 bg-red-100 text-red-600 border border-red-400 rounded text-sm";
+  deny.textContent = "✕ Deny";
   deny.onclick = () => sendConfirm(task_id, false, deny);
 
   btnRow.appendChild(allow);
@@ -1049,33 +1114,41 @@ function buildConfirmCard(task_id, event) {
 }
 
 async function sendConfirm(task_id, approved, btn) {
-  btn.closest('.confirm-card').querySelectorAll('button').forEach(b => { b.disabled = true; });
+  btn
+    .closest(".confirm-card")
+    .querySelectorAll("button")
+    .forEach((b) => {
+      b.disabled = true;
+    });
   await fetch(`/api/agent/confirm/${task_id}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ approved }),
   });
 }
 
 async function handleAgentSubmit(prompt) {
-  appendMessage('user', prompt);
-  userInput.value = '';
-  userInput.style.height = 'auto';
+  appendMessage("user", prompt);
+  userInput.value = "";
+  userInput.style.height = "auto";
 
-  const chatMessages = document.getElementById('chat-messages');
-  const placeholder = document.createElement('div');
-  placeholder.className = 'message-gemma flex flex-col gap-1 max-w-[85%]';
-  const spinner = document.createElement('div');
-  spinner.className = 'typing-indicator text-gray-400 text-sm px-2';
-  spinner.textContent = '⚙ Agent running...';
+  const chatMessages = document.getElementById("chat-messages");
+  const placeholder = document.createElement("div");
+  placeholder.className = "message-gemma flex flex-col gap-1 max-w-[85%]";
+  const spinner = document.createElement("div");
+  spinner.className = "typing-indicator text-gray-400 text-sm px-2";
+  spinner.textContent = "⚙ Agent running...";
   placeholder.appendChild(spinner);
   chatMessages.appendChild(placeholder);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 
-  const runRes = await fetch('/api/agent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt, model: document.getElementById('model-select').value }),
+  const runRes = await fetch("/api/agent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt,
+      model: document.getElementById("model-select").value,
+    }),
   });
   const { task_id } = await runRes.json();
 
@@ -1085,35 +1158,35 @@ async function handleAgentSubmit(prompt) {
   source.onmessage = (e) => {
     const event = JSON.parse(e.data);
 
-    if (event.type === 'step') {
+    if (event.type === "step") {
       steps.push(event);
     }
 
-    if (event.type === 'confirm_request') {
-      placeholder.textContent = '';
+    if (event.type === "confirm_request") {
+      placeholder.textContent = "";
       placeholder.appendChild(buildConfirmCard(task_id, event));
       chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
-    if (event.type === 'confirm_resolved') {
-      placeholder.textContent = '';
-      const newSpinner = document.createElement('div');
-      newSpinner.className = 'typing-indicator text-gray-400 text-sm px-2';
-      newSpinner.textContent = '⚙ Agent running...';
+    if (event.type === "confirm_resolved") {
+      placeholder.textContent = "";
+      const newSpinner = document.createElement("div");
+      newSpinner.className = "typing-indicator text-gray-400 text-sm px-2";
+      newSpinner.textContent = "⚙ Agent running...";
       placeholder.appendChild(newSpinner);
     }
 
-    if (event.type === 'done' || event.type === 'error') {
+    if (event.type === "done" || event.type === "error") {
       source.close();
-      placeholder.textContent = '';
+      placeholder.textContent = "";
       if (steps.length > 0) placeholder.appendChild(buildAgentTrace(steps));
-      const msg = document.createElement('div');
-      msg.className = 'prose dark:prose-invert';
-      if (event.type === 'done') {
-        msg.textContent = event.message || '';
+      const msg = document.createElement("div");
+      msg.className = "prose dark:prose-invert";
+      if (event.type === "done") {
+        msg.textContent = event.message || "";
       } else {
-        msg.style.color = '#f87171';
-        msg.textContent = '⚠ ' + (event.message || 'Agent error');
+        msg.style.color = "#f87171";
+        msg.textContent = "⚠ " + (event.message || "Agent error");
       }
       placeholder.appendChild(msg);
       chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1122,10 +1195,10 @@ async function handleAgentSubmit(prompt) {
 
   source.onerror = () => {
     source.close();
-    placeholder.textContent = '';
-    const err = document.createElement('span');
-    err.className = 'text-red-400 text-sm';
-    err.textContent = '⚠ Connection to agent lost';
+    placeholder.textContent = "";
+    const err = document.createElement("span");
+    err.className = "text-red-400 text-sm";
+    err.textContent = "⚠ Connection to agent lost";
     placeholder.appendChild(err);
   };
 }
@@ -1138,7 +1211,7 @@ Inside `chatForm.addEventListener('submit', async (e) => {`, add at the top of t
 ```javascript
 const userPrompt = userInput.value.trim();
 if (!userPrompt) return;
-if (currentMode === 'agent') {
+if (currentMode === "agent") {
   e.preventDefault();
   await handleAgentSubmit(userPrompt);
   return;
@@ -1150,6 +1223,7 @@ If the existing handler already declares `userPrompt` or a similar variable, reu
 - [ ] **Step 5: Verify in browser**
 
 Open http://localhost:3001. Confirm:
+
 - Chat/Agent toggle appears above input
 - Clicking Agent turns button purple
 - Sending a message in Agent mode shows "⚙ Agent running..." while running
@@ -1165,6 +1239,7 @@ git add gemma-web/index.html && git commit -m "feat: add agent mode toggle, hybr
 ## Task 9: UI — Scheduled tasks sidebar panel
 
 **Files:**
+
 - Modify: `gemma-web/index.html`
 
 - [ ] **Step 1: Add sidebar HTML**
@@ -1172,28 +1247,54 @@ git add gemma-web/index.html && git commit -m "feat: add agent mode toggle, hybr
 Find the closing `</aside>` of `<aside id="sidebar"`. Add immediately before it:
 
 ```html
-<div class="border-t border-gray-200 dark:border-[#3c3d40] mt-auto flex-shrink-0">
-  <button onclick="toggleSchedulePanel()"
-    class="w-full flex items-center justify-between px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-[#2a2b2c] transition-colors">
+<div
+  class="border-t border-gray-200 dark:border-[#3c3d40] mt-auto flex-shrink-0"
+>
+  <button
+    onclick="toggleSchedulePanel()"
+    class="w-full flex items-center justify-between px-4 py-3 text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-[#2a2b2c] transition-colors"
+  >
     <span>📅 Scheduled Tasks</span>
     <span id="schedule-panel-toggle">▶</span>
   </button>
   <div id="schedule-panel" class="hidden px-3 pb-3 text-xs space-y-2">
     <div id="schedule-list"></div>
-    <button onclick="openAddSchedule()"
-      class="w-full py-1 border border-dashed border-gray-300 dark:border-gray-600 rounded text-gray-400 hover:text-blue-500 hover:border-blue-400 transition-colors">
+    <button
+      onclick="openAddSchedule()"
+      class="w-full py-1 border border-dashed border-gray-300 dark:border-gray-600 rounded text-gray-400 hover:text-blue-500 hover:border-blue-400 transition-colors"
+    >
       + Add Task
     </button>
     <div id="add-schedule-form" class="hidden space-y-1">
-      <input id="sched-name" placeholder="Name"
-        class="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-transparent rounded" />
-      <input id="sched-cron" placeholder="Cron schedule (e.g. 0 9 * * *)"
-        class="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-transparent rounded" />
-      <textarea id="sched-prompt" placeholder="Prompt for Gemma" rows="2"
-        class="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-transparent rounded resize-none"></textarea>
+      <input
+        id="sched-name"
+        placeholder="Name"
+        class="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-transparent rounded"
+      />
+      <input
+        id="sched-cron"
+        placeholder="Cron schedule (e.g. 0 9 * * *)"
+        class="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-transparent rounded"
+      />
+      <textarea
+        id="sched-prompt"
+        placeholder="Prompt for Gemma"
+        rows="2"
+        class="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 bg-transparent rounded resize-none"
+      ></textarea>
       <div class="flex gap-1">
-        <button onclick="saveSchedule()" class="flex-1 py-1 bg-blue-600 text-white rounded">Save</button>
-        <button onclick="cancelAddSchedule()" class="flex-1 py-1 border border-gray-300 dark:border-gray-600 rounded">Cancel</button>
+        <button
+          onclick="saveSchedule()"
+          class="flex-1 py-1 bg-blue-600 text-white rounded"
+        >
+          Save
+        </button>
+        <button
+          onclick="cancelAddSchedule()"
+          class="flex-1 py-1 border border-gray-300 dark:border-gray-600 rounded"
+        >
+          Cancel
+        </button>
       </div>
     </div>
   </div>
@@ -1206,52 +1307,53 @@ Add to the script block:
 
 ```javascript
 async function toggleSchedulePanel() {
-  const panel = document.getElementById('schedule-panel');
-  const toggle = document.getElementById('schedule-panel-toggle');
-  const opening = panel.classList.contains('hidden');
-  panel.classList.toggle('hidden');
-  toggle.textContent = opening ? '▼' : '▶';
+  const panel = document.getElementById("schedule-panel");
+  const toggle = document.getElementById("schedule-panel-toggle");
+  const opening = panel.classList.contains("hidden");
+  panel.classList.toggle("hidden");
+  toggle.textContent = opening ? "▼" : "▶";
   if (opening) await refreshScheduleList();
 }
 
 async function refreshScheduleList() {
-  const res = await fetch('/api/agent/schedule');
+  const res = await fetch("/api/agent/schedule");
   const { tasks } = await res.json();
-  const list = document.getElementById('schedule-list');
-  list.textContent = '';
+  const list = document.getElementById("schedule-list");
+  list.textContent = "";
   if (!tasks || tasks.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'text-gray-400 py-1';
-    empty.textContent = 'No scheduled tasks';
+    const empty = document.createElement("div");
+    empty.className = "text-gray-400 py-1";
+    empty.textContent = "No scheduled tasks";
     list.appendChild(empty);
     return;
   }
-  tasks.forEach(t => {
-    const row = document.createElement('div');
-    row.className = 'flex items-start justify-between gap-1 py-1 border-b border-gray-100 dark:border-gray-700';
+  tasks.forEach((t) => {
+    const row = document.createElement("div");
+    row.className =
+      "flex items-start justify-between gap-1 py-1 border-b border-gray-100 dark:border-gray-700";
 
-    const info = document.createElement('div');
-    info.className = 'min-w-0';
+    const info = document.createElement("div");
+    info.className = "min-w-0";
 
-    const name = document.createElement('div');
-    name.className = 'font-medium text-gray-700 dark:text-gray-300 truncate';
+    const name = document.createElement("div");
+    name.className = "font-medium text-gray-700 dark:text-gray-300 truncate";
     name.textContent = t.name;
 
-    const schedule = document.createElement('div');
-    schedule.className = 'text-gray-400';
+    const schedule = document.createElement("div");
+    schedule.className = "text-gray-400";
     schedule.textContent = t.schedule;
 
-    const prompt = document.createElement('div');
-    prompt.className = 'text-gray-400 truncate';
+    const prompt = document.createElement("div");
+    prompt.className = "text-gray-400 truncate";
     prompt.textContent = t.prompt.substring(0, 50);
 
     info.appendChild(name);
     info.appendChild(schedule);
     info.appendChild(prompt);
 
-    const del = document.createElement('button');
-    del.className = 'text-red-400 hover:text-red-600 shrink-0 ml-1';
-    del.textContent = '✕';
+    const del = document.createElement("button");
+    del.className = "text-red-400 hover:text-red-600 shrink-0 ml-1";
+    del.textContent = "✕";
     del.onclick = () => deleteSchedule(t.name);
 
     row.appendChild(info);
@@ -1261,35 +1363,43 @@ async function refreshScheduleList() {
 }
 
 function openAddSchedule() {
-  document.getElementById('add-schedule-form').classList.remove('hidden');
+  document.getElementById("add-schedule-form").classList.remove("hidden");
 }
 
 function cancelAddSchedule() {
-  document.getElementById('add-schedule-form').classList.add('hidden');
-  ['sched-name','sched-cron','sched-prompt'].forEach(id => {
-    document.getElementById(id).value = '';
+  document.getElementById("add-schedule-form").classList.add("hidden");
+  ["sched-name", "sched-cron", "sched-prompt"].forEach((id) => {
+    document.getElementById(id).value = "";
   });
 }
 
 async function saveSchedule() {
-  const name     = document.getElementById('sched-name').value.trim();
-  const schedule = document.getElementById('sched-cron').value.trim();
-  const prompt   = document.getElementById('sched-prompt').value.trim();
-  if (!name || !schedule || !prompt) { alert('All fields are required'); return; }
-  const res = await fetch('/api/agent/schedule', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+  const name = document.getElementById("sched-name").value.trim();
+  const schedule = document.getElementById("sched-cron").value.trim();
+  const prompt = document.getElementById("sched-prompt").value.trim();
+  if (!name || !schedule || !prompt) {
+    alert("All fields are required");
+    return;
+  }
+  const res = await fetch("/api/agent/schedule", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, schedule, prompt }),
   });
   const data = await res.json();
-  if (data.error) { alert(data.error); return; }
+  if (data.error) {
+    alert(data.error);
+    return;
+  }
   cancelAddSchedule();
   await refreshScheduleList();
 }
 
 async function deleteSchedule(name) {
   if (!confirm(`Delete scheduled task "${name}"?`)) return;
-  await fetch(`/api/agent/schedule/${encodeURIComponent(name)}`, { method: 'DELETE' });
+  await fetch(`/api/agent/schedule/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
   await refreshScheduleList();
 }
 ```

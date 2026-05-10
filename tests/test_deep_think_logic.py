@@ -1,8 +1,11 @@
 import asyncio
 import json
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+
 from agent import run_deep_thinking_pipeline
+
 
 @pytest.mark.asyncio
 async def test_run_deep_thinking_pipeline():

@@ -13,6 +13,7 @@
 ### Task 1: API Connectivity Smoke Test
 
 **Files:**
+
 - Create: `scripts/smoke_test.py`
 
 **Step 1: Create basic smoke test structure**
@@ -30,6 +31,7 @@ Expected: A summary table showing connectivity status.
 ### Task 2: Dependency Contract Tests
 
 **Files:**
+
 - Create: `tests/contracts/test_search_contract.py`
 - Create: `tests/contracts/test_mlx_contract.py`
 
@@ -48,6 +50,7 @@ Expected: PASS (if internet/GPU are available).
 ### Task 3: Performance Telemetry Endpoint
 
 **Files:**
+
 - Modify: `gemma_bridge.py`
 - Modify: `gemma-web/server.js`
 
@@ -66,6 +69,7 @@ Expected: JSON object with RAM, VRAM, and Latency stats.
 ### Task 4: UI Vitals Dashboard
 
 **Files:**
+
 - Modify: `gemma-web/index.html`
 
 **Step 1: Add "Vitals" tab to Settings modal**

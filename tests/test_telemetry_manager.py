@@ -1,6 +1,9 @@
-import pytest
 import time
+
+import pytest
+
 from agent_utils import TelemetryManager
+
 
 def test_telemetry_manager_singleton():
     tm1 = TelemetryManager()

@@ -1,7 +1,8 @@
-import requests
+import argparse
 import json
 import sys
-import argparse
+
+import requests
 
 # Configuration
 NODE_URL = "http://localhost:3001"

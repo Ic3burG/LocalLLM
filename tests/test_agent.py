@@ -1,9 +1,9 @@
-import sys, os
-import json
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 import importlib
+import json
 import subprocess
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # FAKE_RESPONSE for reuse
 FAKE_RESPONSE = {"choices": [{"message": {"content": "hello"}}]}
@@ -275,6 +275,7 @@ async def test_list_scheduled_tasks_returns_tasks(tmp_path, monkeypatch, mock_de
 # ── Task 3: Logging tests ──────────────────────────────────
 import logging
 
+
 @pytest.mark.asyncio
 async def test_react_loop_internal_logs_unknown_tool(mock_deps, caplog):
     _, agent = mock_deps
@@ -355,6 +356,7 @@ async def test_react_loop_sse_logs_confirmation_timeout(mock_deps, caplog):
 @pytest.mark.asyncio
 async def test_shell_logs_error_on_timeout(caplog):
     import subprocess
+
     import agent_utils
     with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("sleep", 30)), \
          caplog.at_level(logging.ERROR, logger="agent_utils"):

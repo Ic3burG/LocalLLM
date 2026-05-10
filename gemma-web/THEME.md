@@ -4,14 +4,14 @@
 
 ## Token Reference
 
-| Token | Light | Dark | Use for |
-|---|---|---|---|
-| `--color-bg` | `#f8f9fa` | `#0e0e11` | Page background, modal/card background |
-| `--color-surface` | `#ffffff` | `#1e1f20` | Cards, inputs, code arg blocks |
-| `--color-border` | `#e5e7eb` | `#3c3d40` | All borders, dividers, separator lines |
-| `--color-text` | `#111827` | `#f3f4f6` | Primary text, input values |
-| `--color-text-muted` | `#6b7280` | `#9ca3af` | Timestamps, labels, placeholders |
-| `--color-accent` | `#3b82f6` | `#3b82f6` | Focus rings, active states, buttons |
+| Token                | Light     | Dark      | Use for                                |
+| -------------------- | --------- | --------- | -------------------------------------- |
+| `--color-bg`         | `#f8f9fa` | `#0e0e11` | Page background, modal/card background |
+| `--color-surface`    | `#ffffff` | `#1e1f20` | Cards, inputs, code arg blocks         |
+| `--color-border`     | `#e5e7eb` | `#3c3d40` | All borders, dividers, separator lines |
+| `--color-text`       | `#111827` | `#f3f4f6` | Primary text, input values             |
+| `--color-text-muted` | `#6b7280` | `#9ca3af` | Timestamps, labels, placeholders       |
+| `--color-accent`     | `#3b82f6` | `#3b82f6` | Focus rings, active states, buttons    |
 
 ## The Rules
 
@@ -23,10 +23,10 @@
 
 ## Which system to use
 
-| Where you are writing | System to use |
-|---|---|
-| Inside a CSS class in `<style>` | `var(--color-*)` tokens |
-| Directly on an HTML element | Tailwind `dark:` utilities |
+| Where you are writing           | System to use              |
+| ------------------------------- | -------------------------- |
+| Inside a CSS class in `<style>` | `var(--color-*)` tokens    |
+| Directly on an HTML element     | Tailwind `dark:` utilities |
 
 Do not mix both systems on the same element.
 
@@ -36,19 +36,21 @@ CSS class (in the style block):
 
 ```css
 .my-panel {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    color: var(--color-text);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
 }
 .my-panel-label {
-    color: var(--color-text-muted);
+  color: var(--color-text-muted);
 }
 ```
 
 HTML element (inline Tailwind):
 
 ```html
-<div class="bg-white dark:bg-darkSurface border border-gray-200 dark:border-[#3c3d40]">
+<div
+  class="bg-white dark:bg-darkSurface border border-gray-200 dark:border-[#3c3d40]"
+></div>
 ```
 
 ## Checklist before shipping new UI

@@ -29,11 +29,21 @@ task_id_var: ContextVar[str] = ContextVar("task_id", default="")
 A `JsonLinesFormatter` reads `task_id_var` at format time and injects it into every log record. No function signatures change.
 
 **JSON line format:**
+
 ```json
-{"ts": "2026-04-28T10:23:45Z", "level": "INFO", "logger": "agent", "task_id": "abc-123", "msg": "tool call", "tool": "shell", "elapsed_ms": 45}
+{
+  "ts": "2026-04-28T10:23:45Z",
+  "level": "INFO",
+  "logger": "agent",
+  "task_id": "abc-123",
+  "msg": "tool call",
+  "tool": "shell",
+  "elapsed_ms": 45
+}
 ```
 
 **Stdout format:**
+
 ```
 2026-04-28 10:23:45 INFO  [agent] [task:abc-123] tool call tool=shell elapsed_ms=45
 ```
@@ -50,16 +60,16 @@ Added to `gemma_bridge.py`. Logs every HTTP request (method, path) and response 
 
 ### Events newly logged (currently silent)
 
-| File | Event | Previous behavior |
-|---|---|---|
-| `agent.py` | Unparseable model output | Silent — loop continues |
-| `agent.py` | Unknown tool name | Silent — error string appended to messages |
-| `agent.py` | Tool execution exception | `result = f"ERROR: {e}"`, nothing logged |
-| `agent.py` | Max iterations reached | Returns string, nothing logged |
-| `agent.py` | Confirm timeout (300 s) | Silent — `approved = False` |
-| `agent_utils.py` | Tool function exceptions | Return `f"ERROR: {e}"`, no log |
-| `inference_engine.py` | Per-call timing | Not tracked |
-| `gemma_bridge.py` | Every HTTP request/response | No middleware |
+| File                  | Event                       | Previous behavior                          |
+| --------------------- | --------------------------- | ------------------------------------------ |
+| `agent.py`            | Unparseable model output    | Silent — loop continues                    |
+| `agent.py`            | Unknown tool name           | Silent — error string appended to messages |
+| `agent.py`            | Tool execution exception    | `result = f"ERROR: {e}"`, nothing logged   |
+| `agent.py`            | Max iterations reached      | Returns string, nothing logged             |
+| `agent.py`            | Confirm timeout (300 s)     | Silent — `approved = False`                |
+| `agent_utils.py`      | Tool function exceptions    | Return `f"ERROR: {e}"`, no log             |
+| `inference_engine.py` | Per-call timing             | Not tracked                                |
+| `gemma_bridge.py`     | Every HTTP request/response | No middleware                              |
 
 ### Node.js layer (`server.js`)
 
@@ -71,14 +81,14 @@ A `log(level, msg, fields)` helper appends JSON lines to `server.log` using `fs.
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `logging_config.py` | **New** — `setup_logging()`, `JsonLinesFormatter`, `task_id_var` |
-| `gemma_bridge.py` | Swap `basicConfig` → `setup_logging()`, add request/response middleware |
-| `agent.py` | Add `logger`, set `task_id_var`, log 5 previously-silent events |
-| `agent_utils.py` | Add `logger.error()` in tool exception handlers |
-| `inference_engine.py` | Add per-call timing logs |
-| `gemma-web/server.js` | Add `log()` helper, structured logs on every route |
+| File                  | Change                                                                  |
+| --------------------- | ----------------------------------------------------------------------- |
+| `logging_config.py`   | **New** — `setup_logging()`, `JsonLinesFormatter`, `task_id_var`        |
+| `gemma_bridge.py`     | Swap `basicConfig` → `setup_logging()`, add request/response middleware |
+| `agent.py`            | Add `logger`, set `task_id_var`, log 5 previously-silent events         |
+| `agent_utils.py`      | Add `logger.error()` in tool exception handlers                         |
+| `inference_engine.py` | Add per-call timing logs                                                |
+| `gemma-web/server.js` | Add `log()` helper, structured logs on every route                      |
 
 ## Out of Scope
 

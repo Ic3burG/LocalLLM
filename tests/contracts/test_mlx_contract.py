@@ -1,18 +1,19 @@
-import pytest
-import os
 import gc
-import asyncio
-import mlx.core as mx
 from pathlib import Path
+
+import mlx.core as mx
+import pytest
 
 # Robust pathing: Derive project root relative to this file
 PROJECT_ROOT = Path(__file__).parent.parent.parent.absolute()
 
 # Import inference engine and override its models directory to be robust
 import inference_engine
+
 inference_engine.MLX_MODELS_DIR = str(PROJECT_ROOT / "mlx_models")
 
-from inference_engine import run_in_inference_thread, get_mlx_vlm_model, run_inference
+from inference_engine import get_mlx_vlm_model, run_in_inference_thread, run_inference
+
 
 def has_gpu():
     try:
@@ -40,8 +41,8 @@ async def mlx_vlm_model_fixture():
     
     # Teardown: Release VRAM in the inference thread
     def _cleanup():
-        import gc
         import mlx.core as mx
+
         from inference_engine import _vlm_cache
         _vlm_cache.clear()
         gc.collect()

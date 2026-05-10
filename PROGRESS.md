@@ -58,9 +58,9 @@ Browser → server.js (port 3001) → gemma_bridge.py (port 9379)
 
 ### Tool Registry
 
-| Risk | Tools |
-|---|---|
-| Safe (auto-run) | `read_file`, `list_dir`, `list_crons`, `list_scheduled_tasks` |
+| Risk              | Tools                                                                                       |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| Safe (auto-run)   | `read_file`, `list_dir`, `list_crons`, `list_scheduled_tasks`                               |
 | Risky (ask first) | `write_file`, `append_file`, `shell`, `create_cron`, `delete_cron`, `create_scheduled_task` |
 
 ### ReAct Loop
@@ -85,16 +85,16 @@ Risky tools pause execution and emit a `confirm_request` SSE event. Frontend ren
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `agent.py` | New — 315 lines: tool registry, ReAct loops, SSE streaming, scheduler, API endpoints |
-| `scheduler_tasks.json` | New — persisted in-app task definitions |
-| `gemma_bridge.py` | Added `run_inference` shared helper; mounted agent router; added APScheduler startup |
-| `gemma-web/server.js` | Added 6 agent proxy routes (SSE-aware stream handler) |
-| `gemma-web/index.html` | Agent toggle, hybrid trace UI, confirmation modal, scheduled tasks panel |
-| `tests/test_agent.py` | 24 tests covering inference routing, all 10 tools, parser, ReAct loop, scheduler CRUD |
-| `pytest.ini` | New — `asyncio_mode = auto` |
-| `requirements.txt` | Added `apscheduler` |
+| File                   | Change                                                                                |
+| ---------------------- | ------------------------------------------------------------------------------------- |
+| `agent.py`             | New — 315 lines: tool registry, ReAct loops, SSE streaming, scheduler, API endpoints  |
+| `scheduler_tasks.json` | New — persisted in-app task definitions                                               |
+| `gemma_bridge.py`      | Added `run_inference` shared helper; mounted agent router; added APScheduler startup  |
+| `gemma-web/server.js`  | Added 6 agent proxy routes (SSE-aware stream handler)                                 |
+| `gemma-web/index.html` | Agent toggle, hybrid trace UI, confirmation modal, scheduled tasks panel              |
+| `tests/test_agent.py`  | 24 tests covering inference routing, all 10 tools, parser, ReAct loop, scheduler CRUD |
+| `pytest.ini`           | New — `asyncio_mode = auto`                                                           |
+| `requirements.txt`     | Added `apscheduler`                                                                   |
 
 ---
 
@@ -111,11 +111,13 @@ Replaced the two-engine backend (LiteRT for E4B, mlx_lm for 26B/31B) with a sing
 ### Architecture Changes
 
 **Removed from `gemma_bridge.py`:**
+
 - `import litert_lm` / `from litert_lm import Backend`
 - `get_litert_engine`, `get_mlx_model`, `process_multimodal_content`, `handle_litert_request`, `handle_mlx_request`
 - `MODELS_BASE_DIR`, `litert_engines`, `mlx_models_cache`
 
 **Added to `gemma_bridge.py`:**
+
 - Single persistent daemon thread (`mlx-inference`) that owns all mlx GPU state — required because mlx GPU streams are thread-local and must be created on the thread that runs inference.
 - `mlx_vlm` imported inside the worker thread so `generation_stream` is created in the right thread context.
 - `_run_in_inference_thread()` bridges the asyncio event loop to the worker via `asyncio.Future` + `call_soon_threadsafe`.
@@ -131,13 +133,13 @@ Replaced the two-engine backend (LiteRT for E4B, mlx_lm for 26B/31B) with a sing
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `gemma_bridge.py` | Full engine replacement — removed LiteRT/mlx_lm, added mlx_vlm worker thread architecture |
-| `requirements.txt` | Added `mlx-vlm`, `Pillow`; removed `mlx-lm` direct dependency |
-| `tests/test_agent.py` | Updated inference routing tests to mock `handle_mlx_vlm_request`; added `mlx_vlm` to stub list |
-| `docs/superpowers/specs/` | New: mlx_vlm migration design spec |
-| `docs/superpowers/plans/` | New: mlx_vlm migration implementation plan |
+| File                      | Change                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------- |
+| `gemma_bridge.py`         | Full engine replacement — removed LiteRT/mlx_lm, added mlx_vlm worker thread architecture      |
+| `requirements.txt`        | Added `mlx-vlm`, `Pillow`; removed `mlx-lm` direct dependency                                  |
+| `tests/test_agent.py`     | Updated inference routing tests to mock `handle_mlx_vlm_request`; added `mlx_vlm` to stub list |
+| `docs/superpowers/specs/` | New: mlx_vlm migration design spec                                                             |
+| `docs/superpowers/plans/` | New: mlx_vlm migration implementation plan                                                     |
 
 ---
 
@@ -147,15 +149,15 @@ Implemented the first phase of the Advanced Tool Access plan, adding web researc
 
 ### New Tools
 
-- **_google_search(query)**: Uses `googlesearch-python` to retrieve the top 5 URLs for a given query.
-- **_web_fetch(url)**: Uses `requests` and `BeautifulSoup` to fetch and clean the content of a webpage (removing scripts/styles and limiting to 5000 chars).
+- **\_google_search(query)**: Uses `googlesearch-python` to retrieve the top 5 URLs for a given query.
+- **\_web_fetch(url)**: Uses `requests` and `BeautifulSoup` to fetch and clean the content of a webpage (removing scripts/styles and limiting to 5000 chars).
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `agent.py` | Implemented `_google_search` and `_web_fetch` internal methods |
-| `tests/test_agent_tools.py` | New — tests for the new web research tools |
+| File                        | Change                                                         |
+| --------------------------- | -------------------------------------------------------------- |
+| `agent.py`                  | Implemented `_google_search` and `_web_fetch` internal methods |
+| `tests/test_agent_tools.py` | New — tests for the new web research tools                     |
 
 ---
 
@@ -168,6 +170,7 @@ Fixed all bugs introduced by the Session 3 unified agentic chat refactor, then a
 Added to the Settings modal so users can restart the Python bridge without terminal access.
 
 **Backend (`gemma-web/server.js`):**
+
 - `GET /api/backend/status` — pings port 9379 with a 3 s timeout; returns `{ online: true/false }`
 - `POST /api/backend/restart` — kills any `gemma_bridge.py` process, waits 1.5 s, then spawns a fresh one.
 
@@ -181,21 +184,21 @@ Audited the entire UI for dark/light mode breakage, established a CSS token syst
 
 ### Token System
 
-| Token | Light | Dark | Use for |
-|---|---|---|---|
-| `--color-bg` | `#f8f9fa` | `#0e0e11` | Page background, confirm cards |
-| `--color-surface` | `#ffffff` | `#1e1f20` | Cards, inputs, code blocks |
-| `--color-border` | `#e5e7eb` | `#3c3d40` | All borders, dividers |
-| `--color-text` | `#111827` | `#f3f4f6` | Primary text, input values |
-| `--color-text-muted` | `#6b7280` | `#9ca3af` | Timestamps, labels, placeholders |
-| `--color-accent` | `#3b82f6` | `#3b82f6` | Focus rings, active states, buttons |
+| Token                | Light     | Dark      | Use for                             |
+| -------------------- | --------- | --------- | ----------------------------------- |
+| `--color-bg`         | `#f8f9fa` | `#0e0e11` | Page background, confirm cards      |
+| `--color-surface`    | `#ffffff` | `#1e1f20` | Cards, inputs, code blocks          |
+| `--color-border`     | `#e5e7eb` | `#3c3d40` | All borders, dividers               |
+| `--color-text`       | `#111827` | `#f3f4f6` | Primary text, input values          |
+| `--color-text-muted` | `#6b7280` | `#9ca3af` | Timestamps, labels, placeholders    |
+| `--color-accent`     | `#3b82f6` | `#3b82f6` | Focus rings, active states, buttons |
 
 ### Files Changed
 
-| File | Change |
-|---|---|
+| File                   | Change                                                                                                            |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `gemma-web/index.html` | Token definitions, 19 consumer renames, hardcoded color replacements, dead rule deletions, highlight.js href swap |
-| `gemma-web/THEME.md` | New — quick-reference token table, design rules |
+| `gemma-web/THEME.md`   | New — quick-reference token table, design rules                                                                   |
 
 ---
 
@@ -205,11 +208,11 @@ Implemented end-to-end structured logging across all layers: JSON lines to a rot
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `logging_config.py` | **New** — `setup_logging()`, `JsonLinesFormatter`, `HumanFormatter`, `task_id_var` |
-| `gemma_bridge.py` | Replaced `basicConfig` → `setup_logging()`; added `RequestLoggingMiddleware` |
-| `gemma-web/server.js` | `log()` helper + structured logs on every route |
+| File                  | Change                                                                             |
+| --------------------- | ---------------------------------------------------------------------------------- |
+| `logging_config.py`   | **New** — `setup_logging()`, `JsonLinesFormatter`, `HumanFormatter`, `task_id_var` |
+| `gemma_bridge.py`     | Replaced `basicConfig` → `setup_logging()`; added `RequestLoggingMiddleware`       |
+| `gemma-web/server.js` | `log()` helper + structured logs on every route                                    |
 
 ---
 
@@ -221,12 +224,12 @@ Discovered that `gemma4-e4b` was mapped to `mlx-community/gemma-3-4b-it-4bit` (G
 
 **Corrected `_MODEL_DIR_MAP`:**
 
-| Model ID | Directory | HF Source |
-|---|---|---|
-| `gemma4-e4b` | `gemma-4-e4b-it-4bit` | `mlx-community/gemma-4-e4b-it-4bit` |
-| `phi4-mini` | `phi-4-mini-4bit` | `mlx-community/Phi-4-mini-instruct-4bit` |
-| `gemma4-26b-mlx` | `gemma-4-26b-a4b-it-4bit` | `mlx-community/gemma-4-26b-a4b-it-4bit` |
-| `gemma4-31b-mlx` | `gemma-4-31b-it-4bit` | `mlx-community/gemma-4-31b-it-4bit` |
+| Model ID         | Directory                 | HF Source                                |
+| ---------------- | ------------------------- | ---------------------------------------- |
+| `gemma4-e4b`     | `gemma-4-e4b-it-4bit`     | `mlx-community/gemma-4-e4b-it-4bit`      |
+| `phi4-mini`      | `phi-4-mini-4bit`         | `mlx-community/Phi-4-mini-instruct-4bit` |
+| `gemma4-26b-mlx` | `gemma-4-26b-a4b-it-4bit` | `mlx-community/gemma-4-26b-a4b-it-4bit`  |
+| `gemma4-31b-mlx` | `gemma-4-31b-it-4bit`     | `mlx-community/gemma-4-31b-it-4bit`      |
 
 ---
 
@@ -235,6 +238,7 @@ Discovered that `gemma4-e4b` was mapped to `mlx-community/gemma-3-4b-it-4bit` (G
 Investigated and fixed a multi-root-cause bug where the Gemma 4 26B model produced no visible response on the frontend.
 
 ### Fixes
+
 - **`agent_utils.py`**: New `strip_thinking_blocks()` helper covering Gemma 4 channel format.
 - **`agent.py`**: Both react loops strip thinking blocks before `done` event.
 - **`gemma-web/server.js`**: `res.socket.setTimeout(0)` in SSE proxy to prevent 120 s kill.
@@ -247,11 +251,11 @@ Performed a comprehensive security and stability audit, resulting in a hardened 
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `agent_utils.py` | Added `validate_path`, `validate_url`, `log_audit`. |
+| File                  | Change                                                                                                        |
+| --------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `agent_utils.py`      | Added `validate_path`, `validate_url`, `log_audit`.                                                           |
 | `inference_engine.py` | **Major Refactor** — Consolidated all MLX/GPU state, implemented LRU cache, and added the Inference Watchdog. |
-| `SECURITY.md` | **New** — Comprehensive documentation of findings, fixes, and future roadmap. |
+| `SECURITY.md`         | **New** — Comprehensive documentation of findings, fixes, and future roadmap.                                 |
 
 ---
 
@@ -261,11 +265,11 @@ Fixed a multi-factor bug where multi-step tool-calling requests with the 26B mod
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `agent.py` | 15-second SSE heartbeat; `Cache-Control`/`X-Accel-Buffering` headers |
-| `gemma-web/server.js` | Upstream Node→Python socket timeout disabled |
-| `gemma-web/index.html` | `taskDone` flag; 90-second stall timer; smarter `onerror` |
+| File                   | Change                                                               |
+| ---------------------- | -------------------------------------------------------------------- |
+| `agent.py`             | 15-second SSE heartbeat; `Cache-Control`/`X-Accel-Buffering` headers |
+| `gemma-web/server.js`  | Upstream Node→Python socket timeout disabled                         |
+| `gemma-web/index.html` | `taskDone` flag; 90-second stall timer; smarter `onerror`            |
 
 ---
 
@@ -275,12 +279,12 @@ Implemented a multi-layered verification and monitoring suite to protect the pro
 
 ### Files Changed
 
-| File | Change |
-|---|---|
+| File                    | Change                                                                    |
+| ----------------------- | ------------------------------------------------------------------------- |
 | `scripts/smoke_test.py` | **New** — Connectivity and functional roundtrip utility with JSON support |
-| `tests/contracts/` | **New** — Suite of unmocked integration tests for external dependencies |
-| `inference_engine.py` | Added latency tracking, thread-safe cache locking, and telemetry helpers |
-| `gemma-web/index.html` | Redesigned Settings modal with tabbed interface and Vitals dashboard |
+| `tests/contracts/`      | **New** — Suite of unmocked integration tests for external dependencies   |
+| `inference_engine.py`   | Added latency tracking, thread-safe cache locking, and telemetry helpers  |
+| `gemma-web/index.html`  | Redesigned Settings modal with tabbed interface and Vitals dashboard      |
 
 ---
 
@@ -332,11 +336,11 @@ Implemented a dedicated "Prompt" tab in the Settings UI to expose the core behav
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `gemma_bridge.py` | Exposed `AGENT_SYSTEM_PROMPT` via new endpoint; cleaned up imports |
-| `gemma-web/server.js` | Added proxy route for system prompt |
-| `gemma-web/index.html` | Implemented "Prompt" tab UI and fetch logic |
+| File                   | Change                                                             |
+| ---------------------- | ------------------------------------------------------------------ |
+| `gemma_bridge.py`      | Exposed `AGENT_SYSTEM_PROMPT` via new endpoint; cleaned up imports |
+| `gemma-web/server.js`  | Added proxy route for system prompt                                |
+| `gemma-web/index.html` | Implemented "Prompt" tab UI and fetch logic                        |
 
 ---
 
@@ -346,8 +350,8 @@ Added dedicated wrapper tools for `gh`, `aws`, and `huggingface-cli` with per-CL
 
 ### Files Changed
 
-| File | Change |
-|---|---|
+| File             | Change                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
 | `agent_utils.py` | Added `_parse_cli_output` helper; added `_gh_run`, `_aws_run`, `_hf_run`; registered all three |
 
 ---
@@ -368,22 +372,22 @@ Added comprehensive `.docx` and `.xlsx` read/write capabilities to both the agen
 
 Mirrors `pdf_pipeline.py` in structure and return shape. `chunk_text` and `embed_texts` are reused — no duplication.
 
-| Function | Description |
-|---|---|
-| `extract_text_from_word(file_bytes)` | Returns `(sections, metadata)` — body text split at heading boundaries; metadata includes comments, tracked changes, footnotes, endnotes, document properties |
+| Function                              | Description                                                                                                                                                                              |
+| ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extract_text_from_word(file_bytes)`  | Returns `(sections, metadata)` — body text split at heading boundaries; metadata includes comments, tracked changes, footnotes, endnotes, document properties                            |
 | `extract_text_from_excel(file_bytes)` | Returns `(sheets, metadata)` — per-sheet TSV cell dump; metadata includes cell notes, threaded comments, formulas + cached values, embedded OLE objects (macros flagged, never executed) |
-| `ingest_office(file_bytes, filename)` | Routes by extension; returns same `{doc_id, filename, page_count, chunks, embeddings}` shape as `ingest_pdf` |
-| `write_word_document(path, spec)` | Creates `.docx` from a spec dict — headings, paragraphs (bold/italic/underline), tables with merges, footnotes, endnotes, document properties |
-| `write_excel_document(path, spec)` | Creates `.xlsx` from a spec dict — multi-sheet, cell values/formulas, styling (bold/italic/fill/border/alignment/number_format), merges, bar/line/pie charts |
+| `ingest_office(file_bytes, filename)` | Routes by extension; returns same `{doc_id, filename, page_count, chunks, embeddings}` shape as `ingest_pdf`                                                                             |
+| `write_word_document(path, spec)`     | Creates `.docx` from a spec dict — headings, paragraphs (bold/italic/underline), tables with merges, footnotes, endnotes, document properties                                            |
+| `write_excel_document(path, spec)`    | Creates `.xlsx` from a spec dict — multi-sheet, cell values/formulas, styling (bold/italic/fill/border/alignment/number_format), merges, bar/line/pie charts                             |
 
 ### New Agent Tools
 
-| Tool | Risk | Description |
-|---|---|---|
-| `read_word(path)` | safe | Extract text, comments, tracked changes, footnotes, and metadata from a `.docx` file |
-| `write_word(path, spec)` | risky | Create a Word file from a JSON spec dict |
-| `read_excel(path)` | safe | Extract cell values, formulas, notes, and threaded comments from an `.xlsx` file |
-| `write_excel(path, spec)` | risky | Create an Excel file from a JSON spec dict |
+| Tool                      | Risk  | Description                                                                          |
+| ------------------------- | ----- | ------------------------------------------------------------------------------------ |
+| `read_word(path)`         | safe  | Extract text, comments, tracked changes, footnotes, and metadata from a `.docx` file |
+| `write_word(path, spec)`  | risky | Create a Word file from a JSON spec dict                                             |
+| `read_excel(path)`        | safe  | Extract cell values, formulas, notes, and threaded comments from an `.xlsx` file     |
+| `write_excel(path, spec)` | risky | Create an Excel file from a JSON spec dict                                           |
 
 ### Upload Routing
 
@@ -392,19 +396,20 @@ Mirrors `pdf_pipeline.py` in structure and return shape. `chunk_text` and `embed
 ### UI: Universal Drag & Drop
 
 Removed the file type filter from the upload widget. All file types are now accepted via drag-and-drop and the attach button:
+
 - Images → inline base64 preview (unchanged)
 - `.txt` / `.md` → read as text (unchanged)
 - **Everything else** → uploaded to `/api/document` and shown as an indexed attachment chip; unsupported types surface an error in the chip rather than being silently ignored
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `office_pipeline.py` | **New** — ~540 lines: full Word/Excel extraction and writing |
-| `agent_utils.py` | Added 4 tool functions + registrations + system prompt entries |
-| `gemma_bridge.py` | Extended upload endpoint with extension-based routing |
-| `gemma-web/index.html` | Universal drag-and-drop; removed `accept` filter |
-| `requirements.txt` | Added `python-docx`, `openpyxl`, `oletools`, `olefile` |
+| File                            | Change                                                             |
+| ------------------------------- | ------------------------------------------------------------------ |
+| `office_pipeline.py`            | **New** — ~540 lines: full Word/Excel extraction and writing       |
+| `agent_utils.py`                | Added 4 tool functions + registrations + system prompt entries     |
+| `gemma_bridge.py`               | Extended upload endpoint with extension-based routing              |
+| `gemma-web/index.html`          | Universal drag-and-drop; removed `accept` filter                   |
+| `requirements.txt`              | Added `python-docx`, `openpyxl`, `oletools`, `olefile`             |
 | `tests/test_office_pipeline.py` | **New** — 25 tests covering extraction, ingestion, tool roundtrips |
 
 ---
@@ -425,15 +430,15 @@ The Vitals pane in the Settings modal now features a sub-tabbed interface. Data 
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `agent_utils.py` | **New** — Added `TelemetryManager` singleton for thread-safe session tracking. |
-| `agent.py` | Instrumented `react_loop_sse` and `_react_loop_internal` with telemetry hooks. |
-| `gemma_bridge.py` | Expanded `/v1/stats` to include hardware (cpu, thermals) and pipeline analytics. |
-| `pdf_pipeline.py` | Added embedding latency tracking to `embed_texts` and `retrieve_chunks`. |
-| `office_pipeline.py` | Added telemetry parity for Word/Excel ingestion speeds. |
+| File                   | Change                                                                                 |
+| ---------------------- | -------------------------------------------------------------------------------------- |
+| `agent_utils.py`       | **New** — Added `TelemetryManager` singleton for thread-safe session tracking.         |
+| `agent.py`             | Instrumented `react_loop_sse` and `_react_loop_internal` with telemetry hooks.         |
+| `gemma_bridge.py`      | Expanded `/v1/stats` to include hardware (cpu, thermals) and pipeline analytics.       |
+| `pdf_pipeline.py`      | Added embedding latency tracking to `embed_texts` and `retrieve_chunks`.               |
+| `office_pipeline.py`   | Added telemetry parity for Word/Excel ingestion speeds.                                |
 | `gemma-web/index.html` | Redesigned Vitals UI with sub-tabs, robust JS switching logic, and new metric widgets. |
-| `tests/` | Added `test_telemetry_manager.py` and `test_bridge_stats.py`. |
+| `tests/`               | Added `test_telemetry_manager.py` and `test_bridge_stats.py`.                          |
 
 ### UI Enhancements
 
@@ -448,6 +453,7 @@ The Vitals pane in the Settings modal now features a sub-tabbed interface. Data 
 Transformed the chat history from a simple list into a robust management system.
 
 ### Features
+
 - **Recents & Starred**: Renamed history to "Recents"; added a dedicated "Starred" section for pinned conversations.
 - **Context Menu**: Right-click (or kebab menu) support for Star, Rename, and Delete actions.
 - **All Chats Modal**: New full-screen management interface with real-time search and bulk delete capabilities.
@@ -455,8 +461,8 @@ Transformed the chat history from a simple list into a robust management system.
 
 ### Files Changed
 
-| File | Change |
-|---|---|
+| File                   | Change                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------- |
 | `gemma-web/index.html` | Implemented Starred section, Context Menu, All Chats modal, and search logic. |
 
 ---
@@ -468,6 +474,7 @@ Implemented a multi-stage "Deep Thinking" pipeline that trades inference time fo
 ### The "Council of Three" Pipeline
 
 When Deep Thinking is enabled, the agent executes a three-stage pre-reasoning process before entering the main ReAct loop:
+
 1. **Diversify (Tree of Thought)**: Generates 3 distinct, high-level strategies (Path A, B, and C) to solve the problem.
 2. **Critique (Self-Correction)**: Acts as a critical reviewer to identify logical flaws and edge cases in each path, assigning robustness scores.
 3. **Synthesize (Extended CoT)**: Merges the best elements into a single, robust "master reasoning" plan that addresses all identified flaws.
@@ -475,6 +482,7 @@ When Deep Thinking is enabled, the agent executes a three-stage pre-reasoning pr
 ### UI: Thinking Visibility
 
 Enhanced the frontend to provide transparency into the model's internal reasoning process.
+
 - **Multi-Stage Blocks**: Thinking content is rendered in a dedicated, collapsible `<details>` block with a "Deep Thinking Process" summary.
 - **Markdown Support**: Internal thoughts are parsed as Markdown for better readability of complex logic.
 
@@ -487,7 +495,7 @@ Connected the local project to a remote GitHub repository to enable collaboratio
 ### Actions Taken
 
 - **GitHub Integration**: Linked the local repository to `https://github.com/Ic3burG/LocalLLM.git` using the GitHub CLI (`gh`).
-- **Clean Sync**: 
+- **Clean Sync**:
   - Updated `.gitignore` to comprehensively exclude Python cache, logs, virtual environments, large model weights, and node modules.
   - Purged ~5,000 tracked files that should have been ignored (primarily `node_modules` and `__pycache__`) from the git index.
   - Established `main` as the default branch.
@@ -495,16 +503,16 @@ Connected the local project to a remote GitHub repository to enable collaboratio
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `.gitignore` | **Major Update** — Added comprehensive ignores for Python, Node.js, Logs, and Models. |
-| `PROGRESS.md` | Updated with remote setup details. |
+| File          | Change                                                                                |
+| ------------- | ------------------------------------------------------------------------------------- |
+| `.gitignore`  | **Major Update** — Added comprehensive ignores for Python, Node.js, Logs, and Models. |
+| `PROGRESS.md` | Updated with remote setup details.                                                    |
 
 ---
 
 ## 📈 Current Status (as of May 10, 2026)
 
-- **Backend (`agent.py`)**: 
+- **Backend (`agent.py`)**:
   - New `run_deep_thinking_pipeline` handles sequential inference calls and emits real-time SSE `type: "status"` updates (e.g., "Deep Thinking: Exploring paths...").
   - Final synthesized reasoning is injected into the conversation as a `<thought>` block to guide subsequent tool use.
 - **Frontend (`index.html`)**: Added a high-contrast toggle next to the model selector; updated request payload to support the `deep_think` flag.
@@ -512,14 +520,14 @@ Connected the local project to a remote GitHub repository to enable collaboratio
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `agent.py` | Implemented pipeline logic, SSE status events, and ReAct loop integration |
-| `gemma_bridge.py` | Updated `chat_stream` to pass the `deep_think` flag |
-| `gemma-web/index.html` | Added Deep Think UI toggle and updated request payload |
-| `tests/test_deep_think_support.py` | New — tests for API model changes |
-| `tests/test_deep_think_logic.py` | New — tests for the "Council of Three" pipeline logic |
-| `tests/test_deep_think_integration.py` | New — tests for end-to-end integration and SSE behavior |
+| File                                   | Change                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------- |
+| `agent.py`                             | Implemented pipeline logic, SSE status events, and ReAct loop integration |
+| `gemma_bridge.py`                      | Updated `chat_stream` to pass the `deep_think` flag                       |
+| `gemma-web/index.html`                 | Added Deep Think UI toggle and updated request payload                    |
+| `tests/test_deep_think_support.py`     | New — tests for API model changes                                         |
+| `tests/test_deep_think_logic.py`       | New — tests for the "Council of Three" pipeline logic                     |
+| `tests/test_deep_think_integration.py` | New — tests for end-to-end integration and SSE behavior                   |
 
 ---
 
@@ -543,7 +551,7 @@ Agent ReAct loop → generate_image tool → __image__ JSON marker
 
 - **mflux (not mlx-stable-diffusion)**: The planned `mlx-stable-diffusion` package doesn't exist on PyPI. `mflux` v0.17.5 provides FLUX.1-schnell via `from mflux.models.flux.variants.txt2img.flux import Flux1`.
 - **4 inference steps default**: FLUX.1-schnell is trained to converge in 4 steps; range capped at 1–12.
-- **Metal memory management**: `_should_swap()` unloads the text model before loading Flux if it's a large (non-fast) model. `mx.metal.clear_cache()` is also called *after* generation to free Flux weights immediately.
+- **Metal memory management**: `_should_swap()` unloads the text model before loading Flux if it's a large (non-fast) model. `mx.metal.clear_cache()` is also called _after_ generation to free Flux weights immediately.
 - **`_imageStore` Map**: Base64 image data is stored in a module-level `Map()` keyed by sequential IDs. DOM buttons carry only `data-image-id` — never raw base64 — to prevent XSS and avoid breaking HTML attribute parsers.
 - **`__image__` SSE marker**: `_generate_image()` returns `json.dumps({"__image__": True, ...})`. `react_loop_sse` detects this via `json.loads()` + `.get("__image__")` (not a fragile `startswith` check) and emits a `{"type": "image"}` SSE event.
 - **`generate_image` registered as `"risky"`**: Requires user confirmation gate — prevents the agent from running costly multi-GB GPU operations autonomously.
@@ -551,19 +559,19 @@ Agent ReAct loop → generate_image tool → __image__ JSON marker
 
 ### Files Changed
 
-| File | Change |
-|---|---|
-| `image_pipeline.py` | **New** — `generate_image()` with threading lock, model swap, size allowlist, style presets, Metal cache clear after generation |
-| `gemma_bridge.py` | Added `POST /v1/image/generate` and `GET /v1/image/models`; catches `ValueError` → 400 |
-| `gemma-web/server.js` | Added `/api/image/generate` and `/api/image/models` proxy routes |
-| `agent_utils.py` | Added `_generate_image` async tool; registered as `"risky"`; added to `AGENT_SYSTEM_PROMPT` |
-| `agent.py` | `react_loop_sse` detects `__image__` marker via JSON parse and emits `type: "image"` SSE event |
-| `gemma-web/index.html` | Mode pill (Chat / Image); size/steps/style controls; shimmer; image card with copy/download; lightbox with keyboard nav; send button disabled during generation |
-| `scripts/download_sd.sh` | **New** — Downloads and smoke-tests FLUX.1-schnell 4-bit weights |
-| `requirements.txt` | Added `mflux`; restored full package list |
-| `tests/test_image_pipeline.py` | **New** — 15 tests: style, size validation (including invalid/malformed), swap logic, full generate mock |
-| `tests/test_agent_tools.py` | Added 2 tests for `_generate_image` tool (success marker, error path) |
-| `scripts/smoke_test.py` | Added `test_image_models()` connectivity check |
+| File                           | Change                                                                                                                                                          |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image_pipeline.py`            | **New** — `generate_image()` with threading lock, model swap, size allowlist, style presets, Metal cache clear after generation                                 |
+| `gemma_bridge.py`              | Added `POST /v1/image/generate` and `GET /v1/image/models`; catches `ValueError` → 400                                                                          |
+| `gemma-web/server.js`          | Added `/api/image/generate` and `/api/image/models` proxy routes                                                                                                |
+| `agent_utils.py`               | Added `_generate_image` async tool; registered as `"risky"`; added to `AGENT_SYSTEM_PROMPT`                                                                     |
+| `agent.py`                     | `react_loop_sse` detects `__image__` marker via JSON parse and emits `type: "image"` SSE event                                                                  |
+| `gemma-web/index.html`         | Mode pill (Chat / Image); size/steps/style controls; shimmer; image card with copy/download; lightbox with keyboard nav; send button disabled during generation |
+| `scripts/download_sd.sh`       | **New** — Downloads and smoke-tests FLUX.1-schnell 4-bit weights                                                                                                |
+| `requirements.txt`             | Added `mflux`; restored full package list                                                                                                                       |
+| `tests/test_image_pipeline.py` | **New** — 15 tests: style, size validation (including invalid/malformed), swap logic, full generate mock                                                        |
+| `tests/test_agent_tools.py`    | Added 2 tests for `_generate_image` tool (success marker, error path)                                                                                           |
+| `scripts/smoke_test.py`        | Added `test_image_models()` connectivity check                                                                                                                  |
 
 ---
 
@@ -572,31 +580,36 @@ Agent ReAct loop → generate_image tool → __image__ JSON marker
 Refined the interface for maximum stability and established strict architectural mandates to prevent future regressions.
 
 ### Interface Polishing
+
 - **Advanced Sidebar Finalized**:
-    - **Pinned "All Chats"**: Moved the management button outside the scrollable area; it is now permanently visible at the bottom of the sidebar.
-    - **No-Scroll History**: Disabled scrolling for the "Recents" list. The sidebar now dynamically adjusts its visible item count based on browser window height, maintaining a clean, fixed layout.
-    - **Renaming**: Simplified "All Chats & Management" to "All Chats".
+  - **Pinned "All Chats"**: Moved the management button outside the scrollable area; it is now permanently visible at the bottom of the sidebar.
+  - **No-Scroll History**: Disabled scrolling for the "Recents" list. The sidebar now dynamically adjusts its visible item count based on browser window height, maintaining a clean, fixed layout.
+  - **Renaming**: Simplified "All Chats & Management" to "All Chats".
 - **Implicit Agent Mode**: Removed the manual "Chat/Agent" toggle. The model now handles tool-use implicitly, decluttering the main interaction area.
 - **Settings Centralization**: Confirmed the removal of the sidebar "Learned Memory" preview; all memory and technical system configurations are now centralized in the Settings modal.
 
 ### Feature Integrity (`GEMINI.md`)
+
 Created a project-level **`GEMINI.md`** file that establishes absolute mandates for all AI agents:
+
 - **Zero-Deletion Policy**: Forbidden from removing features without explicit user instruction.
 - **Architectural Guardrails**: Strict rules for preserving sidebar structure, memory locations, and reasoning persistence.
 - **Audit Requirement**: Mandatory consultation of `PROGRESS.md` before any structural UI/UX changes.
 
 ### Files Changed
-| File | Change |
-|---|---|
+
+| File                   | Change                                                                        |
+| ---------------------- | ----------------------------------------------------------------------------- |
 | `gemma-web/index.html` | Refined sidebar layout, removed redundant toggles, fixed history persistence. |
-| `GEMINI.md` | **New** — Project mandates and feature integrity policy. |
-| `agent.py` | Finalized reasoning emission logic and state injection. |
+| `GEMINI.md`            | **New** — Project mandates and feature integrity policy.                      |
+| `agent.py`             | Finalized reasoning emission logic and state injection.                       |
 
 ---
 
 ## 🔧 Stability & Integrity Fixes — May 10, 2026 (Session 5)
 
 ### Smoke Test Dependency Fix
+
 Resolved a `ModuleNotFoundError: requests` that occurred when running the System Integrity check from the Vitals dashboard.
 
 - **Root Cause**: The Node.js server (`server.js`) was hardcoded to use the system `python3` for the `/api/backend/check` endpoint, which lacked the necessary dependencies installed in the project's virtual environment.
@@ -613,4 +626,3 @@ Resolved a `ModuleNotFoundError: requests` that occurred when running the System
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
 - **UI:** Universal drag-and-drop; sub-tabbed "Command Center" Vitals; **Deep Thinking** (Council of Three); **Fixed Sidebar** (Starred/Recents/All Chats); **Implicit Agent Mode**.
 - **Integrity:** 115 tests passing; strict feature integrity mandates established in `GEMINI.md`.
-

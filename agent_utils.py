@@ -1,19 +1,19 @@
-import logging
 import asyncio
 import io
 import json
+import logging
 import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import traceback
-import threading
-from datetime import datetime
+from collections import deque
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
-from collections import deque
 
 # Security: The audit log is stored outside the sandbox so the agent cannot delete it.
 AUDIT_LOG_PATH = "/Users/ojdavis/Claude Code/Gemma4/audit.log"
@@ -314,7 +314,11 @@ async def _web_fetch(url: str) -> str:
             soup = BeautifulSoup(resp.text, "html.parser")
             for tag in soup(["script", "style"]):
                 tag.decompose()
-            lines = [l.strip() for l in soup.get_text(separator="\n").splitlines() if l.strip()]
+            lines = [
+                line.strip()
+                for line in soup.get_text(separator="\n").splitlines()
+                if line.strip()
+            ]
             return "\n".join(lines)[:5000]
 
         return await loop.run_in_executor(None, _sync_fetch)
@@ -591,8 +595,9 @@ async def _http_request(method: str, url: str, headers: str = "{}", body: str = 
     log_audit(f"HTTP_REQUEST: {method.upper()} {url}")
     try:
         validate_url(url)
-        import requests
         import json as _json
+
+        import requests
         loop = asyncio.get_running_loop()
         parsed_headers = _json.loads(headers) if headers.strip() else {}
 

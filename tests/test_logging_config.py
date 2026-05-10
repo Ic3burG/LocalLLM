@@ -1,7 +1,14 @@
 import json
 import logging
+
 import pytest
-from logging_config import JsonLinesFormatter, HumanFormatter, setup_logging, task_id_var
+
+from logging_config import (
+    HumanFormatter,
+    JsonLinesFormatter,
+    setup_logging,
+    task_id_var,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -84,8 +91,8 @@ def test_setup_logging_writes_json_to_file(tmp_path):
     for h in root.handlers:
         h.flush()
 
-    lines = [l for l in log_file.read_text().strip().splitlines() if l]
-    assert any(json.loads(l)["msg"] == "log line to file" for l in lines)
+    lines = [line for line in log_file.read_text().strip().splitlines() if line]
+    assert any(json.loads(line)["msg"] == "log line to file" for line in lines)
 
 
 def test_setup_logging_replaces_existing_handlers(tmp_path):
@@ -99,6 +106,7 @@ def test_setup_logging_replaces_existing_handlers(tmp_path):
 async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
     """RequestLoggingMiddleware emits a log record with method, path, status, elapsed_ms."""
     from unittest.mock import MagicMock, patch
+
     from fastapi import FastAPI
 
     with patch.dict("sys.modules", {
@@ -112,6 +120,7 @@ async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
         "agent": MagicMock(),
     }):
         import importlib
+
         import gemma_bridge as gb
         importlib.reload(gb)
         middleware_cls = gb.RequestLoggingMiddleware
@@ -137,7 +146,7 @@ async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
 
     # Use httpx.AsyncClient with ASGITransport instead of Starlette's TestClient
     # to avoid the httpx._client AttributeError in older Starlette versions.
-    from httpx import AsyncClient, ASGITransport
+    from httpx import ASGITransport, AsyncClient
 
     try:
         async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://testserver") as client:
@@ -158,11 +167,12 @@ async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
 @pytest.mark.asyncio
 async def test_run_inference_logs_timing(caplog):
     """run_inference emits INFO records with model_id and elapsed_ms."""
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock, patch
     FAKE = {"choices": [{"message": {"content": "hi"}}]}
 
     with patch.dict("sys.modules", {"mlx_vlm": MagicMock()}):
         import importlib
+
         import inference_engine as ie
         importlib.reload(ie)
 

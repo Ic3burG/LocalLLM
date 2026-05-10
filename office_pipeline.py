@@ -1,7 +1,7 @@
 import io
 import uuid
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 
 from docx import Document
 from docx.oxml.ns import qn
@@ -461,8 +461,8 @@ def write_word_document(path, spec: dict) -> None:
 def write_excel_document(path, spec: dict) -> None:
     """Create a .xlsx file from a structured spec dict."""
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
     from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+    from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils.cell import range_boundaries
 
     wb = Workbook()

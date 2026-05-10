@@ -1,8 +1,11 @@
 import asyncio
 import json
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+
 from agent import react_loop_sse, sse_queues
+
 
 @pytest.mark.asyncio
 async def test_react_loop_sse_with_deep_think():
@@ -38,7 +41,8 @@ async def test_react_loop_sse_with_deep_think():
         events = []
         while not q.empty():
             item = await q.get()
-            if item is None: break
+            if item is None:
+                break
             events.append(json.loads(item))
         
         # Check for thinking event

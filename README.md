@@ -14,6 +14,7 @@ An elite, high-performance, and multimodal local AI suite optimized for Apple Si
 ## 🛠 Tool Registry (30+ Tools)
 
 LocalLLM empowers the AI with a wide array of capabilities, including:
+
 - **Web**: Google Search, Web Fetch, URL Validation.
 - **Office**: Read/Write PDF, Word, and Excel.
 - **System**: Shell execution, SQLite query, System Info, Clipboard access.
@@ -34,4 +35,4 @@ LocalLLM empowers the AI with a wide array of capabilities, including:
 
 ---
 
-*Built with Gemma 4, MLX, and a lot of caffeine.*
+_Built with Gemma 4, MLX, and a lot of caffeine._

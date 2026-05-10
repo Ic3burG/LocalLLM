@@ -1,81 +1,225 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Word & Excel Support — Implementation Plan</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a1a2e;background:#f4f6fb;padding:40px 20px 80px}
-  .container{max-width:860px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 2px 20px rgba(0,0,0,.08);padding:48px 56px}
-  h1{font-size:2rem;font-weight:700;margin-bottom:8px;color:#0f172a}
-  h2{font-size:1.25rem;font-weight:600;margin:36px 0 12px;color:#1e3a5f;border-bottom:2px solid #e2e8f0;padding-bottom:6px}
-  h3{font-size:1.05rem;font-weight:600;margin:24px 0 8px;color:#334155}
-  h4{font-size:.95rem;font-weight:600;margin:18px 0 6px;color:#475569}
-  p{margin:10px 0;color:#374151}
-  a{color:#2563eb}
-  code{font-family:"SF Mono","Fira Code",monospace;font-size:.85em;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#0f5132}
-  pre{background:#0f172a;color:#e2e8f0;padding:20px 24px;border-radius:8px;overflow-x:auto;margin:16px 0;font-size:.88em;line-height:1.6}
-  pre code{background:none;color:inherit;padding:0}
-  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
-  th{background:#1e3a5f;color:#fff;text-align:left;padding:10px 14px;font-weight:600}
-  td{padding:9px 14px;border-bottom:1px solid #e2e8f0;vertical-align:top}
-  tr:nth-child(even) td{background:#f8fafc}
-  ul,ol{padding-left:24px;margin:10px 0;color:#374151}
-  li{margin:4px 0}
-  li p{margin:2px 0}
-  input[type=checkbox]{margin-right:6px}
-  blockquote{border-left:4px solid #3b82f6;margin:16px 0;padding:8px 16px;background:#eff6ff;color:#1e3a5f;border-radius:0 6px 6px 0}
-  strong{color:#0f172a}
-  hr{border:none;border-top:1px solid #e2e8f0;margin:32px 0}
-</style>
-</head>
-<body>
-<div class="container">
-<h1>Word &amp; Excel Support Implementation Plan</h1>
-<blockquote>
-<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
-</blockquote>
-<p><strong>Goal:</strong> Add comprehensive Word (.docx) and Excel (.xlsx) read/write + RAG ingestion support to the Gemma4 agent.</p>
-<p><strong>Architecture:</strong> New <code>office_pipeline.py</code> mirrors <code>pdf_pipeline.py</code> — <code>extract_text_from_word</code> and <code>extract_text_from_excel</code> return <code>(list[tuple], metadata_dict)</code>, and <code>ingest_office</code> returns the same <code>{doc_id, filename, page_count, chunks, embeddings}</code> dict shape. Four new async tool functions in <code>agent_utils.py</code> follow the exact <code>_read_pdf</code>/<code>_write_pdf</code> pattern. The <code>/v1/document</code> endpoint in <code>gemma_bridge.py</code> gains extension-based routing to <code>ingest_office</code>.</p>
-<p><strong>Tech Stack:</strong> <code>python-docx</code> (Word), <code>openpyxl</code> (Excel), <code>oletools</code>/<code>olefile</code> (embedded OLE objects), <code>lxml</code> (tracked-changes XML), <code>zipfile</code> stdlib (threaded comments), <code>pdf_pipeline.chunk_text</code> + <code>embed_texts</code> (reused for chunking/embedding).</p>
-<hr />
-<h2>Task 1: Install dependencies</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>requirements.txt</code></p>
-<ul>
-<li>[ ] <strong>Step 1: Add libraries to requirements.txt</strong></li>
-</ul>
-<p>Open <code>requirements.txt</code> and append these three lines at the end:</p>
-<pre><code>python-docx
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Word & Excel Support — Implementation Plan</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        font-size: 15px;
+        line-height: 1.65;
+        color: #1a1a2e;
+        background: #f4f6fb;
+        padding: 40px 20px 80px;
+      }
+      .container {
+        max-width: 860px;
+        margin: 0 auto;
+        background: #fff;
+        border-radius: 12px;
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.08);
+        padding: 48px 56px;
+      }
+      h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+        color: #0f172a;
+      }
+      h2 {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 36px 0 12px;
+        color: #1e3a5f;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 6px;
+      }
+      h3 {
+        font-size: 1.05rem;
+        font-weight: 600;
+        margin: 24px 0 8px;
+        color: #334155;
+      }
+      h4 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        margin: 18px 0 6px;
+        color: #475569;
+      }
+      p {
+        margin: 10px 0;
+        color: #374151;
+      }
+      a {
+        color: #2563eb;
+      }
+      code {
+        font-family: "SF Mono", "Fira Code", monospace;
+        font-size: 0.85em;
+        background: #f1f5f9;
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: #0f5132;
+      }
+      pre {
+        background: #0f172a;
+        color: #e2e8f0;
+        padding: 20px 24px;
+        border-radius: 8px;
+        overflow-x: auto;
+        margin: 16px 0;
+        font-size: 0.88em;
+        line-height: 1.6;
+      }
+      pre code {
+        background: none;
+        color: inherit;
+        padding: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 16px 0;
+        font-size: 0.92em;
+      }
+      th {
+        background: #1e3a5f;
+        color: #fff;
+        text-align: left;
+        padding: 10px 14px;
+        font-weight: 600;
+      }
+      td {
+        padding: 9px 14px;
+        border-bottom: 1px solid #e2e8f0;
+        vertical-align: top;
+      }
+      tr:nth-child(even) td {
+        background: #f8fafc;
+      }
+      ul,
+      ol {
+        padding-left: 24px;
+        margin: 10px 0;
+        color: #374151;
+      }
+      li {
+        margin: 4px 0;
+      }
+      li p {
+        margin: 2px 0;
+      }
+      input[type="checkbox"] {
+        margin-right: 6px;
+      }
+      blockquote {
+        border-left: 4px solid #3b82f6;
+        margin: 16px 0;
+        padding: 8px 16px;
+        background: #eff6ff;
+        color: #1e3a5f;
+        border-radius: 0 6px 6px 0;
+      }
+      strong {
+        color: #0f172a;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid #e2e8f0;
+        margin: 32px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Word &amp; Excel Support Implementation Plan</h1>
+      <blockquote>
+        <p>
+          <strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use
+          superpowers:subagent-driven-development (recommended) or
+          superpowers:executing-plans to implement this plan task-by-task. Steps
+          use checkbox (<code>- [ ]</code>) syntax for tracking.
+        </p>
+      </blockquote>
+      <p>
+        <strong>Goal:</strong> Add comprehensive Word (.docx) and Excel (.xlsx)
+        read/write + RAG ingestion support to the Gemma4 agent.
+      </p>
+      <p>
+        <strong>Architecture:</strong> New
+        <code>office_pipeline.py</code> mirrors <code>pdf_pipeline.py</code> —
+        <code>extract_text_from_word</code> and
+        <code>extract_text_from_excel</code> return
+        <code>(list[tuple], metadata_dict)</code>, and
+        <code>ingest_office</code> returns the same
+        <code>{doc_id, filename, page_count, chunks, embeddings}</code> dict
+        shape. Four new async tool functions in
+        <code>agent_utils.py</code> follow the exact
+        <code>_read_pdf</code>/<code>_write_pdf</code> pattern. The
+        <code>/v1/document</code> endpoint in <code>gemma_bridge.py</code> gains
+        extension-based routing to <code>ingest_office</code>.
+      </p>
+      <p>
+        <strong>Tech Stack:</strong> <code>python-docx</code> (Word),
+        <code>openpyxl</code> (Excel), <code>oletools</code>/<code
+          >olefile</code
+        >
+        (embedded OLE objects), <code>lxml</code> (tracked-changes XML),
+        <code>zipfile</code> stdlib (threaded comments),
+        <code>pdf_pipeline.chunk_text</code> + <code>embed_texts</code> (reused
+        for chunking/embedding).
+      </p>
+      <hr />
+      <h2>Task 1: Install dependencies</h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>requirements.txt</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Add libraries to requirements.txt</strong></li>
+      </ul>
+      <p>
+        Open <code>requirements.txt</code> and append these three lines at the
+        end:
+      </p>
+      <pre><code>python-docx
 openpyxl
 oletools
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Install them</strong></li>
-</ul>
-<pre><code class="language-bash">pip install python-docx openpyxl oletools
+      <ul>
+        <li>[ ] <strong>Step 2: Install them</strong></li>
+      </ul>
+      <pre><code class="language-bash">pip install python-docx openpyxl oletools
 </code></pre>
-<p>Expected: all three install without errors. Verify:</p>
-<pre><code class="language-bash">python3 -c &quot;import docx, openpyxl, olefile; print('ok')&quot;
+      <p>Expected: all three install without errors. Verify:</p>
+      <pre><code class="language-bash">python3 -c &quot;import docx, openpyxl, olefile; print('ok')&quot;
 </code></pre>
-<p>Expected output: <code>ok</code></p>
-<ul>
-<li>[ ] <strong>Step 3: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add requirements.txt
+      <p>Expected output: <code>ok</code></p>
+      <ul>
+        <li>[ ] <strong>Step 3: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add requirements.txt
 git commit -m &quot;chore: add python-docx, openpyxl, oletools dependencies&quot;
 </code></pre>
-<hr />
-<h2>Task 2: Word body extraction (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Create: <code>office_pipeline.py</code><br />
-- Create: <code>tests/test_office_pipeline.py</code></p>
-<ul>
-<li>[ ] <strong>Step 1: Write the failing tests</strong></li>
-</ul>
-<p>Create <code>tests/test_office_pipeline.py</code>:</p>
-<pre><code class="language-python">import sys, os
+      <hr />
+      <h2>Task 2: Word body extraction (TDD)</h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Create: <code>office_pipeline.py</code><br />
+        - Create: <code>tests/test_office_pipeline.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing tests</strong></li>
+      </ul>
+      <p>Create <code>tests/test_office_pipeline.py</code>:</p>
+      <pre><code class="language-python">import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), &quot;..&quot;))
 
 import io
@@ -139,17 +283,29 @@ def test_extract_word_empty_annotations_are_lists():
     assert metadata[&quot;footnotes&quot;] == []
     assert metadata[&quot;endnotes&quot;] == []
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py -v 2&gt;&amp;1 | head -30
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py -v 2&gt;&amp;1 | head -30
 </code></pre>
-<p>Expected: <code>ModuleNotFoundError: No module named 'office_pipeline'</code></p>
-<ul>
-<li>[ ] <strong>Step 3: Create <code>office_pipeline.py</code> with Word body extraction</strong></li>
-</ul>
-<p>Create <code>/Users/ojdavis/Claude Code/Gemma4/office_pipeline.py</code>:</p>
-<pre><code class="language-python">import io
+      <p>
+        Expected:
+        <code>ModuleNotFoundError: No module named 'office_pipeline'</code>
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 3: Create <code>office_pipeline.py</code> with Word body
+            extraction</strong
+          >
+        </li>
+      </ul>
+      <p>
+        Create
+        <code>/Users/ojdavis/Claude Code/Gemma4/office_pipeline.py</code>:
+      </p>
+      <pre><code class="language-python">import io
 import uuid
 import zipfile
 import xml.etree.ElementTree as ET
@@ -285,28 +441,37 @@ def _extract_word_notes(doc, note_type: str) -&gt; list[dict]:
         pass
     return notes
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 4: Run tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_word_returns_sections tests/test_office_pipeline.py::test_extract_word_section_numbers_are_ints tests/test_office_pipeline.py::test_extract_word_metadata_has_required_keys tests/test_office_pipeline.py::test_extract_word_properties tests/test_office_pipeline.py::test_extract_word_empty_annotations_are_lists -v
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_word_returns_sections tests/test_office_pipeline.py::test_extract_word_section_numbers_are_ints tests/test_office_pipeline.py::test_extract_word_metadata_has_required_keys tests/test_office_pipeline.py::test_extract_word_properties tests/test_office_pipeline.py::test_extract_word_empty_annotations_are_lists -v
 </code></pre>
-<p>Expected: all 5 PASS</p>
-<ul>
-<li>[ ] <strong>Step 5: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
+      <p>Expected: all 5 PASS</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
 git commit -m &quot;feat: add Word body extraction to office_pipeline&quot;
 </code></pre>
-<hr />
-<h2>Task 3: Word annotation extraction (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
-- Modify: <code>office_pipeline.py</code> (already implemented in Task 2 — verify with these tests)</p>
-<ul>
-<li>[ ] <strong>Step 1: Add annotation tests to <code>tests/test_office_pipeline.py</code></strong></li>
-</ul>
-<p>Append to the end of <code>tests/test_office_pipeline.py</code>:</p>
-<pre><code class="language-python">def _make_word_bytes_with_comments() -&gt; bytes:
+      <hr />
+      <h2>Task 3: Word annotation extraction (TDD)</h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+        - Modify: <code>office_pipeline.py</code> (already implemented in Task 2
+        — verify with these tests)
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 1: Add annotation tests to
+            <code>tests/test_office_pipeline.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>Append to the end of <code>tests/test_office_pipeline.py</code>:</p>
+      <pre><code class="language-python">def _make_word_bytes_with_comments() -&gt; bytes:
     &quot;&quot;&quot;Build a .docx that contains a comment using lxml directly.&quot;&quot;&quot;
     from docx import Document
     from docx.oxml.ns import qn, nsmap
@@ -390,27 +555,37 @@ def test_extract_word_tracked_changes():
     assert inserts[0][&quot;author&quot;] == &quot;Bob&quot;
     assert &quot;Inserted text&quot; in inserts[0][&quot;text&quot;]
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Run the annotation tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_word_comments tests/test_office_pipeline.py::test_extract_word_tracked_changes -v
+      <ul>
+        <li>[ ] <strong>Step 2: Run the annotation tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_word_comments tests/test_office_pipeline.py::test_extract_word_tracked_changes -v
 </code></pre>
-<p>Expected: both PASS (the extraction code was already written in Task 2)</p>
-<ul>
-<li>[ ] <strong>Step 3: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add tests/test_office_pipeline.py
+      <p>
+        Expected: both PASS (the extraction code was already written in Task 2)
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add tests/test_office_pipeline.py
 git commit -m &quot;test: add Word annotation extraction tests&quot;
 </code></pre>
-<hr />
-<h2>Task 4: Excel cell extraction (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
-- Modify: <code>office_pipeline.py</code> (add Excel functions)</p>
-<ul>
-<li>[ ] <strong>Step 1: Append Excel cell extraction tests to <code>tests/test_office_pipeline.py</code></strong></li>
-</ul>
-<pre><code class="language-python">def _make_excel_bytes_simple() -&gt; bytes:
+      <hr />
+      <h2>Task 4: Excel cell extraction (TDD)</h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+        - Modify: <code>office_pipeline.py</code> (add Excel functions)
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 1: Append Excel cell extraction tests to
+            <code>tests/test_office_pipeline.py</code></strong
+          >
+        </li>
+      </ul>
+      <pre><code class="language-python">def _make_excel_bytes_simple() -&gt; bytes:
     from openpyxl import Workbook
     wb = Workbook()
     ws = wb.active
@@ -461,17 +636,26 @@ def test_extract_excel_empty_annotations_are_lists():
     assert metadata[&quot;threaded_comments&quot;] == []
     assert metadata[&quot;embedded_objects&quot;] == []
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_returns_sheets -v 2&gt;&amp;1 | head -15
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_returns_sheets -v 2&gt;&amp;1 | head -15
 </code></pre>
-<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>extract_text_from_excel</code> not yet defined.</p>
-<ul>
-<li>[ ] <strong>Step 3: Add Excel extraction to <code>office_pipeline.py</code></strong></li>
-</ul>
-<p>Append to the end of <code>office_pipeline.py</code>:</p>
-<pre><code class="language-python">def extract_text_from_excel(file_bytes: bytes) -&gt; tuple[list[tuple[str, str]], dict]:
+      <p>
+        Expected: <code>ImportError</code> or <code>AttributeError</code> —
+        <code>extract_text_from_excel</code> not yet defined.
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 3: Add Excel extraction to
+            <code>office_pipeline.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>Append to the end of <code>office_pipeline.py</code>:</p>
+      <pre><code class="language-python">def extract_text_from_excel(file_bytes: bytes) -&gt; tuple[list[tuple[str, str]], dict]:
     &quot;&quot;&quot;Extract cell text and all annotations from a .xlsx file.
 
     Returns:
@@ -607,26 +791,28 @@ def _extract_excel_embedded_objects(file_bytes: bytes) -&gt; list[dict]:
         pass
     return results
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 4: Run Excel cell tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_returns_sheets tests/test_office_pipeline.py::test_extract_excel_cell_values_in_text tests/test_office_pipeline.py::test_extract_excel_metadata_has_required_keys tests/test_office_pipeline.py::test_extract_excel_empty_annotations_are_lists -v
+      <ul>
+        <li>[ ] <strong>Step 4: Run Excel cell tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_returns_sheets tests/test_office_pipeline.py::test_extract_excel_cell_values_in_text tests/test_office_pipeline.py::test_extract_excel_metadata_has_required_keys tests/test_office_pipeline.py::test_extract_excel_empty_annotations_are_lists -v
 </code></pre>
-<p>Expected: all 4 PASS</p>
-<ul>
-<li>[ ] <strong>Step 5: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
+      <p>Expected: all 4 PASS</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
 git commit -m &quot;feat: add Excel cell and annotation extraction to office_pipeline&quot;
 </code></pre>
-<hr />
-<h2>Task 5: Excel formula and cell-note tests (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>tests/test_office_pipeline.py</code> (append tests)</p>
-<ul>
-<li>[ ] <strong>Step 1: Append formula and cell-note tests</strong></li>
-</ul>
-<pre><code class="language-python">def _make_excel_bytes_with_formulas() -&gt; bytes:
+      <hr />
+      <h2>Task 5: Excel formula and cell-note tests (TDD)</h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>tests/test_office_pipeline.py</code> (append tests)
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Append formula and cell-note tests</strong></li>
+      </ul>
+      <pre><code class="language-python">def _make_excel_bytes_with_formulas() -&gt; bytes:
     from openpyxl import Workbook
     wb = Workbook()
     ws = wb.active
@@ -676,27 +862,29 @@ def test_extract_excel_cell_notes():
     assert &quot;Finance Team&quot; in n[&quot;author&quot;]
     assert &quot;quarterly&quot; in n[&quot;text&quot;]
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Run formula and note tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_formulas tests/test_office_pipeline.py::test_extract_excel_cell_notes -v
+      <ul>
+        <li>[ ] <strong>Step 2: Run formula and note tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_formulas tests/test_office_pipeline.py::test_extract_excel_cell_notes -v
 </code></pre>
-<p>Expected: both PASS</p>
-<ul>
-<li>[ ] <strong>Step 3: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add tests/test_office_pipeline.py
+      <p>Expected: both PASS</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add tests/test_office_pipeline.py
 git commit -m &quot;test: add Excel formula and cell-note tests&quot;
 </code></pre>
-<hr />
-<h2>Task 6: <code>ingest_office</code> function (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
-- Modify: <code>office_pipeline.py</code> (append function)</p>
-<ul>
-<li>[ ] <strong>Step 1: Append ingest tests</strong></li>
-</ul>
-<pre><code class="language-python">def test_ingest_office_word_shape():
+      <hr />
+      <h2>Task 6: <code>ingest_office</code> function (TDD)</h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+        - Modify: <code>office_pipeline.py</code> (append function)
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Append ingest tests</strong></li>
+      </ul>
+      <pre><code class="language-python">def test_ingest_office_word_shape():
     from office_pipeline import ingest_office
     doc = ingest_office(_make_word_bytes_simple(), &quot;test.docx&quot;)
     assert doc is not None
@@ -734,16 +922,25 @@ def test_ingest_office_empty_word_returns_none():
     result = ingest_office(buf.getvalue(), &quot;empty.docx&quot;)
     assert result is None
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_ingest_office_word_shape -v 2&gt;&amp;1 | head -15
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_ingest_office_word_shape -v 2&gt;&amp;1 | head -15
 </code></pre>
-<p>Expected: <code>ImportError</code> — <code>ingest_office</code> not yet defined.</p>
-<ul>
-<li>[ ] <strong>Step 3: Append <code>ingest_office</code> and helpers to <code>office_pipeline.py</code></strong></li>
-</ul>
-<pre><code class="language-python">def ingest_office(file_bytes: bytes, filename: str) -&gt; dict | None:
+      <p>
+        Expected: <code>ImportError</code> — <code>ingest_office</code> not yet
+        defined.
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 3: Append <code>ingest_office</code> and helpers to
+            <code>office_pipeline.py</code></strong
+          >
+        </li>
+      </ul>
+      <pre><code class="language-python">def ingest_office(file_bytes: bytes, filename: str) -&gt; dict | None:
     &quot;&quot;&quot;Ingest a Word or Excel file into the RAG document store.
 
     Returns the same dict shape as pdf_pipeline.ingest_pdf, or None if
@@ -862,27 +1059,33 @@ def format_office_read_output(sections_or_sheets: list[tuple], metadata: dict, f
     result = &quot;\n\n&quot;.join(parts)
     return result[:15000] if len(result) &gt; 15000 else result
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 4: Run ingest tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_ingest_office_word_shape tests/test_office_pipeline.py::test_ingest_office_excel_shape tests/test_office_pipeline.py::test_ingest_office_unknown_extension_returns_none tests/test_office_pipeline.py::test_ingest_office_empty_word_returns_none -v
+      <ul>
+        <li>[ ] <strong>Step 4: Run ingest tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_ingest_office_word_shape tests/test_office_pipeline.py::test_ingest_office_excel_shape tests/test_office_pipeline.py::test_ingest_office_unknown_extension_returns_none tests/test_office_pipeline.py::test_ingest_office_empty_word_returns_none -v
 </code></pre>
-<p>Expected: all 4 PASS</p>
-<ul>
-<li>[ ] <strong>Step 5: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
+      <p>Expected: all 4 PASS</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
 git commit -m &quot;feat: add ingest_office and metadata formatting to office_pipeline&quot;
 </code></pre>
-<hr />
-<h2>Task 7: <code>_read_word</code> and <code>_read_excel</code> agent tools (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>tests/test_office_pipeline.py</code> (append tool tests)<br />
-- Modify: <code>agent_utils.py</code></p>
-<ul>
-<li>[ ] <strong>Step 1: Append read-tool tests</strong></li>
-</ul>
-<pre><code class="language-python">def _write_tmp_word(tmp_path_factory) -&gt; str:
+      <hr />
+      <h2>
+        Task 7: <code>_read_word</code> and <code>_read_excel</code> agent tools
+        (TDD)
+      </h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>tests/test_office_pipeline.py</code> (append tool
+        tests)<br />
+        - Modify: <code>agent_utils.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Append read-tool tests</strong></li>
+      </ul>
+      <pre><code class="language-python">def _write_tmp_word(tmp_path_factory) -&gt; str:
     import tempfile, os
     data = _make_word_bytes_simple()
     f = tempfile.NamedTemporaryFile(suffix=&quot;.docx&quot;, delete=False)
@@ -939,17 +1142,32 @@ async def test_read_excel_tool_missing_file():
     result = await _read_excel(&quot;/tmp/does_not_exist_abc123.xlsx&quot;)
     assert result.startswith(&quot;ERROR&quot;)
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Install pytest-asyncio if not present</strong></li>
-</ul>
-<pre><code class="language-bash">pip install pytest-asyncio -q &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_read_word_tool_missing_file -v 2&gt;&amp;1 | head -20
+      <ul>
+        <li>
+          [ ] <strong>Step 2: Install pytest-asyncio if not present</strong>
+        </li>
+      </ul>
+      <pre><code class="language-bash">pip install pytest-asyncio -q &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_read_word_tool_missing_file -v 2&gt;&amp;1 | head -20
 </code></pre>
-<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>_read_word</code> not yet in <code>agent_utils</code>.</p>
-<ul>
-<li>[ ] <strong>Step 3: Add <code>_read_word</code> and <code>_read_excel</code> to <code>agent_utils.py</code></strong></li>
-</ul>
-<p>Add these two functions immediately after <code>_write_pdf</code> (around line 444). Insert before the <code>_http_request</code> function:</p>
-<pre><code class="language-python">async def _read_word(path: str) -&gt; str:
+      <p>
+        Expected: <code>ImportError</code> or <code>AttributeError</code> —
+        <code>_read_word</code> not yet in <code>agent_utils</code>.
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 3: Add <code>_read_word</code> and <code>_read_excel</code> to
+            <code>agent_utils.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>
+        Add these two functions immediately after
+        <code>_write_pdf</code> (around line 444). Insert before the
+        <code>_http_request</code> function:
+      </p>
+      <pre><code class="language-python">async def _read_word(path: str) -&gt; str:
     try:
         p = validate_path(path)
         from office_pipeline import extract_text_from_word, format_office_read_output
@@ -978,44 +1196,66 @@ async def _read_excel(path: str) -&gt; str:
         logger.error(&quot;read_excel failed: %s&quot;, e, extra={&quot;path&quot;: path})
         return f&quot;ERROR: {e}&quot;
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 4: Register the tools in <code>agent_utils.py</code></strong></li>
-</ul>
-<p>Find the line <code>register_tool("read_pdf", ...)</code> (line ~650) and add after <code>register_tool("write_pdf", ...)</code>:</p>
-<pre><code class="language-python">register_tool(&quot;read_word&quot;, &quot;safe&quot;, &quot;Extract text and annotations from a Word (.docx) file&quot;, _read_word)
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 4: Register the tools in <code>agent_utils.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>
+        Find the line <code>register_tool("read_pdf", ...)</code> (line ~650)
+        and add after <code>register_tool("write_pdf", ...)</code>:
+      </p>
+      <pre><code class="language-python">register_tool(&quot;read_word&quot;, &quot;safe&quot;, &quot;Extract text and annotations from a Word (.docx) file&quot;, _read_word)
 register_tool(&quot;read_excel&quot;, &quot;safe&quot;, &quot;Extract text and annotations from an Excel (.xlsx) file&quot;, _read_excel)
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 5: Add tool descriptions to <code>AGENT_SYSTEM_PROMPT</code></strong></li>
-</ul>
-<p>Find the line <code>read_pdf(path)</code> in <code>AGENT_SYSTEM_PROMPT</code> and add after <code>write_pdf</code>:</p>
-<pre><code>  read_word(path)                               — extract text, comments, tracked changes, footnotes, and metadata from a Word (.docx) file
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 5: Add tool descriptions to
+            <code>AGENT_SYSTEM_PROMPT</code></strong
+          >
+        </li>
+      </ul>
+      <p>
+        Find the line <code>read_pdf(path)</code> in
+        <code>AGENT_SYSTEM_PROMPT</code> and add after <code>write_pdf</code>:
+      </p>
+      <pre><code>  read_word(path)                               — extract text, comments, tracked changes, footnotes, and metadata from a Word (.docx) file
   write_word(path, spec)                        — create a Word file from a JSON spec dict (sections with headings, paragraphs, tables, footnotes)
   read_excel(path)                              — extract cell values, formulas, notes, and threaded comments from an Excel (.xlsx) file
   write_excel(path, spec)                       — create an Excel file from a JSON spec dict (sheets, cells, merges, charts)
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 6: Run read-tool tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_read_word_tool_returns_text tests/test_office_pipeline.py::test_read_excel_tool_returns_text tests/test_office_pipeline.py::test_read_word_tool_missing_file tests/test_office_pipeline.py::test_read_excel_tool_missing_file -v
+      <ul>
+        <li>[ ] <strong>Step 6: Run read-tool tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_read_word_tool_returns_text tests/test_office_pipeline.py::test_read_excel_tool_returns_text tests/test_office_pipeline.py::test_read_word_tool_missing_file tests/test_office_pipeline.py::test_read_excel_tool_missing_file -v
 </code></pre>
-<p>Expected: all 4 PASS</p>
-<ul>
-<li>[ ] <strong>Step 7: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add agent_utils.py tests/test_office_pipeline.py
+      <p>Expected: all 4 PASS</p>
+      <ul>
+        <li>[ ] <strong>Step 7: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add agent_utils.py tests/test_office_pipeline.py
 git commit -m &quot;feat: add read_word and read_excel agent tools&quot;
 </code></pre>
-<hr />
-<h2>Task 8: <code>write_word_document</code> + <code>_write_word</code> tool (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
-- Modify: <code>office_pipeline.py</code> (append write function)<br />
-- Modify: <code>agent_utils.py</code> (add <code>_write_word</code>)</p>
-<ul>
-<li>[ ] <strong>Step 1: Append write-word tests</strong></li>
-</ul>
-<pre><code class="language-python">@pytest.mark.asyncio
+      <hr />
+      <h2>
+        Task 8: <code>write_word_document</code> + <code>_write_word</code> tool
+        (TDD)
+      </h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+        - Modify: <code>office_pipeline.py</code> (append write function)<br />
+        - Modify: <code>agent_utils.py</code> (add <code>_write_word</code>)
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Append write-word tests</strong></li>
+      </ul>
+      <pre><code class="language-python">@pytest.mark.asyncio
 async def test_write_word_roundtrip_body():
     import tempfile, json
     from agent_utils import _write_word
@@ -1072,16 +1312,25 @@ async def test_write_word_roundtrip_table():
     assert tables[0].cell(0, 0).text == &quot;Name&quot;
     assert tables[0].cell(1, 0).text == &quot;Alice&quot;
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_word_roundtrip_body -v 2&gt;&amp;1 | head -15
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_word_roundtrip_body -v 2&gt;&amp;1 | head -15
 </code></pre>
-<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>_write_word</code> not yet defined.</p>
-<ul>
-<li>[ ] <strong>Step 3: Append <code>write_word_document</code> to <code>office_pipeline.py</code></strong></li>
-</ul>
-<pre><code class="language-python">def write_word_document(path, spec: dict) -&gt; None:
+      <p>
+        Expected: <code>ImportError</code> or <code>AttributeError</code> —
+        <code>_write_word</code> not yet defined.
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 3: Append <code>write_word_document</code> to
+            <code>office_pipeline.py</code></strong
+          >
+        </li>
+      </ul>
+      <pre><code class="language-python">def write_word_document(path, spec: dict) -&gt; None:
     &quot;&quot;&quot;Create a .docx file from a structured spec dict.&quot;&quot;&quot;
     from docx import Document
     from docx.shared import Pt
@@ -1139,11 +1388,20 @@ async def test_write_word_roundtrip_table():
 
     doc.save(str(path))
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 4: Add <code>_write_word</code> to <code>agent_utils.py</code></strong></li>
-</ul>
-<p>Add immediately after <code>_read_excel</code> (after Task 7's additions):</p>
-<pre><code class="language-python">async def _write_word(path: str, spec: str) -&gt; str:
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 4: Add <code>_write_word</code> to
+            <code>agent_utils.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>
+        Add immediately after <code>_read_excel</code> (after Task 7's
+        additions):
+      </p>
+      <pre><code class="language-python">async def _write_word(path: str, spec: str) -&gt; str:
     log_audit(f&quot;WRITE_WORD: {path}&quot;)
     try:
         p = validate_path(path, must_exist=False)
@@ -1162,34 +1420,45 @@ async def test_write_word_roundtrip_table():
         logger.error(&quot;write_word failed: %s&quot;, e, extra={&quot;path&quot;: path})
         return f&quot;ERROR: {e}&quot;
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 5: Register <code>write_word</code> in <code>agent_utils.py</code></strong></li>
-</ul>
-<p>Add after <code>register_tool("read_excel", ...)</code>:</p>
-<pre><code class="language-python">register_tool(&quot;write_word&quot;, &quot;risky&quot;, &quot;Create a Word (.docx) file from a JSON spec&quot;, _write_word)
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 5: Register <code>write_word</code> in
+            <code>agent_utils.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>Add after <code>register_tool("read_excel", ...)</code>:</p>
+      <pre><code class="language-python">register_tool(&quot;write_word&quot;, &quot;risky&quot;, &quot;Create a Word (.docx) file from a JSON spec&quot;, _write_word)
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 6: Run write-word tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_word_roundtrip_body tests/test_office_pipeline.py::test_write_word_roundtrip_table -v
+      <ul>
+        <li>[ ] <strong>Step 6: Run write-word tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_word_roundtrip_body tests/test_office_pipeline.py::test_write_word_roundtrip_table -v
 </code></pre>
-<p>Expected: both PASS</p>
-<ul>
-<li>[ ] <strong>Step 7: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add office_pipeline.py agent_utils.py tests/test_office_pipeline.py
+      <p>Expected: both PASS</p>
+      <ul>
+        <li>[ ] <strong>Step 7: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add office_pipeline.py agent_utils.py tests/test_office_pipeline.py
 git commit -m &quot;feat: add write_word_document and write_word agent tool&quot;
 </code></pre>
-<hr />
-<h2>Task 9: <code>write_excel_document</code> + <code>_write_excel</code> tool (TDD)</h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
-- Modify: <code>office_pipeline.py</code> (append write function)<br />
-- Modify: <code>agent_utils.py</code> (add <code>_write_excel</code>)</p>
-<ul>
-<li>[ ] <strong>Step 1: Append write-excel tests</strong></li>
-</ul>
-<pre><code class="language-python">@pytest.mark.asyncio
+      <hr />
+      <h2>
+        Task 9: <code>write_excel_document</code> +
+        <code>_write_excel</code> tool (TDD)
+      </h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+        - Modify: <code>office_pipeline.py</code> (append write function)<br />
+        - Modify: <code>agent_utils.py</code> (add <code>_write_excel</code>)
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Append write-excel tests</strong></li>
+      </ul>
+      <pre><code class="language-python">@pytest.mark.asyncio
 async def test_write_excel_roundtrip_cells():
     import tempfile, json
     from agent_utils import _write_excel
@@ -1254,16 +1523,25 @@ async def test_write_excel_roundtrip_formula():
     ws = wb[&quot;Calc&quot;]
     assert ws[&quot;A3&quot;].value == &quot;=A1+A2&quot;
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_excel_roundtrip_cells -v 2&gt;&amp;1 | head -15
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_excel_roundtrip_cells -v 2&gt;&amp;1 | head -15
 </code></pre>
-<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>_write_excel</code> not yet defined.</p>
-<ul>
-<li>[ ] <strong>Step 3: Append <code>write_excel_document</code> to <code>office_pipeline.py</code></strong></li>
-</ul>
-<pre><code class="language-python">def write_excel_document(path, spec: dict) -&gt; None:
+      <p>
+        Expected: <code>ImportError</code> or <code>AttributeError</code> —
+        <code>_write_excel</code> not yet defined.
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 3: Append <code>write_excel_document</code> to
+            <code>office_pipeline.py</code></strong
+          >
+        </li>
+      </ul>
+      <pre><code class="language-python">def write_excel_document(path, spec: dict) -&gt; None:
     &quot;&quot;&quot;Create a .xlsx file from a structured spec dict.&quot;&quot;&quot;
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment
@@ -1332,11 +1610,17 @@ async def test_write_excel_roundtrip_formula():
 
     wb.save(str(path))
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 4: Add <code>_write_excel</code> to <code>agent_utils.py</code></strong></li>
-</ul>
-<p>Add immediately after <code>_write_word</code>:</p>
-<pre><code class="language-python">async def _write_excel(path: str, spec: str) -&gt; str:
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 4: Add <code>_write_excel</code> to
+            <code>agent_utils.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>Add immediately after <code>_write_word</code>:</p>
+      <pre><code class="language-python">async def _write_excel(path: str, spec: str) -&gt; str:
     log_audit(f&quot;WRITE_EXCEL: {path}&quot;)
     try:
         p = validate_path(path, must_exist=False)
@@ -1355,43 +1639,73 @@ async def test_write_excel_roundtrip_formula():
         logger.error(&quot;write_excel failed: %s&quot;, e, extra={&quot;path&quot;: path})
         return f&quot;ERROR: {e}&quot;
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 5: Register <code>write_excel</code> in <code>agent_utils.py</code></strong></li>
-</ul>
-<p>Add after <code>register_tool("write_word", ...)</code>:</p>
-<pre><code class="language-python">register_tool(&quot;write_excel&quot;, &quot;risky&quot;, &quot;Create an Excel (.xlsx) file from a JSON spec&quot;, _write_excel)
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 5: Register <code>write_excel</code> in
+            <code>agent_utils.py</code></strong
+          >
+        </li>
+      </ul>
+      <p>Add after <code>register_tool("write_word", ...)</code>:</p>
+      <pre><code class="language-python">register_tool(&quot;write_excel&quot;, &quot;risky&quot;, &quot;Create an Excel (.xlsx) file from a JSON spec&quot;, _write_excel)
 </code></pre>
-<ul>
-<li>[ ] <strong>Step 6: Run write-excel tests</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_excel_roundtrip_cells tests/test_office_pipeline.py::test_write_excel_roundtrip_formula -v
+      <ul>
+        <li>[ ] <strong>Step 6: Run write-excel tests</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_excel_roundtrip_cells tests/test_office_pipeline.py::test_write_excel_roundtrip_formula -v
 </code></pre>
-<p>Expected: both PASS</p>
-<ul>
-<li>[ ] <strong>Step 7: Run full test suite to check for regressions</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/ -v 2&gt;&amp;1 | tail -20
+      <p>Expected: both PASS</p>
+      <ul>
+        <li>
+          [ ]
+          <strong>Step 7: Run full test suite to check for regressions</strong>
+        </li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/ -v 2&gt;&amp;1 | tail -20
 </code></pre>
-<p>Expected: all tests PASS, no regressions in existing tests.</p>
-<ul>
-<li>[ ] <strong>Step 8: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add office_pipeline.py agent_utils.py tests/test_office_pipeline.py
+      <p>Expected: all tests PASS, no regressions in existing tests.</p>
+      <ul>
+        <li>[ ] <strong>Step 8: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add office_pipeline.py agent_utils.py tests/test_office_pipeline.py
 git commit -m &quot;feat: add write_excel_document and write_excel agent tool&quot;
 </code></pre>
-<hr />
-<h2>Task 10: Extend <code>/v1/document</code> endpoint in <code>gemma_bridge.py</code></h2>
-<p><strong>Files:</strong><br />
-- Modify: <code>gemma_bridge.py</code> (lines 283–310)</p>
-<ul>
-<li>[ ] <strong>Step 1: Read the current <code>upload_document</code> handler</strong></li>
-</ul>
-<p>Open <code>gemma_bridge.py</code> and locate the <code>upload_document</code> function (around line 283). It currently calls <code>pdf_pipeline.ingest_pdf</code> unconditionally.</p>
-<ul>
-<li>[ ] <strong>Step 2: Replace the routing logic in <code>upload_document</code></strong></li>
-</ul>
-<p>Find this block (lines ~284–309):</p>
-<pre><code class="language-python">@app.post(&quot;/v1/document&quot;)
+      <hr />
+      <h2>
+        Task 10: Extend <code>/v1/document</code> endpoint in
+        <code>gemma_bridge.py</code>
+      </h2>
+      <p>
+        <strong>Files:</strong><br />
+        - Modify: <code>gemma_bridge.py</code> (lines 283–310)
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 1: Read the current
+            <code>upload_document</code> handler</strong
+          >
+        </li>
+      </ul>
+      <p>
+        Open <code>gemma_bridge.py</code> and locate the
+        <code>upload_document</code> function (around line 283). It currently
+        calls <code>pdf_pipeline.ingest_pdf</code> unconditionally.
+      </p>
+      <ul>
+        <li>
+          [ ]
+          <strong
+            >Step 2: Replace the routing logic in
+            <code>upload_document</code></strong
+          >
+        </li>
+      </ul>
+      <p>Find this block (lines ~284–309):</p>
+      <pre><code class="language-python">@app.post(&quot;/v1/document&quot;)
 async def upload_document(file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
@@ -1399,8 +1713,11 @@ async def upload_document(file: UploadFile = File(...)):
 
         doc = pdf_pipeline.ingest_pdf(file_bytes, filename)
 </code></pre>
-<p>Replace only the <code>doc = pdf_pipeline.ingest_pdf(...)</code> call and add the routing. The full updated function body becomes:</p>
-<pre><code class="language-python">@app.post(&quot;/v1/document&quot;)
+      <p>
+        Replace only the <code>doc = pdf_pipeline.ingest_pdf(...)</code> call
+        and add the routing. The full updated function body becomes:
+      </p>
+      <pre><code class="language-python">@app.post(&quot;/v1/document&quot;)
 async def upload_document(file: UploadFile = File(...)):
     try:
         file_bytes = await file.read()
@@ -1413,12 +1730,20 @@ async def upload_document(file: UploadFile = File(...)):
         else:
             doc = pdf_pipeline.ingest_pdf(file_bytes, filename)
 </code></pre>
-<p>Leave the rest of the function (<code>if doc is None:</code> block onwards) unchanged.</p>
-<ul>
-<li>[ ] <strong>Step 3: Smoke test the upload endpoint manually</strong></li>
-</ul>
-<p>Ensure the bridge is running (kill existing processes and restart per your server restart procedure), then:</p>
-<pre><code class="language-bash"># Create a tiny test docx
+      <p>
+        Leave the rest of the function (<code>if doc is None:</code> block
+        onwards) unchanged.
+      </p>
+      <ul>
+        <li>
+          [ ] <strong>Step 3: Smoke test the upload endpoint manually</strong>
+        </li>
+      </ul>
+      <p>
+        Ensure the bridge is running (kill existing processes and restart per
+        your server restart procedure), then:
+      </p>
+      <pre><code class="language-bash"># Create a tiny test docx
 python3 -c &quot;
 from docx import Document
 import io
@@ -1431,11 +1756,15 @@ doc.save('/tmp/smoke_test.docx')
 curl -s -X POST http://localhost:9379/v1/document \
   -F &quot;file=@/tmp/smoke_test.docx&quot; | python3 -m json.tool
 </code></pre>
-<p>Expected: JSON response with <code>doc_id</code>, <code>filename: "smoke_test.docx"</code>, <code>chunk_count &gt;= 1</code>.</p>
-<ul>
-<li>[ ] <strong>Step 4: Smoke test Excel upload</strong></li>
-</ul>
-<pre><code class="language-bash">python3 -c &quot;
+      <p>
+        Expected: JSON response with <code>doc_id</code>,
+        <code>filename: "smoke_test.docx"</code>,
+        <code>chunk_count &gt;= 1</code>.
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Smoke test Excel upload</strong></li>
+      </ul>
+      <pre><code class="language-bash">python3 -c &quot;
 from openpyxl import Workbook
 wb = Workbook()
 ws = wb.active
@@ -1449,35 +1778,41 @@ wb.save('/tmp/smoke_test.xlsx')
 curl -s -X POST http://localhost:9379/v1/document \
   -F &quot;file=@/tmp/smoke_test.xlsx&quot; | python3 -m json.tool
 </code></pre>
-<p>Expected: JSON response with <code>doc_id</code>, <code>filename: "smoke_test.xlsx"</code>, <code>chunk_count &gt;= 1</code>.</p>
-<ul>
-<li>[ ] <strong>Step 5: Commit</strong></li>
-</ul>
-<pre><code class="language-bash">git add gemma_bridge.py
+      <p>
+        Expected: JSON response with <code>doc_id</code>,
+        <code>filename: "smoke_test.xlsx"</code>,
+        <code>chunk_count &gt;= 1</code>.
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add gemma_bridge.py
 git commit -m &quot;feat: route .docx and .xlsx uploads through ingest_office in gemma_bridge&quot;
 </code></pre>
-<hr />
-<h2>Task 11: Full test suite pass + final commit</h2>
-<ul>
-<li>[ ] <strong>Step 1: Run the full test suite</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/ -v
+      <hr />
+      <h2>Task 11: Full test suite pass + final commit</h2>
+      <ul>
+        <li>[ ] <strong>Step 1: Run the full test suite</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/ -v
 </code></pre>
-<p>Expected: all tests PASS.</p>
-<ul>
-<li>[ ] <strong>Step 2: Run the smoke test script</strong></li>
-</ul>
-<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python scripts/smoke_test.py
+      <p>Expected: all tests PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Run the smoke test script</strong></li>
+      </ul>
+      <pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python scripts/smoke_test.py
 </code></pre>
-<p>Expected: no failures.</p>
-<ul>
-<li>[ ] <strong>Step 3: Final commit if any loose changes remain</strong></li>
-</ul>
-<pre><code class="language-bash">git status
+      <p>Expected: no failures.</p>
+      <ul>
+        <li>
+          [ ] <strong>Step 3: Final commit if any loose changes remain</strong>
+        </li>
+      </ul>
+      <pre><code class="language-bash">git status
 # If anything is unstaged:
 git add -p
 git commit -m &quot;chore: finalize Word and Excel support&quot;
 </code></pre>
-</div>
-</body>
+    </div>
+  </body>
 </html>

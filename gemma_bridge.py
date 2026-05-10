@@ -1,42 +1,35 @@
 import asyncio
+import logging
 import os
+import re
+import subprocess
 import time
 import uuid
 import uuid as _uuid
-import base64
-import tempfile
-import threading
-import queue
-import json
-import logging
-import re
-import subprocess
-from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.middleware.base import BaseHTTPMiddleware
-import uvicorn
+
 import psutil
+import uvicorn
+from fastapi import BackgroundTasks, FastAPI, File, Request, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
+
 try:
     import mlx.core as mx
 except ImportError:
     mx = None
-import pdf_pipeline
 import image_pipeline
+import pdf_pipeline
 from agent_utils import (
     AGENT_SYSTEM_PROMPT,
-    log_audit,
-    strip_thinking_blocks,
 )
 from inference_engine import (
-    run_inference, 
-    MLX_MODELS_DIR, 
-    _MODEL_DIR_MAP, 
-    handle_mlx_vlm_request, 
+    _MODEL_DIR_MAP,
+    MLX_MODELS_DIR,
     format_openai_response,
     get_avg_latency,
     get_loaded_models,
-    get_status_info
+    run_inference,
 )
 from logging_config import setup_logging, task_id_var
 
@@ -159,15 +152,16 @@ def strip_thinking(text):
     text = re.sub(r'<\|turn\|?>.*', '', text)
     return text.strip()
 
-from agent_utils import TelemetryManager
 from agent import (
-    router as agent_router, 
-    scheduler, 
+    confirm_queues,
     load_scheduler_tasks_on_startup,
     react_loop_sse,
+    scheduler,
     sse_queues,
-    confirm_queues
 )
+from agent import router as agent_router
+from agent_utils import TelemetryManager
+
 app.include_router(agent_router, prefix="/v1/agent")
 
 @app.on_event("startup")

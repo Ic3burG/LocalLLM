@@ -1,7 +1,10 @@
-import sys, os
+import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import io
+
 import pytest
 
 
@@ -81,8 +84,8 @@ def _make_word_bytes_with_comments() -> bytes:
     )
 
     # Inject comments part into the docx package
-    from docx.opc.part import Part
     from docx.opc.packuri import PackURI
+    from docx.opc.part import Part
     comments_part = Part(
         PackURI("/word/comments.xml"),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
@@ -100,14 +103,13 @@ def _make_word_bytes_with_comments() -> bytes:
 def _make_word_bytes_with_tracked_changes() -> bytes:
     """Build a .docx with a tracked insertion."""
     from docx import Document
-    from docx.oxml.ns import qn
     from lxml import etree
 
     doc = Document()
     para = doc.add_paragraph()
 
     # Add a normal run
-    run = para.add_run("Original text. ")
+    para.add_run("Original text. ")
 
     # Add a tracked insertion run
     ins_xml = (
@@ -278,8 +280,9 @@ def test_ingest_office_unknown_extension_returns_none():
 
 
 def test_ingest_office_empty_word_returns_none():
-    from office_pipeline import ingest_office
     from docx import Document
+
+    from office_pipeline import ingest_office
     doc = Document()
     buf = io.BytesIO()
     doc.save(buf)
@@ -289,8 +292,9 @@ def test_ingest_office_empty_word_returns_none():
 
 @pytest.mark.asyncio
 async def test_read_word_tool_returns_text(tmp_path):
-    from agent_utils import _read_word
     import os
+
+    from agent_utils import _read_word
     # Write inside project sandbox (cwd)
     project_tmp = os.path.join(os.getcwd(), "tmp_test_word.docx")
     try:
@@ -306,8 +310,9 @@ async def test_read_word_tool_returns_text(tmp_path):
 
 @pytest.mark.asyncio
 async def test_read_excel_tool_returns_text(tmp_path):
-    from agent_utils import _read_excel
     import os
+
+    from agent_utils import _read_excel
     # Write inside project sandbox (cwd)
     project_tmp = os.path.join(os.getcwd(), "tmp_test_excel.xlsx")
     try:
@@ -337,7 +342,9 @@ async def test_read_excel_tool_missing_file():
 
 @pytest.mark.asyncio
 async def test_write_word_roundtrip_body():
-    import tempfile, json, os
+    import json
+    import os
+
     from agent_utils import _write_word
     from office_pipeline import extract_text_from_word
 
@@ -367,7 +374,9 @@ async def test_write_word_roundtrip_body():
 
 @pytest.mark.asyncio
 async def test_write_word_roundtrip_table():
-    import tempfile, json, os
+    import json
+    import os
+
     from agent_utils import _write_word
 
     spec = {
@@ -398,9 +407,12 @@ async def test_write_word_roundtrip_table():
 
 @pytest.mark.asyncio
 async def test_write_excel_roundtrip_cells():
-    import json, os
-    from agent_utils import _write_excel
+    import json
+    import os
+
     from openpyxl import load_workbook
+
+    from agent_utils import _write_excel
 
     spec = {
         "properties": {"title": "Q1 Results"},
@@ -435,9 +447,12 @@ async def test_write_excel_roundtrip_cells():
 
 @pytest.mark.asyncio
 async def test_write_excel_roundtrip_formula():
-    import json, os
-    from agent_utils import _write_excel
+    import json
+    import os
+
     from openpyxl import load_workbook
+
+    from agent_utils import _write_excel
 
     spec = {
         "sheets": [
