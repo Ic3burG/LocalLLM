@@ -140,6 +140,64 @@
         .agent-done-message { padding: 8px 12px; color: #22c55e; font-size: 13px; }
         .agent-error-message { padding: 8px 12px; color: #ef4444; font-size: 13px; }
 
+        /* Context Menu & All Chats Styles */
+        #context-menu {
+            position: fixed;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 4px;
+            z-index: 1000;
+            min-width: 160px;
+            display: none;
+            backdrop-filter: blur(8px);
+        }
+        .context-menu-item {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 6px;
+            color: var(--color-text);
+            transition: all 0.2s;
+        }
+        .context-menu-item:hover {
+            background: var(--color-bg);
+        }
+        .context-menu-item.danger:hover {
+            background: #fef2f2;
+            color: #ef4444;
+        }
+        html.dark .context-menu-item.danger:hover {
+            background: #7f1d1d33;
+        }
+
+        .all-chats-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--color-border);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .all-chats-item:hover {
+            background: var(--color-bg);
+        }
+        .all-chats-item.selected {
+            background: rgba(59, 130, 246, 0.08);
+        }
+        .all-chats-checkbox {
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 2px solid var(--color-border);
+            cursor: pointer;
+        }
+
         /* Scheduled tasks panel */
         .sidebar-section { border-top: 1px solid var(--color-border); padding-top: 8px; margin-top: 8px; }
         .sidebar-section-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; padding: 6px 0; font-size: 13px; font-weight: 600; color: var(--color-text-muted); user-select: none; }
@@ -176,9 +234,13 @@
         </div>
         
         <div class="flex-1 overflow-y-auto flex flex-col">
-            <div class="p-2">
-                <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2 px-2">History</div>
+            <div class="flex-1 overflow-y-auto p-2">
+                <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2 px-2">Recents</div>
                 <div id="history-list" class="space-y-1"></div>
+                <button onclick="showAllChats()" class="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors group">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover:translate-x-0.5 transition-transform"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v10"/><path d="M8 11h8"/></svg>
+                    All Chats
+                </button>
             </div>
 
             <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">
@@ -454,6 +516,51 @@
 
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden md:hidden"></div>
 
+    <!-- Context Menu -->
+    <div id="context-menu">
+        <div class="context-menu-item" onclick="handleContextAction('star')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" id="context-star-icon"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+            <span id="context-star-text">Star</span>
+        </div>
+        <div class="context-menu-item" onclick="handleContextAction('rename')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+            Rename
+        </div>
+        <div class="h-[1px] bg-gray-100 dark:bg-gray-800 my-1"></div>
+        <div class="context-menu-item danger" onclick="handleContextAction('delete')">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+            Delete
+        </div>
+    </div>
+
+    <!-- All Chats Modal -->
+    <div id="all-chats-modal" class="fixed inset-0 z-[60] flex items-center justify-center modal-overlay hidden-modal">
+        <div class="modal-content bg-white dark:bg-darkSurface w-full max-w-4xl max-h-[85vh] m-4 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <div class="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-darkSurface sticky top-0 z-10">
+                <div class="flex items-center gap-4 flex-1">
+                    <h2 class="text-xl font-bold dark:text-white">All Chats</h2>
+                    <div class="relative flex-1 max-w-md">
+                        <input type="text" id="chat-search" placeholder="Search chats..." class="w-full pl-9 pr-4 py-2 bg-gray-50 dark:bg-gray-800 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 dark:text-white">
+                        <svg class="absolute left-3 top-2.5 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="bulk-delete-btn" onclick="bulkDelete()" class="hidden px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-semibold rounded-xl hover:bg-red-100 transition-colors flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                        Delete Selected (<span id="selected-count">0</span>)
+                    </button>
+                    <button onclick="closeAllChats()" class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors dark:text-gray-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto min-h-0" id="all-chats-list">
+                <!-- All chats will be rendered here -->
+            </div>
+        </div>
+    </div>
+
     <script>
         const chatBox = document.getElementById('chat-box');
         const chatForm = document.getElementById('chat-form');
@@ -503,9 +610,185 @@
 
         // State
         let currentChatId = null;
+        let contextChatId = null;
+        let selectedChatIds = new Set();
+        let searchQuery = "";
         const alwaysAllowedTools = new Set(); // tools auto-approved for this browser session
         let chats = JSON.parse(localStorage.getItem('gemma_chats') || '[]');
         let currentAttachments = [];
+
+        // --- Context Menu Logic ---
+        const contextMenu = document.getElementById('context-menu');
+        const contextStarIcon = document.getElementById('context-star-icon');
+        const contextStarText = document.getElementById('context-star-text');
+
+        function showContextMenu(e, id) {
+            e.preventDefault();
+            e.stopPropagation();
+            contextChatId = id;
+            const chat = chats.find(c => c.id === id);
+            
+            // Update star text
+            const isStarred = chat.starred || false;
+            contextStarText.textContent = isStarred ? 'Unstar' : 'Star';
+            contextStarIcon.setAttribute('fill', isStarred ? 'currentColor' : 'none');
+
+            contextMenu.style.display = 'block';
+            
+            // Position menu
+            const menuWidth = contextMenu.offsetWidth;
+            const menuHeight = contextMenu.offsetHeight;
+            const pageWidth = window.innerWidth;
+            const pageHeight = window.innerHeight;
+
+            let x = e.clientX;
+            let y = e.clientY;
+
+            if (x + menuWidth > pageWidth) x -= menuWidth;
+            if (y + menuHeight > pageHeight) y -= menuHeight;
+
+            contextMenu.style.left = `${x}px`;
+            contextMenu.style.top = `${y}px`;
+
+            document.addEventListener('click', hideContextMenu, { once: true });
+        }
+
+        function hideContextMenu() {
+            contextMenu.style.display = 'none';
+        }
+
+        function handleContextAction(action) {
+            if (!contextChatId) return;
+            const chatIndex = chats.findIndex(c => c.id === contextChatId);
+            if (chatIndex === -1) return;
+
+            if (action === 'star') {
+                chats[chatIndex].starred = !chats[chatIndex].starred;
+                saveChats();
+            } else if (action === 'rename') {
+                const newTitle = prompt('Rename chat:', chats[chatIndex].title);
+                if (newTitle && newTitle.trim()) {
+                    chats[chatIndex].title = newTitle.trim();
+                    saveChats();
+                    if (currentChatId === contextChatId) chatTitle.textContent = chats[chatIndex].title;
+                }
+            } else if (action === 'delete') {
+                deleteChat(contextChatId, { stopPropagation: () => {} });
+            }
+            hideContextMenu();
+        }
+
+        // --- All Chats Modal Logic ---
+        const allChatsModal = document.getElementById('all-chats-modal');
+        const allChatsList = document.getElementById('all-chats-list');
+        const chatSearch = document.getElementById('chat-search');
+        const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+        const selectedCount = document.getElementById('selected-count');
+
+        function showAllChats() {
+            allChatsModal.classList.remove('hidden-modal');
+            renderAllChats();
+            selectedChatIds.clear();
+            updateBulkDeleteUI();
+        }
+
+        function closeAllChats() {
+            allChatsModal.classList.add('hidden-modal');
+        }
+
+        function renderAllChats() {
+            const filtered = chats.filter(c => {
+                const titleMatch = c.title.toLowerCase().includes(searchQuery.toLowerCase());
+                const messageMatch = c.messages && c.messages.some(m => {
+                    const content = m.content;
+                    if (typeof content === 'string') return content.toLowerCase().includes(searchQuery.toLowerCase());
+                    if (Array.isArray(content)) return content.some(part => part.type === 'text' && part.text && part.text.toLowerCase().includes(searchQuery.toLowerCase()));
+                    return false;
+                });
+                return titleMatch || messageMatch;
+            });
+
+            allChatsList.innerHTML = filtered.length ? filtered.map(chat => `
+                <div class="all-chats-item ${selectedChatIds.has(chat.id) ? 'selected' : ''}" onclick="toggleSelectChat('${chat.id}', event)">
+                    <input type="checkbox" class="all-chats-checkbox" ${selectedChatIds.has(chat.id) ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelectChat('${chat.id}', event)">
+                    <div class="flex-1 min-w-0" onclick="event.stopPropagation(); loadFromAllChats('${chat.id}')">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="font-semibold dark:text-white truncate">${chat.title}</span>
+                            ${chat.starred ? '<svg class="text-yellow-400 fill-current" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' : ''}
+                        </div>
+                        <div class="text-xs text-gray-500 flex items-center gap-3">
+                            <span>${chat.model || 'Gemma 4'}</span>
+                            <span>•</span>
+                            <span>${formatTimeAgo(chat.timestamp)}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                         <button onclick="event.stopPropagation(); deleteChat('${chat.id}', event)" class="p-2 hover:text-red-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('') : `
+                <div class="p-12 text-center text-gray-500">
+                    <p>No chats found matching your search.</p>
+                </div>
+            `;
+        }
+
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return 'Unknown time';
+            const seconds = Math.floor((Date.now() - timestamp) / 1000);
+            if (seconds < 60) return 'Just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+            const days = Math.floor(hours / 24);
+            if (days < 7) return `${days}d ago`;
+            return new Date(timestamp).toLocaleDateString();
+        }
+
+        function toggleSelectChat(id, e) {
+            if (selectedChatIds.has(id)) selectedChatIds.delete(id);
+            else selectedChatIds.add(id);
+            renderAllChats();
+            updateBulkDeleteUI();
+        }
+
+        function updateBulkDeleteUI() {
+            const count = selectedChatIds.size;
+            selectedCount.textContent = count;
+            bulkDeleteBtn.classList.toggle('hidden', count === 0);
+        }
+
+        function loadFromAllChats(id) {
+            loadChat(id);
+            closeAllChats();
+        }
+
+        async function bulkDelete() {
+            if (!confirm(`Are you sure you want to delete ${selectedChatIds.size} chats?`)) return;
+            chats = chats.filter(c => !selectedChatIds.has(c.id));
+            if (selectedChatIds.has(currentChatId)) {
+                currentChatId = null;
+                chatBox.innerHTML = '';
+                chatBox.appendChild(welcomeMessage);
+                chatTitle.textContent = 'Gemma 4 Local';
+            }
+            selectedChatIds.clear();
+            saveChats();
+            renderAllChats();
+            updateBulkDeleteUI();
+        }
+
+        chatSearch.addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            renderAllChats();
+        });
+
+        allChatsModal.addEventListener('click', (e) => {
+            if (e.target === allChatsModal) closeAllChats();
+        });
 
         // Theme Icons
         const sunIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`;
@@ -915,17 +1198,30 @@
         }
 
         function renderHistory() {
-            historyList.innerHTML = chats.map(chat => `
-                <div onclick="loadChat('${chat.id}')" class="group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-colors ${currentChatId === chat.id ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}">
-                    <div class="flex items-center gap-2 overflow-hidden">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="flex-shrink-0"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            // Only show top 10 in the sidebar
+            const recentChats = chats.slice(0, 10);
+            historyList.innerHTML = recentChats.map(chat => `
+                <div onclick="loadChat('${chat.id}')" 
+                     oncontextmenu="showContextMenu(event, '${chat.id}')"
+                     class="group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all ${currentChatId === chat.id ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}">
+                    <div class="flex items-center gap-2 overflow-hidden flex-1">
+                        <div class="flex-shrink-0">
+                            ${chat.starred ? 
+                                `<svg class="text-yellow-400 fill-current" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>` :
+                                `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`
+                            }
+                        </div>
                         <span class="text-xs truncate font-medium">${chat.title}</span>
                     </div>
-                    <button onclick="deleteChat('${chat.id}', event)" class="opacity-0 group-hover:opacity-100 p-1 hover:text-red-500 transition-opacity">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    <button onclick="showContextMenu(event, '${chat.id}')" class="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                     </button>
                 </div>
             `).join('');
+            
+            if (allChatsModal && !allChatsModal.classList.contains('hidden-modal')) {
+                renderAllChats();
+            }
         }
 
         newChatBtn.addEventListener('click', createNewChat);
@@ -1181,6 +1477,15 @@
             appendMessage('user', text || "Sent attachments", attachments);
             userInput.value = ''; userInput.style.height = 'auto'; currentAttachments = []; renderPreviews();
             currentChat.messages.push({ role: 'user', content: messageContent });
+            currentChat.timestamp = Date.now();
+            
+            // Move chat to top of array
+            const chatIdx = chats.findIndex(c => c.id === currentChatId);
+            if (chatIdx > 0) {
+                chats.splice(chatIdx, 1);
+                chats.unshift(currentChat);
+            }
+            
             saveChats();
 
             // Auto-generate title after the first user message if it's still generic
