@@ -397,7 +397,7 @@ async def generate_image_route(request: Request):
     steps = int(body.get("steps", 4))
     style = body.get("style", "default")
 
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(
@@ -407,15 +407,15 @@ async def generate_image_route(request: Request):
             timeout=120.0,
         )
         return JSONResponse(result)
-    except FileNotFoundError:
-        return JSONResponse({"error": "model_not_found"}, status_code=503)
     except asyncio.TimeoutError:
         return JSONResponse({"error": "timeout"}, status_code=504)
+    except FileNotFoundError:
+        return JSONResponse({"error": "model_not_found"}, status_code=503)
     except MemoryError:
         return JSONResponse({"error": "insufficient_memory"}, status_code=507)
     except Exception as e:
         logger.error("image generation failed: %s", e, exc_info=True)
-        return JSONResponse({"error": "generation_failed", "detail": str(e)}, status_code=500)
+        return JSONResponse({"error": "generation_failed"}, status_code=500)
 
 
 @app.get("/v1/image/models")
