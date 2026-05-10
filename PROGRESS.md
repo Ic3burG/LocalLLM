@@ -523,36 +523,57 @@ Connected the local project to a remote GitHub repository to enable collaboratio
 
 ---
 
-## 🎨 FLUX.1-schnell Image Generation — May 10, 2026 (Session 3)
+## 🎨 FLUX.1-schnell Image Generation — May 10, 2026 (Sessions 3–4)
 
-Implemented the on-device image generation pipeline using the `mflux` library, which provides a high-performance MLX implementation of FLUX.1-schnell.
+Full end-to-end on-device image generation, from backend pipeline through agent tool, SSE delivery, and frontend UI.
 
-### Highlights
+### Architecture
 
-- **Tech Stack Pivot**: Switched from `mlx-stable-diffusion` (not on PyPI) to `mflux`, leveraging FLUX.1-schnell's superior quality and efficiency (requires only 4 inference steps).
-- **Core Pipeline**: Created `image_pipeline.py` with full support for model swap detection (unloading text models to free VRAM), style presets, and size parsing.
-- **Automated Warm-up**: Implemented `scripts/download_sd.sh` to handle the automatic download of 4-bit quantized weights from HuggingFace and verify the installation with a test generation.
-- **Dependency Optimization**: Updated `requirements.txt` to include `mflux` and restored a comprehensive set of originally-tracked packages to ensure environment stability.
+```
+Browser (Image mode) → server.js /api/image/* → gemma_bridge /v1/image/*
+                                                     └─ image_pipeline.generate_image()
+                                                          └─ mflux FLUX.1-schnell (4-bit, MLX)
+
+Agent ReAct loop → generate_image tool → __image__ JSON marker
+                                             └─ react_loop_sse detects marker
+                                                  └─ SSE {"type":"image"} → appendImageCard()
+```
+
+### Key Technical Decisions
+
+- **mflux (not mlx-stable-diffusion)**: The planned `mlx-stable-diffusion` package doesn't exist on PyPI. `mflux` v0.17.5 provides FLUX.1-schnell via `from mflux.models.flux.variants.txt2img.flux import Flux1`.
+- **4 inference steps default**: FLUX.1-schnell is trained to converge in 4 steps; range capped at 1–12.
+- **Metal memory management**: `_should_swap()` unloads the text model before loading Flux if it's a large (non-fast) model. `mx.metal.clear_cache()` is also called *after* generation to free Flux weights immediately.
+- **`_imageStore` Map**: Base64 image data is stored in a module-level `Map()` keyed by sequential IDs. DOM buttons carry only `data-image-id` — never raw base64 — to prevent XSS and avoid breaking HTML attribute parsers.
+- **`__image__` SSE marker**: `_generate_image()` returns `json.dumps({"__image__": True, ...})`. `react_loop_sse` detects this via `json.loads()` + `.get("__image__")` (not a fragile `startswith` check) and emits a `{"type": "image"}` SSE event.
+- **`generate_image` registered as `"risky"`**: Requires user confirmation gate — prevents the agent from running costly multi-GB GPU operations autonomously.
+- **Size allowlist**: `_parse_size` validates against a fixed set (`512x512`, `768x768`, `512x768`, `768x512`, `1024x1024`) and raises `ValueError` on anything else; the bridge route catches it and returns HTTP 400.
 
 ### Files Changed
 
 | File | Change |
 |---|---|
-| `image_pipeline.py` | **New** — Full FLUX.1-schnell generation pipeline with model swap and threading locks. |
-| `tests/test_image_pipeline.py` | **New** — Unit tests for style application, size parsing, and model swap logic. Fixed `TypeError` by mocking `_Config`. |
-| `requirements.txt` | Added `mflux`; restored full package list. |
-| `scripts/download_sd.sh` | **New** — Automated model download and verification script for FLUX.1-schnell. |
-| `docs/superpowers/plans/2026-05-10-mlx-sd.md` | **New** — Design and implementation roadmap for integrated image generation. |
+| `image_pipeline.py` | **New** — `generate_image()` with threading lock, model swap, size allowlist, style presets, Metal cache clear after generation |
+| `gemma_bridge.py` | Added `POST /v1/image/generate` and `GET /v1/image/models`; catches `ValueError` → 400 |
+| `gemma-web/server.js` | Added `/api/image/generate` and `/api/image/models` proxy routes |
+| `agent_utils.py` | Added `_generate_image` async tool; registered as `"risky"`; added to `AGENT_SYSTEM_PROMPT` |
+| `agent.py` | `react_loop_sse` detects `__image__` marker via JSON parse and emits `type: "image"` SSE event |
+| `gemma-web/index.html` | Mode pill (Chat / Image); size/steps/style controls; shimmer; image card with copy/download; lightbox with keyboard nav; send button disabled during generation |
+| `scripts/download_sd.sh` | **New** — Downloads and smoke-tests FLUX.1-schnell 4-bit weights |
+| `requirements.txt` | Added `mflux`; restored full package list |
+| `tests/test_image_pipeline.py` | **New** — 15 tests: style, size validation (including invalid/malformed), swap logic, full generate mock |
+| `tests/test_agent_tools.py` | Added 2 tests for `_generate_image` tool (success marker, error path) |
+| `scripts/smoke_test.py` | Added `test_image_models()` connectivity check |
 
 ---
 
 ## 📈 Current Status (as of May 10, 2026)
 
-
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
-- **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning).
-- **Tools:** 36 registered tools.
+- **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning); FLUX.1-schnell (image generation).
+- **Tools:** 37 registered tools (36 text + `generate_image`).
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG; Word and Excel also agent-writable.
-- **UI:** Universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard; Deep Thinking toggle; Advanced Sidebar with search & starred chats.
-- **Integrity:** 100% test pass rate (100+ tests including telemetry and office pipeline suites).
+- **Image Generation:** On-device FLUX.1-schnell via mflux; agent-callable; full frontend UI with shimmer, image card, lightbox.
+- **UI:** Image mode pill; universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard; Deep Thinking toggle; Advanced Sidebar with search & starred chats.
+- **Integrity:** 115 tests passing; pre-existing failures in telemetry, deep-think integration, and office pipeline suites are environment-dependent and not regressions.
 
