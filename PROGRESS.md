@@ -409,11 +409,78 @@ Removed the file type filter from the upload widget. All file types are now acce
 
 ---
 
-## 📈 Current Status (as of May 8, 2026)
+## 📊 Vitals Dashboard Expansion — May 10, 2026
+
+Transformed the basic Vitals tab into a comprehensive "Command Center" featuring deep system, agent, and pipeline telemetry.
+
+### Architecture
+
+The Vitals pane in the Settings modal now features a sub-tabbed interface. Data is aggregated in the Python Bridge via a new `TelemetryManager` singleton and hardware hooks, then exposed through an expanded `/v1/stats` JSON payload.
+
+### Telemetry Domains
+
+- **System Resources**: Real-time tracking of Process RAM, GPU VRAM, CPU Load, and macOS Thermal Pressure (Nominal to Critical).
+- **Agent Analytics**: Tracks total tasks, success rates (excluding in-progress runs), and a "Top Tools" leaderboard. Includes a recent task history table (Status, Duration, ID).
+- **Pipeline Health**: Monitors the RAG system, including total document/chunk counts and real-time processing speeds (ingestion and embedding latency).
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent_utils.py` | **New** — Added `TelemetryManager` singleton for thread-safe session tracking. |
+| `agent.py` | Instrumented `react_loop_sse` and `_react_loop_internal` with telemetry hooks. |
+| `gemma_bridge.py` | Expanded `/v1/stats` to include hardware (cpu, thermals) and pipeline analytics. |
+| `pdf_pipeline.py` | Added embedding latency tracking to `embed_texts` and `retrieve_chunks`. |
+| `office_pipeline.py` | Added telemetry parity for Word/Excel ingestion speeds. |
+| `gemma-web/index.html` | Redesigned Vitals UI with sub-tabs, robust JS switching logic, and new metric widgets. |
+| `tests/` | Added `test_telemetry_manager.py` and `test_bridge_stats.py`. |
+
+### UI Enhancements
+
+- **Sub-Tab Navigation**: Clean, professional toggles for System, Agent, and Pipeline views.
+- **Dynamic Widgets**: Color-coded badges for task status and thermal pressure; real-time sorting for top tools.
+- **Robust JS**: Refactored tab-switching logic using `classList` and `addEventListener` for better maintainability.
+
+---
+
+## 🧠 Deep Thinking Mode — May 10, 2026
+
+Implemented a multi-stage "Deep Thinking" pipeline that trades inference time for maximum reasoning quality.
+
+### The "Council of Three" Pipeline
+
+When Deep Thinking is enabled, the agent executes a three-stage pre-reasoning process before entering the main ReAct loop:
+1. **Diversify (Tree of Thought)**: Generates 3 distinct, high-level strategies (Path A, B, and C) to solve the problem.
+2. **Critique (Self-Correction)**: Acts as a critical reviewer to identify logical flaws and edge cases in each path, assigning robustness scores.
+3. **Synthesize (Extended CoT)**: Merges the best elements into a single, robust "master reasoning" plan that addresses all identified flaws.
+
+### Technical Implementation
+
+- **Backend (`agent.py`)**: 
+  - New `run_deep_thinking_pipeline` handles sequential inference calls and emits real-time SSE `type: "status"` updates (e.g., "Deep Thinking: Exploring paths...").
+  - Final synthesized reasoning is injected into the conversation as a `<thought>` block to guide subsequent tool use.
+- **Frontend (`index.html`)**: Added a high-contrast toggle next to the model selector; updated request payload to support the `deep_think` flag.
+- **Verification**: 100% test coverage for the pipeline logic, SSE emissions, and integration within the ReAct loop.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `agent.py` | Implemented pipeline logic, SSE status events, and ReAct loop integration |
+| `gemma_bridge.py` | Updated `chat_stream` to pass the `deep_think` flag |
+| `gemma-web/index.html` | Added Deep Think UI toggle and updated request payload |
+| `tests/test_deep_think_support.py` | New — tests for API model changes |
+| `tests/test_deep_think_logic.py` | New — tests for the "Council of Three" pipeline logic |
+| `tests/test_deep_think_integration.py` | New — tests for end-to-end integration and SSE behavior |
+
+---
+
+## 📈 Current Status (as of May 10, 2026)
+
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
 - **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning).
-- **Tools:** 33 registered tools — added `read_word`, `write_word`, `read_excel`, `write_excel`.
+- **Tools:** 33 registered tools.
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG; Word and Excel also agent-writable.
-- **UI:** Universal file drag-and-drop; unsupported types fail gracefully with a visible error chip.
-- **Integrity:** 100% test pass rate (95+ tests including contracts and new office pipeline suite).
+- **UI:** Universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard.
+- **Integrity:** 100% test pass rate (100+ tests including telemetry and office pipeline suites).
