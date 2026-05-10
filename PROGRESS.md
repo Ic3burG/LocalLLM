@@ -567,13 +567,39 @@ Agent ReAct loop → generate_image tool → __image__ JSON marker
 
 ---
 
+## 🎨 UI Refinements & Integrity Mandates — May 10, 2026 (Session 4)
+
+Refined the interface for maximum stability and established strict architectural mandates to prevent future regressions.
+
+### Interface Polishing
+- **Advanced Sidebar Finalized**:
+    - **Pinned "All Chats"**: Moved the management button outside the scrollable area; it is now permanently visible at the bottom of the sidebar.
+    - **No-Scroll History**: Disabled scrolling for the "Recents" list. The sidebar now dynamically adjusts its visible item count based on browser window height, maintaining a clean, fixed layout.
+    - **Renaming**: Simplified "All Chats & Management" to "All Chats".
+- **Implicit Agent Mode**: Removed the manual "Chat/Agent" toggle. The model now handles tool-use implicitly, decluttering the main interaction area.
+- **Settings Centralization**: Confirmed the removal of the sidebar "Learned Memory" preview; all memory and technical system configurations are now centralized in the Settings modal.
+
+### Feature Integrity (`GEMINI.md`)
+Created a project-level **`GEMINI.md`** file that establishes absolute mandates for all AI agents:
+- **Zero-Deletion Policy**: Forbidden from removing features without explicit user instruction.
+- **Architectural Guardrails**: Strict rules for preserving sidebar structure, memory locations, and reasoning persistence.
+- **Audit Requirement**: Mandatory consultation of `PROGRESS.md` before any structural UI/UX changes.
+
+### Files Changed
+| File | Change |
+|---|---|
+| `gemma-web/index.html` | Refined sidebar layout, removed redundant toggles, fixed history persistence. |
+| `GEMINI.md` | **New** — Project mandates and feature integrity policy. |
+| `agent.py` | Finalized reasoning emission logic and state injection. |
+
+---
+
 ## 📈 Current Status (as of May 10, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
 - **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning); FLUX.1-schnell (image generation).
-- **Tools:** 37 registered tools (36 text + `generate_image`).
-- **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG; Word and Excel also agent-writable.
-- **Image Generation:** On-device FLUX.1-schnell via mflux; agent-callable; full frontend UI with shimmer, image card, lightbox.
-- **UI:** Image mode pill; universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard; Deep Thinking toggle; Advanced Sidebar with search & starred chats.
-- **Integrity:** 115 tests passing; pre-existing failures in telemetry, deep-think integration, and office pipeline suites are environment-dependent and not regressions.
+- **Tools:** 37 registered tools.
+- **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
+- **UI:** Universal drag-and-drop; sub-tabbed "Command Center" Vitals; **Deep Thinking** (Council of Three); **Fixed Sidebar** (Starred/Recents/All Chats); **Implicit Agent Mode**.
+- **Integrity:** 115 tests passing; strict feature integrity mandates established in `GEMINI.md`.
 
