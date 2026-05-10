@@ -505,8 +505,34 @@ Connected the local project to a remote GitHub repository to enable collaboratio
 
 | File          | Change                                                                                |
 | ------------- | ------------------------------------------------------------------------------------- |
-| `.gitignore`  | **Major Update** — Added comprehensive ignores for Python, Node.js, Logs, and Models. |
-| `PROGRESS.md` | Updated with remote setup details.                                                    |
+| `.gitignore` | **Major Update** — Added comprehensive ignores for Python, Node.js, Logs, and Models. |
+| `PROGRESS.md` | Updated with remote setup details. |
+
+---
+
+## 🚀 CI/CD Pipeline Implementation — May 10, 2026 (Session 3)
+
+Implemented an automated CI/CD pipeline to ensure code quality, functional integrity, and regression testing for every contribution.
+
+### Actions Taken
+
+- **Automated Workflow**: Created a GitHub Actions pipeline (`.github/workflows/ci.yml`) that triggers on all pushes and pull requests to `main`.
+- **Quality Control**: 
+  - Integrated **Ruff** for high-speed Python linting and formatting.
+  - Integrated **Prettier** for consistent formatting of HTML, CSS, JavaScript, and Markdown files.
+- **Automated Testing**: Configured `pytest` to run the 100+ unit tests on every CI run (configured to skip GPU-dependent tests on standard cloud runners).
+- **Project Hardening**: Performed a codebase-wide linting and formatting pass, fixing 350+ style and quality issues to establish a baseline.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `.github/workflows/ci.yml` | **New** — GitHub Actions workflow definition. |
+| `pyproject.toml` | **New** — Ruff configuration for Python linting/formatting. |
+| `.prettierrc` | **New** — Prettier configuration for web assets. |
+| `gemma-web/package.json` | Added `lint` and `format` scripts. |
+| `PROGRESS.md` | Updated with CI/CD implementation details. |
+
 
 ---
 
