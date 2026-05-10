@@ -728,3 +728,21 @@
       <span id="status-label" style="color:var(--llm-text-muted);">checking…</span>
     </div>
   </header>
+
+    <!-- Messages area — id="chat-box" preserved -->
+    <main id="chat-box" class="llm-messages drop-zone">
+
+      <!-- Welcome message — id="welcome-message" preserved -->
+      <div id="welcome-message" class="welcome-screen">
+        <div class="welcome-logo">L</div>
+        <div class="welcome-title" id="welcome-greeting">Good morning, Omar</div>
+        <div class="welcome-sub">LocalLLM is ready. Your models run privately on this machine — no data leaves.</div>
+        <div class="welcome-chips">
+          <div class="welcome-chip" onclick="document.getElementById('user-input').value='Help me write something'; document.getElementById('user-input').focus();">✍️ Help me write</div>
+          <div class="welcome-chip" onclick="document.getElementById('user-input').value='Debug this code: '; document.getElementById('user-input').focus();">🐍 Debug code</div>
+          <div class="welcome-chip" onclick="setMode('image'); document.getElementById('user-input').focus();">🎨 Generate image</div>
+          <div class="welcome-chip" onclick="document.getElementById('user-input').value='Summarize: '; document.getElementById('user-input').focus();">📄 Summarize</div>
+        </div>
+      </div>
+
+    </main>
