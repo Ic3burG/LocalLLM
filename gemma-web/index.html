@@ -1215,8 +1215,8 @@
                 starredSection.classList.add('hidden');
             }
 
-            // Recents shows top 10 non-starred chats
-            const recentChats = chats.filter(c => !c.starred).slice(0, 10);
+            // Recents shows top 10 chats (including starred ones)
+            const recentChats = chats.slice(0, 10);
             historyList.innerHTML = recentChats.map(chat => renderChatItem(chat)).join('');
             
             if (allChatsModal && !allChatsModal.classList.contains('hidden-modal')) {
