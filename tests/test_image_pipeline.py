@@ -34,6 +34,16 @@ def test_parse_size_portrait():
     assert w == 512 and h == 768
 
 
+def test_parse_size_invalid_raises():
+    with pytest.raises(ValueError):
+        _parse_size("999x999")
+
+
+def test_parse_size_malformed_raises():
+    with pytest.raises(ValueError):
+        _parse_size("abc")
+
+
 def test_fast_mode_skips_swap():
     assert _should_swap(["phi-4-mini-4bit"]) is False
 
@@ -100,4 +110,5 @@ def test_generate_image_triggers_swap_for_large_model():
          patch("image_pipeline._Flux1") as MockFlux1:
         MockFlux1.from_name.return_value = mock_flux
         generate_image("a cat")
-    mock_unload.assert_called_once()
+    # called twice: once to swap out text model before loading Flux, once after to free Flux weights
+    assert mock_unload.call_count == 2

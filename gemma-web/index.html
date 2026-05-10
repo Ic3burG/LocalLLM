@@ -850,6 +850,7 @@
         async function submitImageGeneration(prompt, size, steps, style) {
             if (!prompt) return;
             appendMessage('user', prompt);
+            sendBtn.disabled = true;
             let isWarmup = false;
             try {
                 const modelsRes = await fetch('/api/image/models');
@@ -880,6 +881,8 @@
             } catch (err) {
                 shimmer.remove();
                 appendMessage('assistant', 'Image generation error: ' + err.message);
+            } finally {
+                sendBtn.disabled = false;
             }
         }
         // ── end image mode ────────────────────────────────────────────────
