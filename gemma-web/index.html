@@ -266,7 +266,7 @@
             <div id="attachment-preview" class="hidden flex flex-wrap gap-2 mb-3 px-2"></div>
 
             <form id="chat-form" class="flex items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl">
-                <input type="file" id="file-input" class="hidden" multiple accept="image/*,.txt,.pdf,.md">
+                <input type="file" id="file-input" class="hidden" multiple>
                 <button type="button" id="attach-btn" class="text-gray-400 hover:text-blue-500 p-2 rounded-xl transition-colors flex-shrink-0" title="Attach file">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
                 </button>
@@ -294,41 +294,67 @@
             </div>
             
             <div id="vitals-pane" class="p-6 flex-1 overflow-y-auto">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
-                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Process RAM</div>
-                        <div id="vital-ram" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
-                    </div>
-                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
-                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">GPU VRAM</div>
-                        <div id="vital-vram" class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400">--</div>
-                    </div>
-                    <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
-                        <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Latency</div>
-                        <div id="vital-latency" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
-                    </div>
+                <div class="flex gap-2 mb-6 border-b border-gray-100 dark:border-[#3c3d40] pb-3">
+                    <button onclick="switchVitalsSubTab('system')" id="vitals-subtab-system" class="px-3 py-1 text-xs font-medium rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors">System</button>
+                    <button onclick="switchVitalsSubTab('agent')" id="vitals-subtab-agent" class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Agent</button>
+                    <button onclick="switchVitalsSubTab('pipeline')" id="vitals-subtab-pipeline" class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Pipeline</button>
                 </div>
 
-                <div class="mb-8">
-                    <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-                        Loaded Models
-                    </h3>
-                    <div id="vital-models" class="flex flex-wrap gap-2 text-xs font-mono">
-                        <span class="text-gray-500 italic">None currently loaded</span>
+                <div id="vitals-subpane-system">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Process RAM</div>
+                            <div id="vital-ram" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
+                        </div>
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">GPU VRAM</div>
+                            <div id="vital-vram" class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400">--</div>
+                        </div>
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Latency</div>
+                            <div id="vital-latency" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
+                        </div>
                     </div>
-                </div>
 
-                <div>
-                    <div class="flex justify-between items-center mb-3">
-                        <h3 class="text-sm font-semibold flex items-center gap-2 text-gray-700 dark:text-gray-200">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
-                            System Integrity
+                    <div class="mb-8">
+                        <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                            Loaded Models
                         </h3>
-                        <button id="run-check-btn" class="text-xs font-medium text-blue-600 hover:underline">Run Post-Update Check</button>
+                        <div id="vital-models" class="flex flex-wrap gap-2 text-xs font-mono">
+                            <span class="text-gray-500 italic">None currently loaded</span>
+                        </div>
                     </div>
-                    <div id="check-output" class="p-4 bg-gray-900 text-gray-300 rounded-xl font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto hidden">
-                        Running integrity tests...
+
+                    <div>
+                        <div class="flex justify-between items-center mb-3">
+                            <h3 class="text-sm font-semibold flex items-center gap-2 text-gray-700 dark:text-gray-200">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>
+                                System Integrity
+                            </h3>
+                            <button id="run-check-btn" class="text-xs font-medium text-blue-600 hover:underline">Run Post-Update Check</button>
+                        </div>
+                        <div id="check-output" class="p-4 bg-gray-900 text-gray-300 rounded-xl font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto hidden">
+                            Running integrity tests...
+                        </div>
+                    </div>
+                </div>
+
+                <div id="vitals-subpane-agent" class="hidden">
+                    <div class="p-8 text-center">
+                        <div class="text-gray-400 dark:text-gray-600 mb-2">
+                            <svg class="mx-auto" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                        </div>
+                        <h4 class="text-sm font-medium text-gray-500 italic">Agent health metrics coming soon...</h4>
+                    </div>
+                </div>
+
+                <div id="vitals-subpane-pipeline" class="hidden">
+                    <div class="p-8 text-center">
+                        <div class="text-gray-400 dark:text-gray-600 mb-2">
+                            <svg class="mx-auto" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 12-4-4-4 4"/><path d="M2 12h16"/><path d="m5 11 4 4-4 4"/><path d="M22 15H9"/></svg>
+                        </div>
+                        <h4 class="text-sm font-medium text-gray-500 italic">Processing pipeline status coming soon...</h4>
                     </div>
                 </div>
             </div>
@@ -474,6 +500,7 @@
                 restartContainer.classList.remove('hidden');
                 saveContainer.classList.add('hidden');
                 startVitalsPolling();
+                switchVitalsSubTab('system'); // Default to system sub-tab
             } else if (tab === 'prompt') {
                 tabPrompt.className = 'text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all';
                 systemPromptPane.classList.remove('hidden');
@@ -489,6 +516,21 @@
                 stopVitalsPolling();
                 loadMemory();
             }
+        }
+
+        function switchVitalsSubTab(tab) {
+            const subpanes = ['system', 'agent', 'pipeline'];
+            subpanes.forEach(p => {
+                const el = document.getElementById(`vitals-subpane-${p}`);
+                const btn = document.getElementById(`vitals-subtab-${p}`);
+                if (p === tab) {
+                    el.classList.remove('hidden');
+                    btn.className = 'px-3 py-1 text-xs font-medium rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors';
+                } else {
+                    el.classList.add('hidden');
+                    btn.className = 'px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors';
+                }
+            });
         }
 
         tabVitals.addEventListener('click', () => switchTab('vitals'));
@@ -761,8 +803,8 @@
                     const reader = new FileReader();
                     reader.onload = (e) => addAttachment({ type: 'text', name: file.name, content: e.target.result });
                     reader.readAsText(file);
-                } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-                    const attachId = `pdf-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                } else {
+                    const attachId = `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
                     currentAttachments.push({ type: 'pdf', name: file.name, attachId, status: 'processing' });
                     renderPreviews();
 
@@ -774,16 +816,13 @@
                         .then(data => {
                             const att = currentAttachments.find(a => a.attachId === attachId);
                             if (!att) return;
-                            if (data.warnings && data.warnings.includes('no_text_found')) {
-                                att.status = 'error';
-                                att.errorMsg = 'No text found (scanned PDF)';
-                            } else if (data.doc_id) {
+                            if (data.doc_id) {
                                 att.status = 'ready';
                                 att.doc_id = data.doc_id;
                                 att.pageCount = data.page_count;
                             } else {
                                 att.status = 'error';
-                                att.errorMsg = 'Upload failed';
+                                att.errorMsg = (data.warnings && data.warnings[0]) || 'Unsupported file type';
                             }
                             renderPreviews();
                         })
