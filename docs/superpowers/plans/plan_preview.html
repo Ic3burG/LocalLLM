@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Word & Excel Support — Implementation Plan</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a1a2e;background:#f4f6fb;padding:40px 20px 80px}
+  .container{max-width:860px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 2px 20px rgba(0,0,0,.08);padding:48px 56px}
+  h1{font-size:2rem;font-weight:700;margin-bottom:8px;color:#0f172a}
+  h2{font-size:1.25rem;font-weight:600;margin:36px 0 12px;color:#1e3a5f;border-bottom:2px solid #e2e8f0;padding-bottom:6px}
+  h3{font-size:1.05rem;font-weight:600;margin:24px 0 8px;color:#334155}
+  h4{font-size:.95rem;font-weight:600;margin:18px 0 6px;color:#475569}
+  p{margin:10px 0;color:#374151}
+  a{color:#2563eb}
+  code{font-family:"SF Mono","Fira Code",monospace;font-size:.85em;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#0f5132}
+  pre{background:#0f172a;color:#e2e8f0;padding:20px 24px;border-radius:8px;overflow-x:auto;margin:16px 0;font-size:.88em;line-height:1.6}
+  pre code{background:none;color:inherit;padding:0}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
+  th{background:#1e3a5f;color:#fff;text-align:left;padding:10px 14px;font-weight:600}
+  td{padding:9px 14px;border-bottom:1px solid #e2e8f0;vertical-align:top}
+  tr:nth-child(even) td{background:#f8fafc}
+  ul,ol{padding-left:24px;margin:10px 0;color:#374151}
+  li{margin:4px 0}
+  li p{margin:2px 0}
+  input[type=checkbox]{margin-right:6px}
+  blockquote{border-left:4px solid #3b82f6;margin:16px 0;padding:8px 16px;background:#eff6ff;color:#1e3a5f;border-radius:0 6px 6px 0}
+  strong{color:#0f172a}
+  hr{border:none;border-top:1px solid #e2e8f0;margin:32px 0}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Word &amp; Excel Support Implementation Plan</h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Add comprehensive Word (.docx) and Excel (.xlsx) read/write + RAG ingestion support to the Gemma4 agent.</p>
+<p><strong>Architecture:</strong> New <code>office_pipeline.py</code> mirrors <code>pdf_pipeline.py</code> — <code>extract_text_from_word</code> and <code>extract_text_from_excel</code> return <code>(list[tuple], metadata_dict)</code>, and <code>ingest_office</code> returns the same <code>{doc_id, filename, page_count, chunks, embeddings}</code> dict shape. Four new async tool functions in <code>agent_utils.py</code> follow the exact <code>_read_pdf</code>/<code>_write_pdf</code> pattern. The <code>/v1/document</code> endpoint in <code>gemma_bridge.py</code> gains extension-based routing to <code>ingest_office</code>.</p>
+<p><strong>Tech Stack:</strong> <code>python-docx</code> (Word), <code>openpyxl</code> (Excel), <code>oletools</code>/<code>olefile</code> (embedded OLE objects), <code>lxml</code> (tracked-changes XML), <code>zipfile</code> stdlib (threaded comments), <code>pdf_pipeline.chunk_text</code> + <code>embed_texts</code> (reused for chunking/embedding).</p>
+<hr />
+<h2>Task 1: Install dependencies</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>requirements.txt</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Add libraries to requirements.txt</strong></li>
+</ul>
+<p>Open <code>requirements.txt</code> and append these three lines at the end:</p>
+<pre><code>python-docx
+openpyxl
+oletools
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Install them</strong></li>
+</ul>
+<pre><code class="language-bash">pip install python-docx openpyxl oletools
+</code></pre>
+<p>Expected: all three install without errors. Verify:</p>
+<pre><code class="language-bash">python3 -c &quot;import docx, openpyxl, olefile; print('ok')&quot;
+</code></pre>
+<p>Expected output: <code>ok</code></p>
+<ul>
+<li>[ ] <strong>Step 3: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add requirements.txt
+git commit -m &quot;chore: add python-docx, openpyxl, oletools dependencies&quot;
+</code></pre>
+<hr />
+<h2>Task 2: Word body extraction (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Create: <code>office_pipeline.py</code><br />
+- Create: <code>tests/test_office_pipeline.py</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Write the failing tests</strong></li>
+</ul>
+<p>Create <code>tests/test_office_pipeline.py</code>:</p>
+<pre><code class="language-python">import sys, os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), &quot;..&quot;))
+
+import io
+import pytest
+
+
+def _make_word_bytes_simple() -&gt; bytes:
+    &quot;&quot;&quot;Build a minimal .docx with headings and paragraphs.&quot;&quot;&quot;
+    from docx import Document
+    doc = Document()
+    doc.add_heading(&quot;Introduction&quot;, level=1)
+    doc.add_paragraph(&quot;Hello world paragraph.&quot;)
+    doc.add_paragraph(&quot;Second paragraph.&quot;)
+    doc.add_heading(&quot;Section Two&quot;, level=2)
+    doc.add_paragraph(&quot;Content in section two.&quot;)
+    doc.core_properties.title = &quot;Test Doc&quot;
+    doc.core_properties.author = &quot;Test Author&quot;
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_word_returns_sections():
+    from office_pipeline import extract_text_from_word
+    sections, metadata = extract_text_from_word(_make_word_bytes_simple())
+    assert len(sections) &gt;= 1
+    all_text = &quot; &quot;.join(text for _, text in sections)
+    assert &quot;Hello world paragraph&quot; in all_text
+    assert &quot;Content in section two&quot; in all_text
+
+
+def test_extract_word_section_numbers_are_ints():
+    from office_pipeline import extract_text_from_word
+    sections, _ = extract_text_from_word(_make_word_bytes_simple())
+    for num, _ in sections:
+        assert isinstance(num, int)
+
+
+def test_extract_word_metadata_has_required_keys():
+    from office_pipeline import extract_text_from_word
+    _, metadata = extract_text_from_word(_make_word_bytes_simple())
+    for key in (&quot;comments&quot;, &quot;tracked_changes&quot;, &quot;footnotes&quot;, &quot;endnotes&quot;, &quot;properties&quot;):
+        assert key in metadata, f&quot;Missing key: {key}&quot;
+
+
+def test_extract_word_properties():
+    from office_pipeline import extract_text_from_word
+    _, metadata = extract_text_from_word(_make_word_bytes_simple())
+    props = metadata[&quot;properties&quot;]
+    assert props[&quot;title&quot;] == &quot;Test Doc&quot;
+    assert props[&quot;author&quot;] == &quot;Test Author&quot;
+    for key in (&quot;created&quot;, &quot;modified&quot;, &quot;subject&quot;, &quot;keywords&quot;, &quot;description&quot;):
+        assert key in props
+
+
+def test_extract_word_empty_annotations_are_lists():
+    from office_pipeline import extract_text_from_word
+    _, metadata = extract_text_from_word(_make_word_bytes_simple())
+    assert metadata[&quot;comments&quot;] == []
+    assert metadata[&quot;tracked_changes&quot;] == []
+    assert metadata[&quot;footnotes&quot;] == []
+    assert metadata[&quot;endnotes&quot;] == []
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Run tests to verify they fail</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py -v 2&gt;&amp;1 | head -30
+</code></pre>
+<p>Expected: <code>ModuleNotFoundError: No module named 'office_pipeline'</code></p>
+<ul>
+<li>[ ] <strong>Step 3: Create <code>office_pipeline.py</code> with Word body extraction</strong></li>
+</ul>
+<p>Create <code>/Users/ojdavis/Claude Code/Gemma4/office_pipeline.py</code>:</p>
+<pre><code class="language-python">import io
+import uuid
+import zipfile
+import xml.etree.ElementTree as ET
+
+from docx import Document
+from docx.oxml.ns import qn
+
+
+def extract_text_from_word(file_bytes: bytes) -&gt; tuple[list[tuple[int, str]], dict]:
+    &quot;&quot;&quot;Extract body text and all annotations from a .docx file.
+
+    Returns:
+        (sections, metadata) where sections is list of (section_num, text)
+        and metadata contains comments, tracked_changes, footnotes, endnotes, properties.
+    &quot;&quot;&quot;
+    doc = Document(io.BytesIO(file_bytes))
+
+    # --- Body text, split at heading boundaries ---
+    sections: list[tuple[int, str]] = []
+    section_num = 0
+    current_lines: list[str] = []
+
+    for para in doc.paragraphs:
+        if para.style.name.startswith(&quot;Heading&quot;):
+            if current_lines:
+                sections.append((section_num, &quot;\n&quot;.join(current_lines)))
+                current_lines = []
+            section_num += 1
+            if para.text.strip():
+                current_lines.append(para.text)
+        else:
+            if para.text.strip():
+                current_lines.append(para.text)
+
+    if current_lines:
+        sections.append((section_num, &quot;\n&quot;.join(current_lines)))
+
+    # If no headings produced sections, return body as single section
+    if not sections:
+        body_text = &quot;\n&quot;.join(p.text for p in doc.paragraphs if p.text.strip())
+        if body_text:
+            sections = [(1, body_text)]
+
+    # --- Comments ---
+    comments = _extract_word_comments(doc)
+
+    # --- Tracked changes ---
+    tracked_changes = _extract_tracked_changes(doc)
+
+    # --- Footnotes ---
+    footnotes = _extract_word_notes(doc, &quot;footnotes&quot;)
+
+    # --- Endnotes ---
+    endnotes = _extract_word_notes(doc, &quot;endnotes&quot;)
+
+    # --- Document properties ---
+    props = doc.core_properties
+    properties = {
+        &quot;title&quot;: props.title or &quot;&quot;,
+        &quot;author&quot;: props.author or &quot;&quot;,
+        &quot;created&quot;: str(props.created) if props.created else &quot;&quot;,
+        &quot;modified&quot;: str(props.modified) if props.modified else &quot;&quot;,
+        &quot;subject&quot;: props.subject or &quot;&quot;,
+        &quot;keywords&quot;: props.keywords or &quot;&quot;,
+        &quot;description&quot;: props.description or &quot;&quot;,
+    }
+
+    metadata = {
+        &quot;comments&quot;: comments,
+        &quot;tracked_changes&quot;: tracked_changes,
+        &quot;footnotes&quot;: footnotes,
+        &quot;endnotes&quot;: endnotes,
+        &quot;properties&quot;: properties,
+    }
+    return sections, metadata
+
+
+def _extract_word_comments(doc) -&gt; list[dict]:
+    comments = []
+    _COMMENTS_REL = (
+        &quot;http://schemas.openxmlformats.org/officeDocument/2006/&quot;
+        &quot;relationships/comments&quot;
+    )
+    try:
+        part = doc.part.part_related_by(_COMMENTS_REL)
+        for c in part._element.findall(qn(&quot;w:comment&quot;)):
+            author = c.get(qn(&quot;w:author&quot;), &quot;&quot;)
+            date = c.get(qn(&quot;w:date&quot;), &quot;&quot;)
+            text = &quot;&quot;.join(t.text for t in c.iter(qn(&quot;w:t&quot;)) if t.text)
+            comments.append({&quot;author&quot;: author, &quot;date&quot;: date, &quot;text&quot;: text, &quot;ref_text&quot;: &quot;&quot;})
+    except KeyError:
+        pass
+    return comments
+
+
+def _extract_tracked_changes(doc) -&gt; list[dict]:
+    changes = []
+    body = doc.element.body
+    for ins in body.iter(qn(&quot;w:ins&quot;)):
+        author = ins.get(qn(&quot;w:author&quot;), &quot;&quot;)
+        date = ins.get(qn(&quot;w:date&quot;), &quot;&quot;)
+        text = &quot;&quot;.join(t.text for t in ins.iter(qn(&quot;w:t&quot;)) if t.text)
+        if text:
+            changes.append({&quot;author&quot;: author, &quot;date&quot;: date, &quot;type&quot;: &quot;insert&quot;, &quot;text&quot;: text})
+    for del_ in body.iter(qn(&quot;w:del&quot;)):
+        author = del_.get(qn(&quot;w:author&quot;), &quot;&quot;)
+        date = del_.get(qn(&quot;w:date&quot;), &quot;&quot;)
+        text = &quot;&quot;.join(t.text for t in del_.iter(qn(&quot;w:delText&quot;)) if t.text)
+        if text:
+            changes.append({&quot;author&quot;: author, &quot;date&quot;: date, &quot;type&quot;: &quot;delete&quot;, &quot;text&quot;: text})
+    return changes
+
+
+def _extract_word_notes(doc, note_type: str) -&gt; list[dict]:
+    &quot;&quot;&quot;note_type is 'footnotes' or 'endnotes'.&quot;&quot;&quot;
+    notes = []
+    rel = (
+        f&quot;http://schemas.openxmlformats.org/officeDocument/2006/&quot;
+        f&quot;relationships/{note_type}&quot;
+    )
+    tag = qn(&quot;w:footnote&quot;) if note_type == &quot;footnotes&quot; else qn(&quot;w:endnote&quot;)
+    skip_types = {&quot;separator&quot;, &quot;continuationSeparator&quot;, &quot;continuationNotice&quot;}
+    try:
+        part = doc.part.part_related_by(rel)
+        for el in part._element.findall(tag):
+            if el.get(qn(&quot;w:type&quot;), &quot;&quot;) in skip_types:
+                continue
+            note_id = el.get(qn(&quot;w:id&quot;), &quot;&quot;)
+            text = &quot;&quot;.join(t.text for t in el.iter(qn(&quot;w:t&quot;)) if t.text)
+            if text:
+                notes.append({&quot;ref_num&quot;: note_id, &quot;text&quot;: text})
+    except KeyError:
+        pass
+    return notes
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 4: Run tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_word_returns_sections tests/test_office_pipeline.py::test_extract_word_section_numbers_are_ints tests/test_office_pipeline.py::test_extract_word_metadata_has_required_keys tests/test_office_pipeline.py::test_extract_word_properties tests/test_office_pipeline.py::test_extract_word_empty_annotations_are_lists -v
+</code></pre>
+<p>Expected: all 5 PASS</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
+git commit -m &quot;feat: add Word body extraction to office_pipeline&quot;
+</code></pre>
+<hr />
+<h2>Task 3: Word annotation extraction (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+- Modify: <code>office_pipeline.py</code> (already implemented in Task 2 — verify with these tests)</p>
+<ul>
+<li>[ ] <strong>Step 1: Add annotation tests to <code>tests/test_office_pipeline.py</code></strong></li>
+</ul>
+<p>Append to the end of <code>tests/test_office_pipeline.py</code>:</p>
+<pre><code class="language-python">def _make_word_bytes_with_comments() -&gt; bytes:
+    &quot;&quot;&quot;Build a .docx that contains a comment using lxml directly.&quot;&quot;&quot;
+    from docx import Document
+    from docx.oxml.ns import qn, nsmap
+    from docx.oxml import OxmlElement
+    from lxml import etree
+    import copy
+
+    doc = Document()
+    doc.add_paragraph(&quot;This text has a comment.&quot;)
+
+    # Build comments XML part manually
+    comments_xml = (
+        '&lt;?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot; standalone=&quot;yes&quot;?&gt;'
+        '&lt;w:comments xmlns:w=&quot;http://schemas.openxmlformats.org/wordprocessingml/2006/main&quot;&gt;'
+        '&lt;w:comment w:id=&quot;1&quot; w:author=&quot;Alice&quot; w:date=&quot;2026-01-01T00:00:00Z&quot;&gt;'
+        '&lt;w:p&gt;&lt;w:r&gt;&lt;w:t&gt;Great point!&lt;/w:t&gt;&lt;/w:r&gt;&lt;/w:p&gt;'
+        '&lt;/w:comment&gt;'
+        '&lt;/w:comments&gt;'
+    )
+
+    # Inject comments part into the docx package
+    from docx.opc.part import Part
+    from docx.opc.packuri import PackURI
+    comments_part = Part(
+        PackURI(&quot;/word/comments.xml&quot;),
+        &quot;application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml&quot;,
+        comments_xml.encode(),
+        doc.part.package,
+    )
+    rel_type = &quot;http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments&quot;
+    doc.part.relate_to(comments_part, rel_type)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def _make_word_bytes_with_tracked_changes() -&gt; bytes:
+    &quot;&quot;&quot;Build a .docx with a tracked insertion.&quot;&quot;&quot;
+    from docx import Document
+    from docx.oxml.ns import qn
+    from lxml import etree
+
+    doc = Document()
+    para = doc.add_paragraph()
+
+    # Add a normal run
+    run = para.add_run(&quot;Original text. &quot;)
+
+    # Add a tracked insertion run
+    ins_xml = (
+        '&lt;w:ins xmlns:w=&quot;http://schemas.openxmlformats.org/wordprocessingml/2006/main&quot; '
+        'w:id=&quot;1&quot; w:author=&quot;Bob&quot; w:date=&quot;2026-01-02T00:00:00Z&quot;&gt;'
+        '&lt;w:r&gt;&lt;w:t&gt;Inserted text.&lt;/w:t&gt;&lt;/w:r&gt;'
+        '&lt;/w:ins&gt;'
+    )
+    ins_el = etree.fromstring(ins_xml)
+    para._element.append(ins_el)
+
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_word_comments():
+    from office_pipeline import extract_text_from_word
+    _, metadata = extract_text_from_word(_make_word_bytes_with_comments())
+    assert len(metadata[&quot;comments&quot;]) == 1
+    c = metadata[&quot;comments&quot;][0]
+    assert c[&quot;author&quot;] == &quot;Alice&quot;
+    assert &quot;Great point&quot; in c[&quot;text&quot;]
+    assert &quot;date&quot; in c
+    assert &quot;ref_text&quot; in c
+
+
+def test_extract_word_tracked_changes():
+    from office_pipeline import extract_text_from_word
+    _, metadata = extract_text_from_word(_make_word_bytes_with_tracked_changes())
+    inserts = [tc for tc in metadata[&quot;tracked_changes&quot;] if tc[&quot;type&quot;] == &quot;insert&quot;]
+    assert len(inserts) &gt;= 1
+    assert inserts[0][&quot;author&quot;] == &quot;Bob&quot;
+    assert &quot;Inserted text&quot; in inserts[0][&quot;text&quot;]
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Run the annotation tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_word_comments tests/test_office_pipeline.py::test_extract_word_tracked_changes -v
+</code></pre>
+<p>Expected: both PASS (the extraction code was already written in Task 2)</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add tests/test_office_pipeline.py
+git commit -m &quot;test: add Word annotation extraction tests&quot;
+</code></pre>
+<hr />
+<h2>Task 4: Excel cell extraction (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+- Modify: <code>office_pipeline.py</code> (add Excel functions)</p>
+<ul>
+<li>[ ] <strong>Step 1: Append Excel cell extraction tests to <code>tests/test_office_pipeline.py</code></strong></li>
+</ul>
+<pre><code class="language-python">def _make_excel_bytes_simple() -&gt; bytes:
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = &quot;Results&quot;
+    ws[&quot;A1&quot;] = &quot;Name&quot;
+    ws[&quot;B1&quot;] = &quot;Score&quot;
+    ws[&quot;A2&quot;] = &quot;Alice&quot;
+    ws[&quot;B2&quot;] = 95
+    ws[&quot;A3&quot;] = &quot;Bob&quot;
+    ws[&quot;B3&quot;] = 87
+    ws2 = wb.create_sheet(&quot;Summary&quot;)
+    ws2[&quot;A1&quot;] = &quot;Total&quot;
+    ws2[&quot;B1&quot;] = 2
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_excel_returns_sheets():
+    from office_pipeline import extract_text_from_excel
+    sheets, metadata = extract_text_from_excel(_make_excel_bytes_simple())
+    assert len(sheets) == 2
+    names = [name for name, _ in sheets]
+    assert &quot;Results&quot; in names
+    assert &quot;Summary&quot; in names
+
+
+def test_extract_excel_cell_values_in_text():
+    from office_pipeline import extract_text_from_excel
+    sheets, _ = extract_text_from_excel(_make_excel_bytes_simple())
+    results_text = next(text for name, text in sheets if name == &quot;Results&quot;)
+    assert &quot;Alice&quot; in results_text
+    assert &quot;95&quot; in results_text
+    assert &quot;Bob&quot; in results_text
+
+
+def test_extract_excel_metadata_has_required_keys():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_simple())
+    for key in (&quot;cell_notes&quot;, &quot;threaded_comments&quot;, &quot;formulas&quot;, &quot;embedded_objects&quot;, &quot;properties&quot;):
+        assert key in metadata, f&quot;Missing key: {key}&quot;
+
+
+def test_extract_excel_empty_annotations_are_lists():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_simple())
+    assert metadata[&quot;cell_notes&quot;] == []
+    assert metadata[&quot;threaded_comments&quot;] == []
+    assert metadata[&quot;embedded_objects&quot;] == []
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_returns_sheets -v 2&gt;&amp;1 | head -15
+</code></pre>
+<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>extract_text_from_excel</code> not yet defined.</p>
+<ul>
+<li>[ ] <strong>Step 3: Add Excel extraction to <code>office_pipeline.py</code></strong></li>
+</ul>
+<p>Append to the end of <code>office_pipeline.py</code>:</p>
+<pre><code class="language-python">def extract_text_from_excel(file_bytes: bytes) -&gt; tuple[list[tuple[str, str]], dict]:
+    &quot;&quot;&quot;Extract cell text and all annotations from a .xlsx file.
+
+    Returns:
+        (sheets, metadata) where sheets is list of (sheet_name, tsv_text)
+        and metadata contains cell_notes, threaded_comments, formulas,
+        embedded_objects, properties.
+    &quot;&quot;&quot;
+    import openpyxl
+
+    # Load twice: once for formulas, once for cached values
+    wb_formula = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=False)
+    wb_cached = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+
+    sheets: list[tuple[str, str]] = []
+    cell_notes: list[dict] = []
+    formulas: list[dict] = []
+
+    for sheet_name in wb_cached.sheetnames:
+        ws_cached = wb_cached[sheet_name]
+        ws_formula = wb_formula[sheet_name]
+
+        rows = []
+        for row in ws_cached.iter_rows():
+            parts = []
+            for cell in row:
+                if cell.value is not None:
+                    parts.append(f&quot;{cell.coordinate}={cell.value}&quot;)
+            if parts:
+                rows.append(&quot;\t&quot;.join(parts))
+
+        if rows:
+            sheets.append((sheet_name, &quot;\n&quot;.join(rows)))
+
+        # Capture formulas (cells whose formula-mode value starts with &quot;=&quot;)
+        for row in ws_formula.iter_rows():
+            for cell in row:
+                if isinstance(cell.value, str) and cell.value.startswith(&quot;=&quot;):
+                    cached_cell = ws_cached[cell.coordinate]
+                    formulas.append({
+                        &quot;sheet&quot;: sheet_name,
+                        &quot;cell&quot;: cell.coordinate,
+                        &quot;formula&quot;: cell.value,
+                        &quot;cached_value&quot;: str(cached_cell.value) if cached_cell.value is not None else &quot;&quot;,
+                    })
+
+        # Legacy cell notes (comments)
+        for coord, comment in (ws_cached.comments or {}).items():
+            cell_notes.append({
+                &quot;sheet&quot;: sheet_name,
+                &quot;cell&quot;: str(coord),
+                &quot;author&quot;: comment.author or &quot;&quot;,
+                &quot;text&quot;: str(comment.text) if comment.text else &quot;&quot;,
+            })
+
+    threaded_comments = _extract_excel_threaded_comments(file_bytes)
+    embedded_objects = _extract_excel_embedded_objects(file_bytes)
+
+    # VBA macro detection
+    if wb_formula.vba_archive is not None:
+        embedded_objects.append({&quot;type&quot;: &quot;vba_macro&quot;, &quot;flagged&quot;: True, &quot;extracted_text&quot;: &quot;&quot;})
+
+    props = wb_cached.properties
+    properties = {
+        &quot;title&quot;: props.title or &quot;&quot; if props else &quot;&quot;,
+        &quot;author&quot;: props.creator or &quot;&quot; if props else &quot;&quot;,
+        &quot;created&quot;: str(props.created) if props and props.created else &quot;&quot;,
+        &quot;modified&quot;: str(props.modified) if props and props.modified else &quot;&quot;,
+        &quot;keywords&quot;: props.keywords or &quot;&quot; if props else &quot;&quot;,
+    }
+
+    metadata = {
+        &quot;cell_notes&quot;: cell_notes,
+        &quot;threaded_comments&quot;: threaded_comments,
+        &quot;formulas&quot;: formulas,
+        &quot;embedded_objects&quot;: embedded_objects,
+        &quot;properties&quot;: properties,
+    }
+    return sheets, metadata
+
+
+def _extract_excel_threaded_comments(file_bytes: bytes) -&gt; list[dict]:
+    results = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            thread_files = [n for n in z.namelist() if &quot;threadedComment&quot; in n and n.endswith(&quot;.xml&quot;)]
+            for tf in thread_files:
+                ns = {&quot;tc&quot;: &quot;http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments&quot;}
+                root = ET.parse(z.open(tf)).getroot()
+                threads: dict[str, dict] = {}
+                for tc in root.findall(&quot;.//tc:threadedComment&quot;, ns):
+                    tc_id = tc.get(&quot;id&quot;, &quot;&quot;)
+                    ref = tc.get(&quot;ref&quot;, &quot;&quot;)
+                    parent_id = tc.get(&quot;parentId&quot;, &quot;&quot;)
+                    author_id = tc.get(&quot;personId&quot;, &quot;&quot;)
+                    text_el = tc.find(&quot;tc:text&quot;, ns)
+                    text = text_el.text if text_el is not None else &quot;&quot;
+                    entry = {&quot;author_id&quot;: author_id, &quot;text&quot;: text or &quot;&quot;}
+                    if not parent_id:
+                        threads[tc_id] = {&quot;cell&quot;: ref, &quot;thread&quot;: [entry]}
+                    elif parent_id in threads:
+                        threads[parent_id][&quot;thread&quot;].append(entry)
+                results.extend(threads.values())
+    except Exception:
+        pass
+    return results
+
+
+def _extract_excel_embedded_objects(file_bytes: bytes) -&gt; list[dict]:
+    results = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            embedding_files = [n for n in z.namelist() if &quot;embeddings/&quot; in n]
+            for ef in embedding_files:
+                ext = ef.rsplit(&quot;.&quot;, 1)[-1].lower() if &quot;.&quot; in ef else &quot;&quot;
+                data = z.read(ef)
+                if ext in (&quot;docx&quot;, &quot;xlsx&quot;, &quot;pptx&quot;):
+                    results.append({&quot;type&quot;: f&quot;embedded_{ext}&quot;, &quot;extracted_text&quot;: f&quot;[embedded {ext} — binary]&quot;})
+                elif ext in (&quot;bin&quot;, &quot;ole&quot;, &quot;&quot;):
+                    try:
+                        import olefile
+                        if olefile.isOleFile(io.BytesIO(data)):
+                            ole = olefile.OleFileIO(io.BytesIO(data))
+                            if ole.exists(&quot;WordDocument&quot;):
+                                obj_type = &quot;embedded_word_ole&quot;
+                            elif ole.exists(&quot;Workbook&quot;):
+                                obj_type = &quot;embedded_excel_ole&quot;
+                            else:
+                                obj_type = &quot;embedded_ole&quot;
+                            results.append({&quot;type&quot;: obj_type, &quot;extracted_text&quot;: f&quot;[OLE object: {ef}]&quot;})
+                    except Exception:
+                        results.append({&quot;type&quot;: &quot;embedded_binary&quot;, &quot;extracted_text&quot;: f&quot;[binary object: {ef}]&quot;})
+    except Exception:
+        pass
+    return results
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 4: Run Excel cell tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_returns_sheets tests/test_office_pipeline.py::test_extract_excel_cell_values_in_text tests/test_office_pipeline.py::test_extract_excel_metadata_has_required_keys tests/test_office_pipeline.py::test_extract_excel_empty_annotations_are_lists -v
+</code></pre>
+<p>Expected: all 4 PASS</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
+git commit -m &quot;feat: add Excel cell and annotation extraction to office_pipeline&quot;
+</code></pre>
+<hr />
+<h2>Task 5: Excel formula and cell-note tests (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>tests/test_office_pipeline.py</code> (append tests)</p>
+<ul>
+<li>[ ] <strong>Step 1: Append formula and cell-note tests</strong></li>
+</ul>
+<pre><code class="language-python">def _make_excel_bytes_with_formulas() -&gt; bytes:
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = &quot;Calc&quot;
+    ws[&quot;A1&quot;] = 10
+    ws[&quot;A2&quot;] = 20
+    ws[&quot;A3&quot;] = &quot;=A1+A2&quot;
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _make_excel_bytes_with_cell_note() -&gt; bytes:
+    from openpyxl import Workbook
+    from openpyxl.comments import Comment
+    wb = Workbook()
+    ws = wb.active
+    ws.title = &quot;Notes&quot;
+    ws[&quot;A1&quot;] = &quot;Value&quot;
+    comment = Comment(&quot;Remember to update this quarterly.&quot;, &quot;Finance Team&quot;)
+    ws[&quot;A1&quot;].comment = comment
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_extract_excel_formulas():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_with_formulas())
+    formulas = metadata[&quot;formulas&quot;]
+    assert len(formulas) &gt;= 1
+    f = next(x for x in formulas if x[&quot;formula&quot;] == &quot;=A1+A2&quot;)
+    assert f[&quot;sheet&quot;] == &quot;Calc&quot;
+    assert f[&quot;cell&quot;] == &quot;A3&quot;
+    assert &quot;formula&quot; in f
+    assert &quot;cached_value&quot; in f
+
+
+def test_extract_excel_cell_notes():
+    from office_pipeline import extract_text_from_excel
+    _, metadata = extract_text_from_excel(_make_excel_bytes_with_cell_note())
+    notes = metadata[&quot;cell_notes&quot;]
+    assert len(notes) &gt;= 1
+    n = notes[0]
+    assert n[&quot;sheet&quot;] == &quot;Notes&quot;
+    assert &quot;A1&quot; in n[&quot;cell&quot;]
+    assert &quot;Finance Team&quot; in n[&quot;author&quot;]
+    assert &quot;quarterly&quot; in n[&quot;text&quot;]
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Run formula and note tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_extract_excel_formulas tests/test_office_pipeline.py::test_extract_excel_cell_notes -v
+</code></pre>
+<p>Expected: both PASS</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add tests/test_office_pipeline.py
+git commit -m &quot;test: add Excel formula and cell-note tests&quot;
+</code></pre>
+<hr />
+<h2>Task 6: <code>ingest_office</code> function (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+- Modify: <code>office_pipeline.py</code> (append function)</p>
+<ul>
+<li>[ ] <strong>Step 1: Append ingest tests</strong></li>
+</ul>
+<pre><code class="language-python">def test_ingest_office_word_shape():
+    from office_pipeline import ingest_office
+    doc = ingest_office(_make_word_bytes_simple(), &quot;test.docx&quot;)
+    assert doc is not None
+    assert &quot;doc_id&quot; in doc
+    assert &quot;filename&quot; in doc
+    assert &quot;page_count&quot; in doc
+    assert &quot;chunks&quot; in doc
+    assert &quot;embeddings&quot; in doc
+    assert doc[&quot;filename&quot;] == &quot;test.docx&quot;
+    assert len(doc[&quot;chunks&quot;]) &gt;= 1
+    assert doc[&quot;embeddings&quot;].shape[0] == len(doc[&quot;chunks&quot;])
+
+
+def test_ingest_office_excel_shape():
+    from office_pipeline import ingest_office
+    doc = ingest_office(_make_excel_bytes_simple(), &quot;data.xlsx&quot;)
+    assert doc is not None
+    assert doc[&quot;filename&quot;] == &quot;data.xlsx&quot;
+    assert len(doc[&quot;chunks&quot;]) &gt;= 1
+    assert doc[&quot;embeddings&quot;].shape[0] == len(doc[&quot;chunks&quot;])
+
+
+def test_ingest_office_unknown_extension_returns_none():
+    from office_pipeline import ingest_office
+    result = ingest_office(b&quot;garbage&quot;, &quot;file.txt&quot;)
+    assert result is None
+
+
+def test_ingest_office_empty_word_returns_none():
+    from office_pipeline import ingest_office
+    from docx import Document
+    doc = Document()
+    buf = io.BytesIO()
+    doc.save(buf)
+    result = ingest_office(buf.getvalue(), &quot;empty.docx&quot;)
+    assert result is None
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_ingest_office_word_shape -v 2&gt;&amp;1 | head -15
+</code></pre>
+<p>Expected: <code>ImportError</code> — <code>ingest_office</code> not yet defined.</p>
+<ul>
+<li>[ ] <strong>Step 3: Append <code>ingest_office</code> and helpers to <code>office_pipeline.py</code></strong></li>
+</ul>
+<pre><code class="language-python">def ingest_office(file_bytes: bytes, filename: str) -&gt; dict | None:
+    &quot;&quot;&quot;Ingest a Word or Excel file into the RAG document store.
+
+    Returns the same dict shape as pdf_pipeline.ingest_pdf, or None if
+    the file type is unrecognised or produces no text.
+    &quot;&quot;&quot;
+    from pdf_pipeline import chunk_text, embed_texts
+    import numpy as np
+
+    ext = filename.rsplit(&quot;.&quot;, 1)[-1].lower() if &quot;.&quot; in filename else &quot;&quot;
+
+    if ext == &quot;docx&quot;:
+        sections, metadata = extract_text_from_word(file_bytes)
+        pages = list(sections)
+        extra = _format_word_metadata_text(metadata)
+        if extra:
+            pages.append((len(pages) + 1, extra))
+    elif ext == &quot;xlsx&quot;:
+        sheets, metadata = extract_text_from_excel(file_bytes)
+        pages = [(i + 1, text) for i, (_, text) in enumerate(sheets)]
+        extra = _format_excel_metadata_text(metadata)
+        if extra:
+            pages.append((len(pages) + 1, extra))
+    else:
+        return None
+
+    if not pages:
+        return None
+
+    chunks = chunk_text(pages)
+    if not chunks:
+        return None
+
+    texts = [c[&quot;text&quot;] for c in chunks]
+    embeddings = embed_texts(texts)
+
+    doc_id = uuid.uuid4().hex[:8]
+    page_count = pages[-1][0] if pages else 0
+    return {
+        &quot;doc_id&quot;: doc_id,
+        &quot;filename&quot;: filename,
+        &quot;page_count&quot;: page_count,
+        &quot;chunks&quot;: chunks,
+        &quot;embeddings&quot;: embeddings,
+    }
+
+
+def _format_word_metadata_text(metadata: dict) -&gt; str:
+    parts = []
+    if metadata.get(&quot;comments&quot;):
+        parts.append(&quot;## Comments&quot;)
+        for c in metadata[&quot;comments&quot;]:
+            parts.append(f&quot;[{c['author']}, {c['date']}]: {c['text']}&quot;)
+    if metadata.get(&quot;tracked_changes&quot;):
+        parts.append(&quot;## Tracked Changes&quot;)
+        for tc in metadata[&quot;tracked_changes&quot;]:
+            parts.append(f&quot;[{tc['type'].upper()} by {tc['author']} on {tc['date']}]: {tc['text']}&quot;)
+    if metadata.get(&quot;footnotes&quot;):
+        parts.append(&quot;## Footnotes&quot;)
+        for fn in metadata[&quot;footnotes&quot;]:
+            parts.append(f&quot;[{fn['ref_num']}]: {fn['text']}&quot;)
+    if metadata.get(&quot;endnotes&quot;):
+        parts.append(&quot;## Endnotes&quot;)
+        for en in metadata[&quot;endnotes&quot;]:
+            parts.append(f&quot;[{en['ref_num']}]: {en['text']}&quot;)
+    if metadata.get(&quot;properties&quot;):
+        p = metadata[&quot;properties&quot;]
+        kv = &quot;, &quot;.join(f&quot;{k}: {v}&quot; for k, v in p.items() if v)
+        if kv:
+            parts.append(f&quot;## Document Properties\n{kv}&quot;)
+    return &quot;\n&quot;.join(parts)
+
+
+def _format_excel_metadata_text(metadata: dict) -&gt; str:
+    parts = []
+    if metadata.get(&quot;cell_notes&quot;):
+        parts.append(&quot;## Cell Notes&quot;)
+        for n in metadata[&quot;cell_notes&quot;]:
+            parts.append(f&quot;[{n['sheet']}!{n['cell']}, {n['author']}]: {n['text']}&quot;)
+    if metadata.get(&quot;threaded_comments&quot;):
+        parts.append(&quot;## Threaded Comments&quot;)
+        for tc in metadata[&quot;threaded_comments&quot;]:
+            for reply in tc.get(&quot;thread&quot;, []):
+                parts.append(f&quot;[{tc['cell']}]: {reply['text']}&quot;)
+    if metadata.get(&quot;formulas&quot;):
+        parts.append(&quot;## Formulas&quot;)
+        for f in metadata[&quot;formulas&quot;]:
+            parts.append(f&quot;[{f['sheet']}!{f['cell']}] {f['formula']} = {f['cached_value']}&quot;)
+    if metadata.get(&quot;embedded_objects&quot;):
+        parts.append(&quot;## Embedded Objects&quot;)
+        for obj in metadata[&quot;embedded_objects&quot;]:
+            if obj.get(&quot;flagged&quot;):
+                parts.append(f&quot;WARNING: VBA macro detected (not executed)&quot;)
+            else:
+                parts.append(f&quot;[{obj['type']}]: {obj['extracted_text']}&quot;)
+    if metadata.get(&quot;properties&quot;):
+        p = metadata[&quot;properties&quot;]
+        kv = &quot;, &quot;.join(f&quot;{k}: {v}&quot; for k, v in p.items() if v)
+        if kv:
+            parts.append(f&quot;## Document Properties\n{kv}&quot;)
+    return &quot;\n&quot;.join(parts)
+
+
+def format_office_read_output(sections_or_sheets: list[tuple], metadata: dict, filetype: str) -&gt; str:
+    &quot;&quot;&quot;Format extraction results into a single readable string for the agent.&quot;&quot;&quot;
+    parts = []
+    label = &quot;Section&quot; if filetype == &quot;word&quot; else &quot;Sheet&quot;
+    for key, text in sections_or_sheets:
+        parts.append(f&quot;[{label} {key}]\n{text}&quot;)
+    annotation_text = (
+        _format_word_metadata_text(metadata)
+        if filetype == &quot;word&quot;
+        else _format_excel_metadata_text(metadata)
+    )
+    if annotation_text:
+        parts.append(annotation_text)
+    result = &quot;\n\n&quot;.join(parts)
+    return result[:15000] if len(result) &gt; 15000 else result
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 4: Run ingest tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_ingest_office_word_shape tests/test_office_pipeline.py::test_ingest_office_excel_shape tests/test_office_pipeline.py::test_ingest_office_unknown_extension_returns_none tests/test_office_pipeline.py::test_ingest_office_empty_word_returns_none -v
+</code></pre>
+<p>Expected: all 4 PASS</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add office_pipeline.py tests/test_office_pipeline.py
+git commit -m &quot;feat: add ingest_office and metadata formatting to office_pipeline&quot;
+</code></pre>
+<hr />
+<h2>Task 7: <code>_read_word</code> and <code>_read_excel</code> agent tools (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>tests/test_office_pipeline.py</code> (append tool tests)<br />
+- Modify: <code>agent_utils.py</code></p>
+<ul>
+<li>[ ] <strong>Step 1: Append read-tool tests</strong></li>
+</ul>
+<pre><code class="language-python">def _write_tmp_word(tmp_path_factory) -&gt; str:
+    import tempfile, os
+    data = _make_word_bytes_simple()
+    f = tempfile.NamedTemporaryFile(suffix=&quot;.docx&quot;, delete=False)
+    f.write(data)
+    f.close()
+    return f.name
+
+
+def _write_tmp_excel(tmp_path_factory) -&gt; str:
+    import tempfile
+    data = _make_excel_bytes_simple()
+    f = tempfile.NamedTemporaryFile(suffix=&quot;.xlsx&quot;, delete=False)
+    f.write(data)
+    f.close()
+    return f.name
+
+
+@pytest.mark.asyncio
+async def test_read_word_tool_returns_text():
+    import tempfile, asyncio
+    from agent_utils import _read_word
+    data = _make_word_bytes_simple()
+    with tempfile.NamedTemporaryFile(suffix=&quot;.docx&quot;, delete=False) as f:
+        f.write(data)
+        path = f.name
+    result = await _read_word(path)
+    assert &quot;ERROR&quot; not in result
+    assert &quot;Hello world paragraph&quot; in result
+
+
+@pytest.mark.asyncio
+async def test_read_excel_tool_returns_text():
+    import tempfile, asyncio
+    from agent_utils import _read_excel
+    data = _make_excel_bytes_simple()
+    with tempfile.NamedTemporaryFile(suffix=&quot;.xlsx&quot;, delete=False) as f:
+        f.write(data)
+        path = f.name
+    result = await _read_excel(path)
+    assert &quot;ERROR&quot; not in result
+    assert &quot;Alice&quot; in result
+
+
+@pytest.mark.asyncio
+async def test_read_word_tool_missing_file():
+    from agent_utils import _read_word
+    result = await _read_word(&quot;/tmp/does_not_exist_abc123.docx&quot;)
+    assert result.startswith(&quot;ERROR&quot;)
+
+
+@pytest.mark.asyncio
+async def test_read_excel_tool_missing_file():
+    from agent_utils import _read_excel
+    result = await _read_excel(&quot;/tmp/does_not_exist_abc123.xlsx&quot;)
+    assert result.startswith(&quot;ERROR&quot;)
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Install pytest-asyncio if not present</strong></li>
+</ul>
+<pre><code class="language-bash">pip install pytest-asyncio -q &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_read_word_tool_missing_file -v 2&gt;&amp;1 | head -20
+</code></pre>
+<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>_read_word</code> not yet in <code>agent_utils</code>.</p>
+<ul>
+<li>[ ] <strong>Step 3: Add <code>_read_word</code> and <code>_read_excel</code> to <code>agent_utils.py</code></strong></li>
+</ul>
+<p>Add these two functions immediately after <code>_write_pdf</code> (around line 444). Insert before the <code>_http_request</code> function:</p>
+<pre><code class="language-python">async def _read_word(path: str) -&gt; str:
+    try:
+        p = validate_path(path)
+        from office_pipeline import extract_text_from_word, format_office_read_output
+        loop = asyncio.get_running_loop()
+        file_bytes = p.read_bytes()
+        sections, metadata = await loop.run_in_executor(
+            None, extract_text_from_word, file_bytes
+        )
+        return format_office_read_output(sections, metadata, &quot;word&quot;)
+    except Exception as e:
+        logger.error(&quot;read_word failed: %s&quot;, e, extra={&quot;path&quot;: path})
+        return f&quot;ERROR: {e}&quot;
+
+
+async def _read_excel(path: str) -&gt; str:
+    try:
+        p = validate_path(path)
+        from office_pipeline import extract_text_from_excel, format_office_read_output
+        loop = asyncio.get_running_loop()
+        file_bytes = p.read_bytes()
+        sheets, metadata = await loop.run_in_executor(
+            None, extract_text_from_excel, file_bytes
+        )
+        return format_office_read_output(sheets, metadata, &quot;excel&quot;)
+    except Exception as e:
+        logger.error(&quot;read_excel failed: %s&quot;, e, extra={&quot;path&quot;: path})
+        return f&quot;ERROR: {e}&quot;
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 4: Register the tools in <code>agent_utils.py</code></strong></li>
+</ul>
+<p>Find the line <code>register_tool("read_pdf", ...)</code> (line ~650) and add after <code>register_tool("write_pdf", ...)</code>:</p>
+<pre><code class="language-python">register_tool(&quot;read_word&quot;, &quot;safe&quot;, &quot;Extract text and annotations from a Word (.docx) file&quot;, _read_word)
+register_tool(&quot;read_excel&quot;, &quot;safe&quot;, &quot;Extract text and annotations from an Excel (.xlsx) file&quot;, _read_excel)
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 5: Add tool descriptions to <code>AGENT_SYSTEM_PROMPT</code></strong></li>
+</ul>
+<p>Find the line <code>read_pdf(path)</code> in <code>AGENT_SYSTEM_PROMPT</code> and add after <code>write_pdf</code>:</p>
+<pre><code>  read_word(path)                               — extract text, comments, tracked changes, footnotes, and metadata from a Word (.docx) file
+  write_word(path, spec)                        — create a Word file from a JSON spec dict (sections with headings, paragraphs, tables, footnotes)
+  read_excel(path)                              — extract cell values, formulas, notes, and threaded comments from an Excel (.xlsx) file
+  write_excel(path, spec)                       — create an Excel file from a JSON spec dict (sheets, cells, merges, charts)
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 6: Run read-tool tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_read_word_tool_returns_text tests/test_office_pipeline.py::test_read_excel_tool_returns_text tests/test_office_pipeline.py::test_read_word_tool_missing_file tests/test_office_pipeline.py::test_read_excel_tool_missing_file -v
+</code></pre>
+<p>Expected: all 4 PASS</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add agent_utils.py tests/test_office_pipeline.py
+git commit -m &quot;feat: add read_word and read_excel agent tools&quot;
+</code></pre>
+<hr />
+<h2>Task 8: <code>write_word_document</code> + <code>_write_word</code> tool (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+- Modify: <code>office_pipeline.py</code> (append write function)<br />
+- Modify: <code>agent_utils.py</code> (add <code>_write_word</code>)</p>
+<ul>
+<li>[ ] <strong>Step 1: Append write-word tests</strong></li>
+</ul>
+<pre><code class="language-python">@pytest.mark.asyncio
+async def test_write_word_roundtrip_body():
+    import tempfile, json
+    from agent_utils import _write_word
+    from office_pipeline import extract_text_from_word
+
+    spec = {
+        &quot;properties&quot;: {&quot;title&quot;: &quot;My Report&quot;, &quot;author&quot;: &quot;Omar&quot;},
+        &quot;sections&quot;: [
+            {&quot;type&quot;: &quot;heading&quot;, &quot;level&quot;: 1, &quot;text&quot;: &quot;Executive Summary&quot;},
+            {&quot;type&quot;: &quot;paragraph&quot;, &quot;text&quot;: &quot;Revenue grew 15% this quarter.&quot;, &quot;bold&quot;: False},
+            {&quot;type&quot;: &quot;paragraph&quot;, &quot;text&quot;: &quot;Key finding.&quot;, &quot;bold&quot;: True},
+        ]
+    }
+    with tempfile.NamedTemporaryFile(suffix=&quot;.docx&quot;, delete=False) as f:
+        path = f.name
+
+    result = await _write_word(path, json.dumps(spec))
+    assert &quot;ERROR&quot; not in result
+
+    file_bytes = open(path, &quot;rb&quot;).read()
+    sections, metadata = extract_text_from_word(file_bytes)
+    all_text = &quot; &quot;.join(t for _, t in sections)
+    assert &quot;Executive Summary&quot; in all_text
+    assert &quot;Revenue grew&quot; in all_text
+    assert metadata[&quot;properties&quot;][&quot;title&quot;] == &quot;My Report&quot;
+
+
+@pytest.mark.asyncio
+async def test_write_word_roundtrip_table():
+    import tempfile, json
+    from agent_utils import _write_word
+    from office_pipeline import extract_text_from_word
+
+    spec = {
+        &quot;sections&quot;: [
+            {
+                &quot;type&quot;: &quot;table&quot;,
+                &quot;rows&quot;: [[&quot;Name&quot;, &quot;Score&quot;], [&quot;Alice&quot;, &quot;95&quot;], [&quot;Bob&quot;, &quot;87&quot;]],
+                &quot;header_row&quot;: True,
+                &quot;merge&quot;: []
+            }
+        ]
+    }
+    with tempfile.NamedTemporaryFile(suffix=&quot;.docx&quot;, delete=False) as f:
+        path = f.name
+
+    result = await _write_word(path, json.dumps(spec))
+    assert &quot;ERROR&quot; not in result
+
+    from docx import Document
+    doc = Document(path)
+    tables = doc.tables
+    assert len(tables) == 1
+    assert tables[0].cell(0, 0).text == &quot;Name&quot;
+    assert tables[0].cell(1, 0).text == &quot;Alice&quot;
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_word_roundtrip_body -v 2&gt;&amp;1 | head -15
+</code></pre>
+<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>_write_word</code> not yet defined.</p>
+<ul>
+<li>[ ] <strong>Step 3: Append <code>write_word_document</code> to <code>office_pipeline.py</code></strong></li>
+</ul>
+<pre><code class="language-python">def write_word_document(path, spec: dict) -&gt; None:
+    &quot;&quot;&quot;Create a .docx file from a structured spec dict.&quot;&quot;&quot;
+    from docx import Document
+    from docx.shared import Pt
+
+    doc = Document()
+
+    props = spec.get(&quot;properties&quot;, {})
+    core = doc.core_properties
+    if props.get(&quot;title&quot;):
+        core.title = props[&quot;title&quot;]
+    if props.get(&quot;author&quot;):
+        core.author = props[&quot;author&quot;]
+    if props.get(&quot;subject&quot;):
+        core.subject = props[&quot;subject&quot;]
+    if props.get(&quot;keywords&quot;):
+        core.keywords = props[&quot;keywords&quot;]
+
+    for section in spec.get(&quot;sections&quot;, []):
+        stype = section.get(&quot;type&quot;, &quot;paragraph&quot;)
+
+        if stype == &quot;heading&quot;:
+            level = min(max(int(section.get(&quot;level&quot;, 1)), 1), 6)
+            doc.add_heading(section.get(&quot;text&quot;, &quot;&quot;), level=level)
+
+        elif stype == &quot;paragraph&quot;:
+            p = doc.add_paragraph()
+            run = p.add_run(section.get(&quot;text&quot;, &quot;&quot;))
+            if section.get(&quot;bold&quot;):
+                run.bold = True
+            if section.get(&quot;italic&quot;):
+                run.italic = True
+            if section.get(&quot;underline&quot;):
+                run.underline = True
+
+        elif stype == &quot;table&quot;:
+            rows_data = section.get(&quot;rows&quot;, [])
+            if rows_data:
+                n_cols = max((len(r) for r in rows_data), default=1)
+                table = doc.add_table(rows=len(rows_data), cols=n_cols)
+                for i, row in enumerate(rows_data):
+                    for j, cell_val in enumerate(row):
+                        if j &lt; n_cols:
+                            table.cell(i, j).text = str(cell_val) if cell_val is not None else &quot;&quot;
+                for merge in section.get(&quot;merge&quot;, []):
+                    r, c = merge[&quot;row&quot;], merge[&quot;col&quot;]
+                    rs, cs = merge[&quot;rowspan&quot;], merge[&quot;colspan&quot;]
+                    table.cell(r, c).merge(table.cell(r + rs - 1, c + cs - 1))
+
+        elif stype in (&quot;footnote&quot;, &quot;endnote&quot;):
+            # python-docx has no public footnote API; append as labelled paragraph
+            label = &quot;Footnote&quot; if stype == &quot;footnote&quot; else &quot;Endnote&quot;
+            p = doc.add_paragraph()
+            run = p.add_run(f&quot;[{label} {section.get('ref_paragraph', '')}]: {section.get('text', '')}&quot;)
+            run.font.size = Pt(9)
+
+    doc.save(str(path))
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 4: Add <code>_write_word</code> to <code>agent_utils.py</code></strong></li>
+</ul>
+<p>Add immediately after <code>_read_excel</code> (after Task 7's additions):</p>
+<pre><code class="language-python">async def _write_word(path: str, spec: str) -&gt; str:
+    log_audit(f&quot;WRITE_WORD: {path}&quot;)
+    try:
+        p = validate_path(path, must_exist=False)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+        spec_dict = _json.loads(spec) if isinstance(spec, str) else spec
+        loop = asyncio.get_running_loop()
+        from office_pipeline import write_word_document
+
+        def _sync():
+            write_word_document(p, spec_dict)
+            return f&quot;OK: wrote Word document to {path}&quot;
+
+        return await loop.run_in_executor(None, _sync)
+    except Exception as e:
+        logger.error(&quot;write_word failed: %s&quot;, e, extra={&quot;path&quot;: path})
+        return f&quot;ERROR: {e}&quot;
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 5: Register <code>write_word</code> in <code>agent_utils.py</code></strong></li>
+</ul>
+<p>Add after <code>register_tool("read_excel", ...)</code>:</p>
+<pre><code class="language-python">register_tool(&quot;write_word&quot;, &quot;risky&quot;, &quot;Create a Word (.docx) file from a JSON spec&quot;, _write_word)
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 6: Run write-word tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_word_roundtrip_body tests/test_office_pipeline.py::test_write_word_roundtrip_table -v
+</code></pre>
+<p>Expected: both PASS</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add office_pipeline.py agent_utils.py tests/test_office_pipeline.py
+git commit -m &quot;feat: add write_word_document and write_word agent tool&quot;
+</code></pre>
+<hr />
+<h2>Task 9: <code>write_excel_document</code> + <code>_write_excel</code> tool (TDD)</h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>tests/test_office_pipeline.py</code> (append tests)<br />
+- Modify: <code>office_pipeline.py</code> (append write function)<br />
+- Modify: <code>agent_utils.py</code> (add <code>_write_excel</code>)</p>
+<ul>
+<li>[ ] <strong>Step 1: Append write-excel tests</strong></li>
+</ul>
+<pre><code class="language-python">@pytest.mark.asyncio
+async def test_write_excel_roundtrip_cells():
+    import tempfile, json
+    from agent_utils import _write_excel
+    from openpyxl import load_workbook
+
+    spec = {
+        &quot;properties&quot;: {&quot;title&quot;: &quot;Q1 Results&quot;},
+        &quot;sheets&quot;: [
+            {
+                &quot;name&quot;: &quot;Data&quot;,
+                &quot;rows&quot;: [
+                    [{&quot;value&quot;: &quot;Name&quot;}, {&quot;value&quot;: &quot;Revenue&quot;, &quot;bold&quot;: True}],
+                    [{&quot;value&quot;: &quot;Alice&quot;}, {&quot;value&quot;: 50000}],
+                    [{&quot;value&quot;: &quot;Bob&quot;}, {&quot;value&quot;: 35000}],
+                ],
+                &quot;merges&quot;: [],
+                &quot;charts&quot;: []
+            }
+        ]
+    }
+    with tempfile.NamedTemporaryFile(suffix=&quot;.xlsx&quot;, delete=False) as f:
+        path = f.name
+
+    result = await _write_excel(path, json.dumps(spec))
+    assert &quot;ERROR&quot; not in result
+
+    wb = load_workbook(path)
+    assert &quot;Data&quot; in wb.sheetnames
+    ws = wb[&quot;Data&quot;]
+    assert ws[&quot;A1&quot;].value == &quot;Name&quot;
+    assert ws[&quot;A2&quot;].value == &quot;Alice&quot;
+    assert ws[&quot;B3&quot;].value == 35000
+
+
+@pytest.mark.asyncio
+async def test_write_excel_roundtrip_formula():
+    import tempfile, json
+    from agent_utils import _write_excel
+    from openpyxl import load_workbook
+
+    spec = {
+        &quot;sheets&quot;: [
+            {
+                &quot;name&quot;: &quot;Calc&quot;,
+                &quot;rows&quot;: [
+                    [{&quot;value&quot;: 10}],
+                    [{&quot;value&quot;: 20}],
+                    [{&quot;formula&quot;: &quot;=A1+A2&quot;}],
+                ],
+                &quot;merges&quot;: [],
+                &quot;charts&quot;: []
+            }
+        ]
+    }
+    with tempfile.NamedTemporaryFile(suffix=&quot;.xlsx&quot;, delete=False) as f:
+        path = f.name
+
+    result = await _write_excel(path, json.dumps(spec))
+    assert &quot;ERROR&quot; not in result
+
+    wb = load_workbook(path, data_only=False)
+    ws = wb[&quot;Calc&quot;]
+    assert ws[&quot;A3&quot;].value == &quot;=A1+A2&quot;
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_excel_roundtrip_cells -v 2&gt;&amp;1 | head -15
+</code></pre>
+<p>Expected: <code>ImportError</code> or <code>AttributeError</code> — <code>_write_excel</code> not yet defined.</p>
+<ul>
+<li>[ ] <strong>Step 3: Append <code>write_excel_document</code> to <code>office_pipeline.py</code></strong></li>
+</ul>
+<pre><code class="language-python">def write_excel_document(path, spec: dict) -&gt; None:
+    &quot;&quot;&quot;Create a .xlsx file from a structured spec dict.&quot;&quot;&quot;
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+    from openpyxl.utils.cell import range_boundaries
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    props = spec.get(&quot;properties&quot;, {})
+    if props.get(&quot;title&quot;):
+        wb.properties.title = props[&quot;title&quot;]
+    if props.get(&quot;author&quot;):
+        wb.properties.creator = props[&quot;author&quot;]
+    if props.get(&quot;keywords&quot;):
+        wb.properties.keywords = props[&quot;keywords&quot;]
+
+    for sheet_spec in spec.get(&quot;sheets&quot;, []):
+        ws = wb.create_sheet(title=sheet_spec.get(&quot;name&quot;, &quot;Sheet&quot;))
+        rows_data = sheet_spec.get(&quot;rows&quot;, [])
+
+        for r_idx, row in enumerate(rows_data, start=1):
+            for c_idx, cell_spec in enumerate(row, start=1):
+                if cell_spec is None:
+                    continue
+                cell = ws.cell(row=r_idx, column=c_idx)
+                if isinstance(cell_spec, dict):
+                    val = cell_spec.get(&quot;formula&quot;) or cell_spec.get(&quot;value&quot;)
+                    cell.value = val
+                    font_kw: dict = {}
+                    if cell_spec.get(&quot;bold&quot;):
+                        font_kw[&quot;bold&quot;] = True
+                    if cell_spec.get(&quot;italic&quot;):
+                        font_kw[&quot;italic&quot;] = True
+                    if font_kw:
+                        cell.font = Font(**font_kw)
+                    if cell_spec.get(&quot;bg_color&quot;):
+                        cell.fill = PatternFill(fill_type=&quot;solid&quot;, fgColor=cell_spec[&quot;bg_color&quot;])
+                    if cell_spec.get(&quot;number_format&quot;):
+                        cell.number_format = cell_spec[&quot;number_format&quot;]
+                    if cell_spec.get(&quot;alignment&quot;):
+                        cell.alignment = Alignment(horizontal=cell_spec[&quot;alignment&quot;])
+                else:
+                    cell.value = cell_spec
+
+        for merge_range in sheet_spec.get(&quot;merges&quot;, []):
+            ws.merge_cells(merge_range)
+
+        for chart_spec in sheet_spec.get(&quot;charts&quot;, []):
+            ctype = chart_spec.get(&quot;type&quot;, &quot;bar&quot;)
+            if ctype == &quot;bar&quot;:
+                chart = BarChart()
+            elif ctype == &quot;line&quot;:
+                chart = LineChart()
+            elif ctype == &quot;pie&quot;:
+                chart = PieChart()
+            else:
+                continue
+            chart.title = chart_spec.get(&quot;title&quot;, &quot;&quot;)
+            data_range = chart_spec.get(&quot;data_range&quot;, &quot;&quot;)
+            if data_range:
+                min_col, min_row, max_col, max_row = range_boundaries(data_range)
+                data = Reference(ws, min_col=min_col, min_row=min_row, max_col=max_col, max_row=max_row)
+                chart.add_data(data, titles_from_data=True)
+            ws.add_chart(chart, chart_spec.get(&quot;anchor&quot;, &quot;E1&quot;))
+
+    wb.save(str(path))
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 4: Add <code>_write_excel</code> to <code>agent_utils.py</code></strong></li>
+</ul>
+<p>Add immediately after <code>_write_word</code>:</p>
+<pre><code class="language-python">async def _write_excel(path: str, spec: str) -&gt; str:
+    log_audit(f&quot;WRITE_EXCEL: {path}&quot;)
+    try:
+        p = validate_path(path, must_exist=False)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+        spec_dict = _json.loads(spec) if isinstance(spec, str) else spec
+        loop = asyncio.get_running_loop()
+        from office_pipeline import write_excel_document
+
+        def _sync():
+            write_excel_document(p, spec_dict)
+            return f&quot;OK: wrote Excel file to {path}&quot;
+
+        return await loop.run_in_executor(None, _sync)
+    except Exception as e:
+        logger.error(&quot;write_excel failed: %s&quot;, e, extra={&quot;path&quot;: path})
+        return f&quot;ERROR: {e}&quot;
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 5: Register <code>write_excel</code> in <code>agent_utils.py</code></strong></li>
+</ul>
+<p>Add after <code>register_tool("write_word", ...)</code>:</p>
+<pre><code class="language-python">register_tool(&quot;write_excel&quot;, &quot;risky&quot;, &quot;Create an Excel (.xlsx) file from a JSON spec&quot;, _write_excel)
+</code></pre>
+<ul>
+<li>[ ] <strong>Step 6: Run write-excel tests</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/test_office_pipeline.py::test_write_excel_roundtrip_cells tests/test_office_pipeline.py::test_write_excel_roundtrip_formula -v
+</code></pre>
+<p>Expected: both PASS</p>
+<ul>
+<li>[ ] <strong>Step 7: Run full test suite to check for regressions</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/ -v 2&gt;&amp;1 | tail -20
+</code></pre>
+<p>Expected: all tests PASS, no regressions in existing tests.</p>
+<ul>
+<li>[ ] <strong>Step 8: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add office_pipeline.py agent_utils.py tests/test_office_pipeline.py
+git commit -m &quot;feat: add write_excel_document and write_excel agent tool&quot;
+</code></pre>
+<hr />
+<h2>Task 10: Extend <code>/v1/document</code> endpoint in <code>gemma_bridge.py</code></h2>
+<p><strong>Files:</strong><br />
+- Modify: <code>gemma_bridge.py</code> (lines 283–310)</p>
+<ul>
+<li>[ ] <strong>Step 1: Read the current <code>upload_document</code> handler</strong></li>
+</ul>
+<p>Open <code>gemma_bridge.py</code> and locate the <code>upload_document</code> function (around line 283). It currently calls <code>pdf_pipeline.ingest_pdf</code> unconditionally.</p>
+<ul>
+<li>[ ] <strong>Step 2: Replace the routing logic in <code>upload_document</code></strong></li>
+</ul>
+<p>Find this block (lines ~284–309):</p>
+<pre><code class="language-python">@app.post(&quot;/v1/document&quot;)
+async def upload_document(file: UploadFile = File(...)):
+    try:
+        file_bytes = await file.read()
+        filename = file.filename or &quot;document.pdf&quot;
+
+        doc = pdf_pipeline.ingest_pdf(file_bytes, filename)
+</code></pre>
+<p>Replace only the <code>doc = pdf_pipeline.ingest_pdf(...)</code> call and add the routing. The full updated function body becomes:</p>
+<pre><code class="language-python">@app.post(&quot;/v1/document&quot;)
+async def upload_document(file: UploadFile = File(...)):
+    try:
+        file_bytes = await file.read()
+        filename = file.filename or &quot;document.pdf&quot;
+        ext = filename.rsplit(&quot;.&quot;, 1)[-1].lower() if &quot;.&quot; in filename else &quot;&quot;
+
+        if ext in (&quot;docx&quot;, &quot;xlsx&quot;):
+            import office_pipeline
+            doc = office_pipeline.ingest_office(file_bytes, filename)
+        else:
+            doc = pdf_pipeline.ingest_pdf(file_bytes, filename)
+</code></pre>
+<p>Leave the rest of the function (<code>if doc is None:</code> block onwards) unchanged.</p>
+<ul>
+<li>[ ] <strong>Step 3: Smoke test the upload endpoint manually</strong></li>
+</ul>
+<p>Ensure the bridge is running (kill existing processes and restart per your server restart procedure), then:</p>
+<pre><code class="language-bash"># Create a tiny test docx
+python3 -c &quot;
+from docx import Document
+import io
+doc = Document()
+doc.add_paragraph('Smoke test paragraph.')
+doc.save('/tmp/smoke_test.docx')
+&quot;
+
+# Upload it
+curl -s -X POST http://localhost:9379/v1/document \
+  -F &quot;file=@/tmp/smoke_test.docx&quot; | python3 -m json.tool
+</code></pre>
+<p>Expected: JSON response with <code>doc_id</code>, <code>filename: "smoke_test.docx"</code>, <code>chunk_count &gt;= 1</code>.</p>
+<ul>
+<li>[ ] <strong>Step 4: Smoke test Excel upload</strong></li>
+</ul>
+<pre><code class="language-bash">python3 -c &quot;
+from openpyxl import Workbook
+wb = Workbook()
+ws = wb.active
+ws['A1'] = 'Product'
+ws['B1'] = 'Sales'
+ws['A2'] = 'Widget'
+ws['B2'] = 1500
+wb.save('/tmp/smoke_test.xlsx')
+&quot;
+
+curl -s -X POST http://localhost:9379/v1/document \
+  -F &quot;file=@/tmp/smoke_test.xlsx&quot; | python3 -m json.tool
+</code></pre>
+<p>Expected: JSON response with <code>doc_id</code>, <code>filename: "smoke_test.xlsx"</code>, <code>chunk_count &gt;= 1</code>.</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<pre><code class="language-bash">git add gemma_bridge.py
+git commit -m &quot;feat: route .docx and .xlsx uploads through ingest_office in gemma_bridge&quot;
+</code></pre>
+<hr />
+<h2>Task 11: Full test suite pass + final commit</h2>
+<ul>
+<li>[ ] <strong>Step 1: Run the full test suite</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python -m pytest tests/ -v
+</code></pre>
+<p>Expected: all tests PASS.</p>
+<ul>
+<li>[ ] <strong>Step 2: Run the smoke test script</strong></li>
+</ul>
+<pre><code class="language-bash">cd &quot;/Users/ojdavis/Claude Code/Gemma4&quot; &amp;&amp; python scripts/smoke_test.py
+</code></pre>
+<p>Expected: no failures.</p>
+<ul>
+<li>[ ] <strong>Step 3: Final commit if any loose changes remain</strong></li>
+</ul>
+<pre><code class="language-bash">git status
+# If anything is unstaged:
+git add -p
+git commit -m &quot;chore: finalize Word and Excel support&quot;
+</code></pre>
+</div>
+</body>
+</html>

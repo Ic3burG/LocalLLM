@@ -1,1 +1,13 @@
 .worktrees/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.log
+mlx_models/
+temp_model/
+temp_config/
+temp_v4/
+node_modules/
+.superpowers/
+.DS_Store
