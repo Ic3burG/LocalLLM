@@ -1390,7 +1390,7 @@
       >
         <div
           class="p-6 border-b flex items-center justify-between sticky top-0 z-10"
-          style="border-color:var(--llm-panel-border);background:var(--llm-surface)"
+          style="border-color:var(--llm-panel-border);background:var(--llm-panel)"
         >
           <div class="flex items-center gap-4 flex-1">
             <h2 class="text-xl font-bold" style="color:var(--llm-text)">All Chats</h2>
@@ -2078,18 +2078,6 @@
       <div class="item-meta">${formatTimeAgo(chat.timestamp)}</div>
     </div>
   `;
-      }
-
-      // --- All Chats Modal Logic ---
-      function showAllChats() {
-        allChatsModal.classList.remove("hidden-modal");
-        renderAllChats();
-        selectedChatIds.clear();
-        updateBulkDeleteUI();
-      }
-
-      function closeAllChats() {
-        allChatsModal.classList.add("hidden-modal");
       }
 
       // Theme Icons
