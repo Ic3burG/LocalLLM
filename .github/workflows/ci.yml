@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install Ruff
+        run: pip install ruff
+      - name: Run Ruff Check
+        run: ruff check .
+      - name: Run Ruff Format Check
+        run: ruff format --check .
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run Prettier Check
+        run: npx prettier --check .
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio
+      - name: Run Tests (Skip GPU)
+        run: |
+          # We skip MLX/GPU tests as standard runners don't have Apple Silicon/GPU
+          pytest -v -m "not needs_gpu" --ignore=tests/contracts/test_mlx_contract.py
