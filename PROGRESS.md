@@ -446,7 +446,6 @@ The Vitals pane in the Settings modal now features a sub-tabbed interface. Data 
 ## 🧠 Deep Thinking Mode — May 10, 2026
 
 Implemented a multi-stage "Deep Thinking" pipeline that trades inference time for maximum reasoning quality.
-
 ### The "Council of Three" Pipeline
 
 When Deep Thinking is enabled, the agent executes a three-stage pre-reasoning process before entering the main ReAct loop:
@@ -454,7 +453,31 @@ When Deep Thinking is enabled, the agent executes a three-stage pre-reasoning pr
 2. **Critique (Self-Correction)**: Acts as a critical reviewer to identify logical flaws and edge cases in each path, assigning robustness scores.
 3. **Synthesize (Extended CoT)**: Merges the best elements into a single, robust "master reasoning" plan that addresses all identified flaws.
 
-### Technical Implementation
+---
+
+## ☁️ Remote Repository Setup — May 10, 2026 (Session 2)
+
+Connected the local project to a remote GitHub repository to enable collaboration and off-site backup.
+
+### Actions Taken
+
+- **GitHub Integration**: Linked the local repository to `https://github.com/Ic3burG/LocalLLM.git` using the GitHub CLI (`gh`).
+- **Clean Sync**: 
+  - Updated `.gitignore` to comprehensively exclude Python cache, logs, virtual environments, large model weights, and node modules.
+  - Purged ~5,000 tracked files that should have been ignored (primarily `node_modules` and `__pycache__`) from the git index.
+  - Established `main` as the default branch.
+- **Source of Truth**: Performed a force-push to align the remote repository with the mature local state.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `.gitignore` | **Major Update** — Added comprehensive ignores for Python, Node.js, Logs, and Models. |
+| `PROGRESS.md` | Updated with remote setup details. |
+
+---
+
+## 📈 Current Status (as of May 10, 2026)
 
 - **Backend (`agent.py`)**: 
   - New `run_deep_thinking_pipeline` handles sequential inference calls and emits real-time SSE `type: "status"` updates (e.g., "Deep Thinking: Exploring paths...").
