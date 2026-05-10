@@ -1,7 +1,9 @@
-import pytest
-import asyncio
 import socket
+
+import pytest
+
 from agent_utils import _google_search
+
 
 def has_internet():
     try:

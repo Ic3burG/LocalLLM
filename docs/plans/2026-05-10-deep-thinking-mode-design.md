@@ -16,16 +16,19 @@ Implement a "Deep Thinking" mode that enhances model reasoning quality through a
 When Deep Thinking is enabled, the system executes three sequential inference passes before entering the standard ReAct agent loop or returning a final answer.
 
 ### Stage 1: Diversify (Tree of Thought)
+
 - **Goal:** Explore multiple mental models for the problem.
 - **Action:** Ask the model to generate 3 distinct, high-level strategies (Path A, B, and C).
 - **Inference Call:** `run_inference` with a diversification prompt.
 
 ### Stage 2: Critique & Score (Self-Correction)
+
 - **Goal:** Identify hidden flaws in the generated strategies.
 - **Action:** Ask the model to act as a harsh critic for its own paths, identifying edge cases and assigning a robustness score.
 - **Inference Call:** `run_inference` providing the output of Stage 1.
 
 ### Stage 3: Synthesize (Extended CoT)
+
 - **Goal:** Merge the best elements into a single robust plan.
 - **Action:** Generate a final "master reasoning" block that addresses the critiques from Stage 2.
 - **Inference Call:** `run_inference` providing the full history of the "Council".
@@ -35,12 +38,14 @@ When Deep Thinking is enabled, the system executes three sequential inference pa
 ## System Integration
 
 ### Backend (`agent.py` & `gemma_bridge.py`)
+
 - **API Change:** Add `deep_think: bool` to the `AgentRequest` pydantic model.
 - **Logic:** Implement `run_deep_thinking_pipeline(messages, model_id)` in `agent.py`.
 - **SSE Updates:** Push `type: "thinking"` events for each stage (e.g., "Deep Thinking: Exploring paths...", "Deep Thinking: Critiquing strategies...") to keep the user informed during the long wait.
 - **Agent Loop:** The final synthesized reasoning is injected as the initial `thought` in the ReAct loop.
 
 ### Frontend (`index.html`)
+
 - **Toggle UI:** Add a "Deep Think" toggle switch/icon next to the model selector.
 - **State Management:** Include `deep_think` state in the chat request payload.
 - **Visuals:** Enhance the existing thinking indicator to show specific sub-stages of deep thinking.

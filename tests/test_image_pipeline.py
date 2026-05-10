@@ -1,8 +1,10 @@
-import io
 import base64
+import io
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from PIL import Image
+
 from image_pipeline import _apply_style, _parse_size, _should_swap, generate_image
 
 

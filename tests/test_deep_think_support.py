@@ -1,7 +1,7 @@
-import pytest
-from pydantic import ValidationError
-from agent import AgentRequest, react_loop_sse
 import inspect
+
+from agent import AgentRequest, react_loop_sse
+
 
 def test_agent_request_deep_think_default():
     req = AgentRequest(prompt="hi")

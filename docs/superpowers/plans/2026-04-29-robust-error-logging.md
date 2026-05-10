@@ -14,21 +14,22 @@
 
 ## File Map
 
-| Action | Path | Responsibility |
-|---|---|---|
-| Create | `logging_config.py` | `JsonLinesFormatter`, `HumanFormatter`, `setup_logging()`, `task_id_var` |
-| Create | `tests/test_logging_config.py` | Tests for `logging_config.py` and `RequestLoggingMiddleware` |
-| Modify | `gemma_bridge.py` | Swap `basicConfig` → `setup_logging()`, add `RequestLoggingMiddleware` |
-| Modify | `agent.py` | Add logger, set `task_id_var`, log 5 previously-silent events |
-| Modify | `agent_utils.py` | Add `logger.error()` to all tool exception handlers |
-| Modify | `inference_engine.py` | Add per-call timing logs |
-| Modify | `gemma-web/server.js` | Add `log()` helper, structured logs on every route |
+| Action | Path                           | Responsibility                                                           |
+| ------ | ------------------------------ | ------------------------------------------------------------------------ |
+| Create | `logging_config.py`            | `JsonLinesFormatter`, `HumanFormatter`, `setup_logging()`, `task_id_var` |
+| Create | `tests/test_logging_config.py` | Tests for `logging_config.py` and `RequestLoggingMiddleware`             |
+| Modify | `gemma_bridge.py`              | Swap `basicConfig` → `setup_logging()`, add `RequestLoggingMiddleware`   |
+| Modify | `agent.py`                     | Add logger, set `task_id_var`, log 5 previously-silent events            |
+| Modify | `agent_utils.py`               | Add `logger.error()` to all tool exception handlers                      |
+| Modify | `inference_engine.py`          | Add per-call timing logs                                                 |
+| Modify | `gemma-web/server.js`          | Add `log()` helper, structured logs on every route                       |
 
 ---
 
 ## Task 1: Create `logging_config.py`
 
 **Files:**
+
 - Create: `logging_config.py`
 - Create: `tests/test_logging_config.py`
 
@@ -241,6 +242,7 @@ git commit -m "feat: add logging_config module with JsonLinesFormatter and task_
 ## Task 2: Integrate `logging_config.py` into `gemma_bridge.py`
 
 **Files:**
+
 - Modify: `gemma_bridge.py`
 - Modify: `tests/test_logging_config.py` (append middleware test)
 
@@ -315,6 +317,7 @@ from logging_config import setup_logging, task_id_var
 **b) Replace lines 19-21** (the `basicConfig` block):
 
 Old:
+
 ```python
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -322,6 +325,7 @@ logger = logging.getLogger("gemma_bridge")
 ```
 
 New:
+
 ```python
 setup_logging()
 logger = logging.getLogger("gemma_bridge")
@@ -373,11 +377,13 @@ app.add_middleware(RequestLoggingMiddleware)
 **d) Update `uvicorn.run()`** at the bottom of the file:
 
 Old:
+
 ```python
     uvicorn.run(app, host="127.0.0.1", port=PORT)
 ```
 
 New:
+
 ```python
     uvicorn.run(app, host="127.0.0.1", port=PORT, log_config=None)
 ```
@@ -402,6 +408,7 @@ git commit -m "feat: integrate setup_logging and RequestLoggingMiddleware into g
 ## Task 3: Update `agent.py` — `task_id` propagation + log silent events
 
 **Files:**
+
 - Modify: `agent.py`
 - Modify: `tests/test_agent.py` (append 4 new tests)
 
@@ -513,11 +520,13 @@ logger = logging.getLogger(__name__)
 **c) In `load_scheduler_tasks_on_startup`**, replace the `print()` call:
 
 Old:
+
 ```python
             print(f"[agent] Failed to register task {task.get('name')}: {e}")
 ```
 
 New:
+
 ```python
             logger.warning(
                 "failed to register scheduled task on startup",
@@ -536,6 +545,7 @@ New:
 Then add these log calls in the loop body:
 
 After `if parsed is None:` / `continue`:
+
 ```python
             if parsed is None:
                 logger.debug("unparseable model output", extra={"preview": response_text[:200]})
@@ -543,6 +553,7 @@ After `if parsed is None:` / `continue`:
 ```
 
 After `if not tool:` block:
+
 ```python
             if not tool:
                 logger.warning("unknown tool called", extra={"tool": name_or_msg})
@@ -551,6 +562,7 @@ After `if not tool:` block:
 ```
 
 In the `except Exception as e:` inside the tool call block:
+
 ```python
             try:
                 result = await tool.fn(*args)
@@ -560,6 +572,7 @@ In the `except Exception as e:` inside the tool call block:
 ```
 
 Before `return "Max iterations reached"`:
+
 ```python
     logger.warning("max iterations reached")
     return "Max iterations reached"
@@ -584,6 +597,7 @@ Add the same log calls as in `_react_loop_internal` for: unparseable output, unk
 ```
 
 And before `await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))`:
+
 ```python
         logger.warning("max iterations reached")
 ```
@@ -608,6 +622,7 @@ git commit -m "feat: propagate task_id via ContextVar and log 5 previously-silen
 ## Task 4: Update `agent_utils.py` — log tool errors
 
 **Files:**
+
 - Modify: `agent_utils.py`
 - Modify: `tests/test_agent.py` (append 2 tests)
 
@@ -650,6 +665,7 @@ Expected: both FAIL — no matching log records.
 `agent_utils.py` already has `logger = logging.getLogger(__name__)` at line 28. Add `logger.error()` calls to each tool's `except` block. The pattern is: add one line before every `return f"ERROR: {e}"`.
 
 Update `_read_file`:
+
 ```python
     except Exception as e:
         logger.error("read_file failed: %s", e, extra={"path": path})
@@ -657,6 +673,7 @@ Update `_read_file`:
 ```
 
 Update `_list_dir`:
+
 ```python
     except Exception as e:
         logger.error("list_dir failed: %s", e, extra={"path": path})
@@ -664,6 +681,7 @@ Update `_list_dir`:
 ```
 
 Update `_write_file` (in the inner `except`):
+
 ```python
     except Exception as e:
         logger.error("write_file failed: %s", e, extra={"path": path})
@@ -671,6 +689,7 @@ Update `_write_file` (in the inner `except`):
 ```
 
 Update `_append_file`:
+
 ```python
     except Exception as e:
         logger.error("append_file failed: %s", e, extra={"path": path})
@@ -678,6 +697,7 @@ Update `_append_file`:
 ```
 
 Update `_shell` — there are two error paths. Replace both:
+
 ```python
     except subprocess.TimeoutExpired:
         logger.error("shell timed out", extra={"command": command})
@@ -686,6 +706,7 @@ Update `_shell` — there are two error paths. Replace both:
 ```
 
 Wait — `_shell` has only one `try/except`:
+
 ```python
 async def _shell(command: str) -> str:
     log_audit(f"SHELL: {command}")
@@ -697,6 +718,7 @@ async def _shell(command: str) -> str:
 ```
 
 Replace the `except` block with:
+
 ```python
     except subprocess.TimeoutExpired:
         logger.error("shell timed out", extra={"command": command})
@@ -704,6 +726,7 @@ Replace the `except` block with:
 ```
 
 Update `_web_fetch`:
+
 ```python
     except Exception as e:
         logger.error("web_fetch failed: %s", e, extra={"url": url})
@@ -711,6 +734,7 @@ Update `_web_fetch`:
 ```
 
 Update `_grep_search`:
+
 ```python
     except Exception as e:
         logger.error("grep_search failed: %s", e, extra={"pattern": pattern, "path": path})
@@ -718,6 +742,7 @@ Update `_grep_search`:
 ```
 
 Update `_python_interpreter`:
+
 ```python
     except Exception:
         sys.stdout = old_stdout
@@ -727,6 +752,7 @@ Update `_python_interpreter`:
 ```
 
 Update `_google_search`:
+
 ```python
     except Exception as e:
         logger.error("google_search failed: %s", e, extra={"query": query})
@@ -734,6 +760,7 @@ Update `_google_search`:
 ```
 
 Update `_clipboard_paste`:
+
 ```python
     except Exception as e:
         logger.error("clipboard_paste failed: %s", e)
@@ -741,6 +768,7 @@ Update `_clipboard_paste`:
 ```
 
 Update `_clipboard_copy`:
+
 ```python
     except Exception as e:
         logger.error("clipboard_copy failed: %s", e)
@@ -748,11 +776,13 @@ Update `_clipboard_copy`:
 ```
 
 Update `_git_status` and `_git_log`:
+
 ```python
     except Exception as e:
         logger.error("git_status failed: %s", e)
         return f"ERROR: {e}"
 ```
+
 ```python
     except Exception as e:
         logger.error("git_log failed: %s", e)
@@ -760,16 +790,19 @@ Update `_git_status` and `_git_log`:
 ```
 
 Update `_create_cron` and `_delete_cron` and `_list_crons`:
+
 ```python
     except Exception as e:
         logger.error("create_cron failed: %s", e, extra={"name": name})
         return f"ERROR: {e}"
 ```
+
 ```python
     except Exception as e:
         logger.error("delete_cron failed: %s", e, extra={"name": name})
         return f"ERROR: {e}"
 ```
+
 ```python
     except subprocess.CalledProcessError:
         return "No crontab for this user."
@@ -796,6 +829,7 @@ git commit -m "feat: log errors in all agent_utils tool exception handlers"
 ## Task 5: Update `inference_engine.py` — per-call timing logs
 
 **Files:**
+
 - Modify: `inference_engine.py`
 - Modify: `tests/test_logging_config.py` (append 1 test)
 
@@ -844,6 +878,7 @@ Expected: FAIL — no "inference start" or "inference complete" log records.
 The `run_inference` function is at the bottom of `inference_engine.py`. Replace it:
 
 Old:
+
 ```python
 async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Shared inference helper — runs blocking inference in the dedicated mlx
@@ -857,6 +892,7 @@ async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
 ```
 
 New:
+
 ```python
 async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Shared inference helper — runs blocking inference in the dedicated mlx
@@ -925,6 +961,7 @@ git commit -m "feat: add per-call timing logs to run_inference"
 ## Task 6: Update `server.js` — structured logging
 
 **Files:**
+
 - Modify: `gemma-web/server.js`
 
 No automated test for Node.js in this project. Verify manually by checking `server.log` after making a request.
@@ -938,12 +975,23 @@ const fs = require("fs");
 const LOG_FILE = path.join(__dirname, "server.log");
 
 function log(level, msg, fields = {}) {
-  const entry = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields });
+  const entry = JSON.stringify({
+    ts: new Date().toISOString(),
+    level,
+    msg,
+    ...fields,
+  });
   fs.appendFileSync(LOG_FILE, entry + "\n");
   if (level === "ERROR") {
-    console.error(`${new Date().toISOString()} ${level} [server] ${msg}`, Object.keys(fields).length ? fields : "");
+    console.error(
+      `${new Date().toISOString()} ${level} [server] ${msg}`,
+      Object.keys(fields).length ? fields : ""
+    );
   } else {
-    console.log(`${new Date().toISOString()} ${level} [server] ${msg}`, Object.keys(fields).length ? fields : "");
+    console.log(
+      `${new Date().toISOString()} ${level} [server] ${msg}`,
+      Object.keys(fields).length ? fields : ""
+    );
   }
 }
 ```
@@ -953,6 +1001,7 @@ function log(level, msg, fields = {}) {
 Replace each error handler with a `log()` call that captures the upstream status code when available. Here is the complete updated set of catch blocks:
 
 `/api/document`:
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -962,6 +1011,7 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 `/api/chat`:
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -971,6 +1021,7 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 `/api/chat/stream` (POST):
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -980,14 +1031,16 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 `/api/chat/stream/:taskId` (SSE proxy error event):
+
 ```javascript
-  proxyReq.on("error", (err) => {
-    log("ERROR", "SSE proxy error", { task_id: taskId, error: err.message });
-    res.end();
-  });
+proxyReq.on("error", (err) => {
+  log("ERROR", "SSE proxy error", { task_id: taskId, error: err.message });
+  res.end();
+});
 ```
 
 `/api/title`:
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -997,6 +1050,7 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 `/api/agent/confirm/:taskId`:
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -1006,6 +1060,7 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 `/api/agent/schedule` (GET):
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -1015,6 +1070,7 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 `/api/agent/schedule` (POST):
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -1024,6 +1080,7 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 `/api/agent/schedule/:name` (DELETE):
+
 ```javascript
   } catch (error) {
     const status = error.response?.status;
@@ -1033,6 +1090,7 @@ Replace each error handler with a `log()` call that captures the upstream status
 ```
 
 Also update the startup log:
+
 ```javascript
 app.listen(port, () => {
   log("INFO", "server started", { port });
@@ -1084,6 +1142,7 @@ git commit -m "feat: add structured JSON logging to Node.js proxy server"
 ## Self-Review
 
 **Spec coverage check:**
+
 - ✅ `logging_config.py` with dual handlers, `task_id_var`, JSON formatter — Task 1
 - ✅ `setup_logging()` replaces `basicConfig` in `gemma_bridge.py` — Task 2
 - ✅ `RequestLoggingMiddleware` for HTTP request/response — Task 2

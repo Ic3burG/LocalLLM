@@ -23,19 +23,19 @@ Browser → server.js (3001) → gemma_bridge.py (9379)
 
 ## What Gets Removed from `gemma_bridge.py`
 
-| Symbol | Reason |
-|---|---|
-| `import litert_lm` / `from litert_lm import Backend` | LiteRT gone |
-| `litert_engines: dict` | Replaced by `_vlm_cache` |
-| `get_litert_engine(model_id)` | Replaced by `get_mlx_vlm_model` |
-| `process_multimodal_content(content, temp_files)` | mlx_vlm handles images directly via PIL |
-| `handle_litert_request(model_id, messages)` | Replaced by unified handler |
-| `mlx_lm_module` global + lazy import | Replaced by mlx_vlm static import |
-| `mlx_models_cache` | Renamed to `_vlm_cache` |
-| `get_mlx_model(model_id)` | Replaced by `get_mlx_vlm_model` |
-| `handle_mlx_request(model_id, messages)` | Replaced by unified handler |
-| LiteRT path logic in `list_models` | Only `MLX_MODELS_DIR` remains |
-| `MODELS_BASE_DIR` | No longer needed |
+| Symbol                                               | Reason                                  |
+| ---------------------------------------------------- | --------------------------------------- |
+| `import litert_lm` / `from litert_lm import Backend` | LiteRT gone                             |
+| `litert_engines: dict`                               | Replaced by `_vlm_cache`                |
+| `get_litert_engine(model_id)`                        | Replaced by `get_mlx_vlm_model`         |
+| `process_multimodal_content(content, temp_files)`    | mlx_vlm handles images directly via PIL |
+| `handle_litert_request(model_id, messages)`          | Replaced by unified handler             |
+| `mlx_lm_module` global + lazy import                 | Replaced by mlx_vlm static import       |
+| `mlx_models_cache`                                   | Renamed to `_vlm_cache`                 |
+| `get_mlx_model(model_id)`                            | Replaced by `get_mlx_vlm_model`         |
+| `handle_mlx_request(model_id, messages)`             | Replaced by unified handler             |
+| LiteRT path logic in `list_models`                   | Only `MLX_MODELS_DIR` remains           |
+| `MODELS_BASE_DIR`                                    | No longer needed                        |
 
 ## What Gets Added
 
@@ -56,6 +56,7 @@ If `model_id` is not in the map, the directory name falls back to `model_id` dir
 ### `handle_mlx_vlm_request(model_id, messages) -> dict`
 
 Single sync function (runs in thread executor). Steps:
+
 1. Call `get_mlx_vlm_model(model_id)` → `(model, processor)`
 2. Walk messages; build a clean list (text-only for non-final messages)
 3. For the final message, extract:
@@ -85,18 +86,21 @@ Routing condition (`is_mlx` check) is removed entirely.
 
 ## Model Paths
 
-| model_id | Directory | Status |
-|---|---|---|
-| `gemma4-e4b` | `mlx_models/gemma-3-4b-it-4bit` | **Needs download** — currently only exists as LiteRT format |
-| `gemma4-26b-mlx` | `mlx_models/gemma-4-26b-it-4bit` | Already present, likely compatible |
-| `gemma4-31b-mlx` | `mlx_models/gemma-4-31b-it-4bit` | Already present, likely compatible |
+| model_id         | Directory                        | Status                                                      |
+| ---------------- | -------------------------------- | ----------------------------------------------------------- |
+| `gemma4-e4b`     | `mlx_models/gemma-3-4b-it-4bit`  | **Needs download** — currently only exists as LiteRT format |
+| `gemma4-26b-mlx` | `mlx_models/gemma-4-26b-it-4bit` | Already present, likely compatible                          |
+| `gemma4-31b-mlx` | `mlx_models/gemma-4-31b-it-4bit` | Already present, likely compatible                          |
 
 E4B download during implementation:
+
 ```bash
 python -m mlx_lm.convert --hf-path google/gemma-3-4b-it -q --q-bits 4 \
     --mlx-path mlx_models/gemma-3-4b-it-4bit
 ```
+
 Or pull directly from Hub if mlx-community has a pre-quantised version:
+
 ```bash
 huggingface-cli download mlx-community/gemma-3-4b-it-4bit \
     --local-dir mlx_models/gemma-3-4b-it-4bit
@@ -122,6 +126,7 @@ Remove the LiteRT scan block. Keep only the `MLX_MODELS_DIR` scan. Update `provi
 ## Test Changes (`tests/test_agent.py`)
 
 The two inference routing tests currently mock `handle_litert_request` and `handle_mlx_request`. After migration:
+
 - Both are replaced by a single mock of `handle_mlx_vlm_request`
 - Test for "routes litert for default model" → "routes mlx_vlm for E4B model"
 - Test for "routes mlx for mlx model" → "routes mlx_vlm for 26B model"

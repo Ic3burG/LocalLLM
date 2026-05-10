@@ -1,20 +1,11 @@
 import asyncio
-import io
 import json
 import logging
-import os
 import re
-import subprocess
-import sys
 import time
-import traceback
 import uuid
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
-
-from logging_config import task_id_var
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import APIRouter, HTTPException
@@ -22,9 +13,15 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from agent_utils import (
-    AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output, register_tool, log_audit,
-    strip_thinking_blocks, TelemetryManager
+    AGENT_SYSTEM_PROMPT,
+    TOOL_REGISTRY,
+    TelemetryManager,
+    log_audit,
+    parse_model_output,
+    register_tool,
+    strip_thinking_blocks,
 )
+from logging_config import task_id_var
 
 router = APIRouter()
 scheduler = AsyncIOScheduler()
@@ -95,7 +92,7 @@ async def summarize_history(messages: list[dict]) -> list[dict]:
             
     return new_messages
 
-from inference_engine import run_inference, is_model_loaded
+from inference_engine import is_model_loaded, run_inference
 
 # per-task SSE queues and confirmation queues
 sse_queues: dict[str, asyncio.Queue] = {}

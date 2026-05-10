@@ -13,11 +13,13 @@
 ### Task 1: Install Dependencies
 
 **Files:**
+
 - Modify: `requirements.txt`
 
 **Step 1: Update requirements.txt**
 
 Add the following to `requirements.txt`:
+
 ```text
 googlesearch-python
 requests
@@ -42,12 +44,14 @@ git commit -m "chore: add dependencies for advanced tools"
 ### Task 2: Web Research Tools
 
 **Files:**
+
 - Modify: `agent.py`
 - Test: `tests/test_agent_tools.py`
 
 **Step 1: Write tests for web tools**
 
 Create `tests/test_agent_tools.py`:
+
 ```python
 import pytest
 from agent import _google_search, _web_fetch
@@ -64,7 +68,7 @@ async def test_web_fetch():
     pass
 ```
 
-**Step 2: Implement _google_search and _web_fetch in agent.py**
+**Step 2: Implement \_google_search and \_web_fetch in agent.py**
 
 ```python
 from googlesearch import search as gsearch
@@ -109,9 +113,10 @@ git commit -m "feat: add google_search and web_fetch tools"
 ### Task 3: Codebase Navigation Tool
 
 **Files:**
+
 - Modify: `agent.py`
 
-**Step 1: Implement _grep_search in agent.py**
+**Step 1: Implement \_grep_search in agent.py**
 
 ```python
 async def _grep_search(pattern: str, path: str = ".") -> str:
@@ -148,6 +153,7 @@ git commit -m "feat: add grep_search tool"
 ### Task 4: Git Integration Tools
 
 **Files:**
+
 - Modify: `agent.py`
 
 **Step 1: Implement git tools in agent.py**
@@ -180,6 +186,7 @@ git commit -m "feat: add git_status and git_log tools"
 ### Task 5: System Utility Tools
 
 **Files:**
+
 - Modify: `agent.py`
 
 **Step 1: Implement clipboard tools in agent.py**
@@ -213,9 +220,10 @@ git commit -m "feat: add clipboard tools"
 ### Task 6: Logic Tool (Python Interpreter)
 
 **Files:**
+
 - Modify: `agent.py`
 
-**Step 1: Implement _python_interpreter in agent.py**
+**Step 1: Implement \_python_interpreter in agent.py**
 
 ```python
 import sys
@@ -245,11 +253,13 @@ git commit -m "feat: add python_interpreter tool"
 ### Task 7: Registry and Prompt Update
 
 **Files:**
+
 - Modify: `agent.py`
 
 **Step 1: Update TOOL_REGISTRY in agent.py**
 
 Add the new tools to `TOOL_REGISTRY`:
+
 ```python
     "google_search": Tool("google_search", "safe", "Search Google", _google_search),
     "web_fetch": Tool("web_fetch", "safe", "Fetch webpage content", _web_fetch),

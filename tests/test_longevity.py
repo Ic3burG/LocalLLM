@@ -1,5 +1,7 @@
 import pytest
+
 from agent import estimate_tokens
+
 
 @pytest.mark.parametrize("messages, expected", [
     ([{"role": "system", "content": "You are a helpful assistant."},
@@ -14,7 +16,8 @@ def test_token_estimation_robustness(messages, expected):
 
 @pytest.mark.asyncio
 async def test_summarize_history_trigger():
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
+
     import agent
     
     # Mock inference_engine.run_inference
@@ -42,7 +45,8 @@ async def test_summarize_history_trigger():
 
 @pytest.mark.asyncio
 async def test_summarize_history_hard_limit():
-    from unittest.mock import patch, AsyncMock
+    from unittest.mock import AsyncMock, patch
+
     import agent
     
     with patch("inference_engine.run_inference", new_callable=AsyncMock) as mock_inference:
@@ -69,7 +73,9 @@ async def test_summarize_history_hard_limit():
         
         large_content_v2 = "z" * 20000 # ~5000 tokens per message
         # 10 messages * 5000 = 50000
-        messages_v2 = [system_prompt] + [{"role": "user", "content": large_content_v2}] * 10
+        _ = [system_prompt] + [
+            {"role": "user", "content": large_content_v2}
+        ] * 10
         
         # summarization will summarize 5, keep 5.
         # 5 * 5000 = 25000. 25000 + system (~10) = 25010. 
@@ -89,9 +95,10 @@ async def test_summarize_history_hard_limit():
 
 @pytest.mark.asyncio
 async def test_inference_watchdog_mechanism():
-    import inference_engine
-    from unittest.mock import patch, MagicMock
     import time
+    from unittest.mock import MagicMock, patch
+
+    import inference_engine
 
     # 1. Test that _stop_inference.set() stops handle_mlx_vlm_request loop
     with patch("inference_engine._mlx_vlm_stream_generate") as mock_stream, \

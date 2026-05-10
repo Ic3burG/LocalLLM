@@ -13,6 +13,7 @@
 ## Task 1: Install dependencies
 
 **Files:**
+
 - Modify: `requirements.txt`
 
 - [ ] **Step 1: Add libraries to requirements.txt**
@@ -51,6 +52,7 @@ git commit -m "chore: add python-docx, openpyxl, oletools dependencies"
 ## Task 2: Word body extraction (TDD)
 
 **Files:**
+
 - Create: `office_pipeline.py`
 - Create: `tests/test_office_pipeline.py`
 
@@ -294,6 +296,7 @@ git commit -m "feat: add Word body extraction to office_pipeline"
 ## Task 3: Word annotation extraction (TDD)
 
 **Files:**
+
 - Modify: `tests/test_office_pipeline.py` (append tests)
 - Modify: `office_pipeline.py` (already implemented in Task 2 — verify with these tests)
 
@@ -407,6 +410,7 @@ git commit -m "test: add Word annotation extraction tests"
 ## Task 4: Excel cell extraction (TDD)
 
 **Files:**
+
 - Modify: `tests/test_office_pipeline.py` (append tests)
 - Modify: `office_pipeline.py` (add Excel functions)
 
@@ -635,6 +639,7 @@ git commit -m "feat: add Excel cell and annotation extraction to office_pipeline
 ## Task 5: Excel formula and cell-note tests (TDD)
 
 **Files:**
+
 - Modify: `tests/test_office_pipeline.py` (append tests)
 
 - [ ] **Step 1: Append formula and cell-note tests**
@@ -711,6 +716,7 @@ git commit -m "test: add Excel formula and cell-note tests"
 ## Task 6: `ingest_office` function (TDD)
 
 **Files:**
+
 - Modify: `tests/test_office_pipeline.py` (append tests)
 - Modify: `office_pipeline.py` (append function)
 
@@ -907,6 +913,7 @@ git commit -m "feat: add ingest_office and metadata formatting to office_pipelin
 ## Task 7: `_read_word` and `_read_excel` agent tools (TDD)
 
 **Files:**
+
 - Modify: `tests/test_office_pipeline.py` (append tool tests)
 - Modify: `agent_utils.py`
 
@@ -1054,6 +1061,7 @@ git commit -m "feat: add read_word and read_excel agent tools"
 ## Task 8: `write_word_document` + `_write_word` tool (TDD)
 
 **Files:**
+
 - Modify: `tests/test_office_pipeline.py` (append tests)
 - Modify: `office_pipeline.py` (append write function)
 - Modify: `agent_utils.py` (add `_write_word`)
@@ -1242,6 +1250,7 @@ git commit -m "feat: add write_word_document and write_word agent tool"
 ## Task 9: `write_excel_document` + `_write_excel` tool (TDD)
 
 **Files:**
+
 - Modify: `tests/test_office_pipeline.py` (append tests)
 - Modify: `office_pipeline.py` (append write function)
 - Modify: `agent_utils.py` (add `_write_excel`)
@@ -1457,6 +1466,7 @@ git commit -m "feat: add write_excel_document and write_excel agent tool"
 ## Task 10: Extend `/v1/document` endpoint in `gemma_bridge.py`
 
 **Files:**
+
 - Modify: `gemma_bridge.py` (lines 283–310)
 
 - [ ] **Step 1: Read the current `upload_document` handler**

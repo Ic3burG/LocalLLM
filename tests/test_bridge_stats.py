@@ -1,7 +1,6 @@
-import pytest
 from fastapi.testclient import TestClient
+
 from gemma_bridge import app
-import psutil
 
 client = TestClient(app)
 
@@ -56,7 +55,7 @@ def test_pipeline_stats_update():
     del doc_store["test_doc"]
     
 def test_pipeline_telemetry_tracking():
-    from gemma_bridge import record_ingestion_time, record_embedding_latency
+    from gemma_bridge import record_embedding_latency, record_ingestion_time
     
     # Record some stats
     record_ingestion_time(0.5)

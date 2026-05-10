@@ -1,6 +1,7 @@
 import io
-import uuid
 import time
+import uuid
+
 import numpy as np
 
 _embedding_model = None

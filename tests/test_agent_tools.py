@@ -1,7 +1,10 @@
 import json
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
-from agent_utils import _google_search, _web_fetch, _generate_image
+
+from agent_utils import _generate_image, _google_search, _web_fetch
+
 
 @pytest.mark.asyncio
 async def test_google_search():

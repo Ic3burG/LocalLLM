@@ -1,6 +1,9 @@
-import pytest
 import unittest.mock as mock
+
+import pytest
+
 import inference_engine
+
 
 @pytest.mark.asyncio
 async def test_lru_cache_eviction():

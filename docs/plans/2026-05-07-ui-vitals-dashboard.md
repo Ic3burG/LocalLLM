@@ -4,7 +4,8 @@
 
 **Goal:** Add a "Vitals" tab to the Settings modal in the UI to display system health and performance stats, including a system integrity check.
 
-**Architecture:** 
+**Architecture:**
+
 - Update `smoke_test.py` to support JSON output.
 - Add `/api/backend/check` to `server.js` to execute the smoke test.
 - Redesign the Settings modal in `index.html` to be tabbed ("Vitals" as default, "Memory").
@@ -17,6 +18,7 @@
 ### Task 1: Update `scripts/smoke_test.py` for JSON output
 
 **Files:**
+
 - Modify: `scripts/smoke_test.py`
 
 **Step 1: Modify `print_result` and `main` to support JSON**
@@ -38,23 +40,28 @@ git commit -m "feat: add --json flag to smoke_test.py"
 ### Task 2: Update `gemma-web/server.js` with new endpoint
 
 **Files:**
+
 - Modify: `gemma-web/server.js`
 
 **Step 1: Add `GET /api/backend/check` route**
 
 ```javascript
 app.get("/api/backend/check", (req, res) => {
-  execFile("python3", ["../scripts/smoke_test.py", "--json"], (error, stdout, stderr) => {
-    if (error) {
-      // If JSON fails, return raw output
-      return res.json({ success: false, raw: stdout + stderr });
+  execFile(
+    "python3",
+    ["../scripts/smoke_test.py", "--json"],
+    (error, stdout, stderr) => {
+      if (error) {
+        // If JSON fails, return raw output
+        return res.json({ success: false, raw: stdout + stderr });
+      }
+      try {
+        res.json(JSON.parse(stdout));
+      } catch (e) {
+        res.json({ success: false, raw: stdout });
+      }
     }
-    try {
-      res.json(JSON.parse(stdout));
-    } catch (e) {
-      res.json({ success: false, raw: stdout });
-    }
-  });
+  );
 });
 ```
 
@@ -73,6 +80,7 @@ git commit -m "feat: add /api/backend/check endpoint to server.js"
 ### Task 3: Redesign `index.html` Settings Modal to Tabbed Interface
 
 **Files:**
+
 - Modify: `gemma-web/index.html`
 
 **Step 1: Add Tab HTML/CSS**
@@ -97,6 +105,7 @@ git commit -m "feat: redesign Settings modal with tabbed interface"
 ### Task 4: Implement Vitals Polling and Integrity Check Logic
 
 **Files:**
+
 - Modify: `gemma-web/index.html`
 
 **Step 1: Implement `updateVitals()`**

@@ -1,13 +1,14 @@
-import threading
-import queue
-import logging
 import asyncio
-import os
 import base64
+import collections
+import logging
+import os
+import queue
 import tempfile
+import threading
 import time
 import uuid
-import collections
+
 from agent_utils import log_audit
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,9 @@ def _inference_worker():
     global _mlx_vlm_load, _mlx_vlm_generate, _mlx_vlm_stream_generate, _mlx_lm_load, _mlx_lm_stream_generate, _is_job_running, _last_inference_activity, _current_model_id
     logger.info("Starting MLX inference worker thread...")
     try:
-        from mlx_vlm import load as _load, generate as _gen, stream_generate as _stream_gen
+        from mlx_vlm import generate as _gen
+        from mlx_vlm import load as _load
+        from mlx_vlm import stream_generate as _stream_gen
         _mlx_vlm_load = _load
         _mlx_vlm_generate = _gen
         _mlx_vlm_stream_generate = _stream_gen
@@ -74,7 +77,8 @@ def _inference_worker():
         logger.error(f"Failed to import mlx_vlm: {e}", exc_info=True)
 
     try:
-        from mlx_lm import load as _lm_load, stream_generate as _lm_stream_gen
+        from mlx_lm import load as _lm_load
+        from mlx_lm import stream_generate as _lm_stream_gen
         _mlx_lm_load = _lm_load
         _mlx_lm_stream_generate = _lm_stream_gen
     except Exception as e:
@@ -184,7 +188,9 @@ def get_mlx_vlm_model(model_id: str):
             lru_model_id = next(iter(_vlm_cache))
             logger.info(f"Evicting model {lru_model_id} from VRAM...")
             del _vlm_cache[lru_model_id]
-            import gc; gc.collect()
+            import gc
+
+            gc.collect()
 
     dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
     model_path = os.path.join(MLX_MODELS_DIR, dir_name)
@@ -209,7 +215,9 @@ def get_mlx_lm_model(model_id: str):
             lru_id = next(iter(_lm_cache))
             logger.info(f"Evicting mlx_lm model {lru_id} from cache...")
             del _lm_cache[lru_id]
-            import gc; gc.collect()
+            import gc
+
+            gc.collect()
 
     dir_name = _MODEL_DIR_MAP.get(model_id, model_id)
     model_path = os.path.join(MLX_MODELS_DIR, dir_name)

@@ -12,17 +12,18 @@
 
 ## File Map
 
-| File | Change |
-|---|---|
-| `gemma_bridge.py` | Remove LiteRT + mlx_lm code; add `get_mlx_vlm_model`, `handle_mlx_vlm_request`; simplify `run_inference`; simplify `list_models` |
-| `requirements.txt` | Add `mlx-vlm`, `Pillow`; remove `mlx-lm` if present |
-| `tests/test_agent.py` | Update two inference-routing tests to mock `handle_mlx_vlm_request` |
+| File                  | Change                                                                                                                           |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `gemma_bridge.py`     | Remove LiteRT + mlx_lm code; add `get_mlx_vlm_model`, `handle_mlx_vlm_request`; simplify `run_inference`; simplify `list_models` |
+| `requirements.txt`    | Add `mlx-vlm`, `Pillow`; remove `mlx-lm` if present                                                                              |
+| `tests/test_agent.py` | Update two inference-routing tests to mock `handle_mlx_vlm_request`                                                              |
 
 ---
 
 ## Task 1: Install mlx_vlm and download E4B model
 
 **Files:**
+
 - Modify: `requirements.txt`
 
 - [ ] **Step 1: Install mlx_vlm in the project venv**
@@ -59,6 +60,7 @@ cd "/Users/ojdavis/Claude Code/Gemma4"
 ```
 
 If `huggingface_hub` CLI is unavailable, use:
+
 ```bash
 .venv/bin/pip install huggingface_hub
 .venv/bin/huggingface-cli download mlx-community/gemma-3-4b-it-4bit \
@@ -108,9 +110,10 @@ git commit -m "chore: add mlx-vlm and Pillow to requirements"
 ## Task 2: Update inference routing tests first (TDD)
 
 **Files:**
+
 - Modify: `tests/test_agent.py` (lines 38–62)
 
-The two routing tests currently reference `handle_litert_request` and `handle_mlx_request`. Updating them *before* changing `gemma_bridge.py` means they'll fail first (red), then pass after the implementation (green).
+The two routing tests currently reference `handle_litert_request` and `handle_mlx_request`. Updating them _before_ changing `gemma_bridge.py` means they'll fail first (red), then pass after the implementation (green).
 
 - [ ] **Step 1: Open tests/test_agent.py and replace the two routing tests**
 
@@ -166,6 +169,7 @@ git commit -m "test: update inference routing tests for mlx_vlm (red)"
 ## Task 3: Replace LiteRT + mlx_lm with mlx_vlm in gemma_bridge.py
 
 **Files:**
+
 - Modify: `gemma_bridge.py`
 
 This is the core migration. Work top-to-bottom through the file.
@@ -173,12 +177,14 @@ This is the core migration. Work top-to-bottom through the file.
 - [ ] **Step 1: Replace the import block at the top of gemma_bridge.py**
 
 Remove these lines:
+
 ```python
 import litert_lm
 from litert_lm import Backend
 ```
 
 Add at the top (after existing imports):
+
 ```python
 from io import BytesIO
 from PIL import Image
@@ -188,11 +194,14 @@ from mlx_vlm import load as mlx_vlm_load, generate as mlx_vlm_generate
 - [ ] **Step 2: Replace the model cache globals**
 
 Remove:
+
 ```python
 # MLX-LM is loaded only when needed to save memory
 mlx_lm_module = None
 ```
+
 and:
+
 ```python
 # Model cache
 litert_engines = {}
@@ -200,6 +209,7 @@ mlx_models_cache = {}
 ```
 
 Add:
+
 ```python
 # Model cache: model_id -> (model, processor)
 _vlm_cache: dict = {}
@@ -212,6 +222,7 @@ _MODEL_DIR_MAP = {
 ```
 
 Remove the `MODELS_BASE_DIR` line:
+
 ```python
 MODELS_BASE_DIR = os.path.expanduser("~/.litert-lm/models")
 ```
@@ -219,6 +230,7 @@ MODELS_BASE_DIR = os.path.expanduser("~/.litert-lm/models")
 - [ ] **Step 3: Delete get_litert_engine, get_mlx_model, process_multimodal_content, handle_litert_request, handle_mlx_request**
 
 Remove all five of these functions entirely (lines ~55–440 in the current file). They are:
+
 - `def get_litert_engine(model_id):`
 - `def get_mlx_model(model_id):`
 - `def process_multimodal_content(content, current_temp_files):`
@@ -350,6 +362,7 @@ git commit -m "feat: replace LiteRT+mlx_lm with unified mlx_vlm handler"
 ## Task 4: Make tests green
 
 **Files:**
+
 - Modify: `tests/test_agent.py` (stub section at top)
 
 The test file stubs out heavy dependencies at import time. `litert_lm` is in the stub list but no longer imported. The stubs for `litert_lm` are harmless but we should add `mlx_vlm` to avoid import errors if it's not installed in the test environment.

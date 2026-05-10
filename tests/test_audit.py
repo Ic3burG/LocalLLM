@@ -1,7 +1,9 @@
-import pytest
-import os
 from pathlib import Path
-from agent_utils import _read_file, _write_file, _append_file, _list_dir, _grep_search
+
+import pytest
+
+from agent_utils import _append_file, _grep_search, _list_dir, _read_file, _write_file
+
 
 @pytest.mark.asyncio
 async def test_read_file_outside_sandbox():
@@ -44,6 +46,7 @@ async def test_grep_search_outside_sandbox():
 
 from agent_utils import _web_fetch
 
+
 @pytest.mark.asyncio
 async def test_web_fetch_ssrf_localhost():
     # Attempt to fetch localhost
@@ -60,7 +63,8 @@ async def test_web_fetch_ssrf_ip():
     result = await _web_fetch(url)
     assert "SSRF detected" in result
 
-from agent_utils import _shell, AUDIT_LOG_PATH, _write_file, _python_interpreter
+from agent_utils import AUDIT_LOG_PATH, _python_interpreter, _shell
+
 
 @pytest.mark.asyncio
 async def test_audit_logging_expansion():
@@ -69,7 +73,7 @@ async def test_audit_logging_expansion():
     if log_path.exists():
         try:
             log_path.unlink()
-        except:
+        except Exception:
             pass
     
     # 1. Test SHELL logging
