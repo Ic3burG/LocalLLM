@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Word & Excel Support — Design</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.65;color:#1a1a2e;background:#f4f6fb;padding:40px 20px 80px}
+  .container{max-width:860px;margin:0 auto;background:#fff;border-radius:12px;box-shadow:0 2px 20px rgba(0,0,0,.08);padding:48px 56px}
+  h1{font-size:2rem;font-weight:700;margin-bottom:8px;color:#0f172a}
+  h2{font-size:1.25rem;font-weight:600;margin:36px 0 12px;color:#1e3a5f;border-bottom:2px solid #e2e8f0;padding-bottom:6px}
+  h3{font-size:1.05rem;font-weight:600;margin:24px 0 8px;color:#334155}
+  h4{font-size:.95rem;font-weight:600;margin:18px 0 6px;color:#475569}
+  p{margin:10px 0;color:#374151}
+  a{color:#2563eb}
+  code{font-family:"SF Mono","Fira Code",monospace;font-size:.85em;background:#f1f5f9;padding:2px 6px;border-radius:4px;color:#0f5132}
+  pre{background:#0f172a;color:#e2e8f0;padding:20px 24px;border-radius:8px;overflow-x:auto;margin:16px 0;font-size:.88em;line-height:1.6}
+  pre code{background:none;color:inherit;padding:0}
+  table{width:100%;border-collapse:collapse;margin:16px 0;font-size:.92em}
+  th{background:#1e3a5f;color:#fff;text-align:left;padding:10px 14px;font-weight:600}
+  td{padding:9px 14px;border-bottom:1px solid #e2e8f0;vertical-align:top}
+  tr:nth-child(even) td{background:#f8fafc}
+  ul,ol{padding-left:24px;margin:10px 0;color:#374151}
+  li{margin:4px 0}
+  li p{margin:2px 0}
+  input[type=checkbox]{margin-right:6px}
+  blockquote{border-left:4px solid #3b82f6;margin:16px 0;padding:8px 16px;background:#eff6ff;color:#1e3a5f;border-radius:0 6px 6px 0}
+  strong{color:#0f172a}
+  hr{border:none;border-top:1px solid #e2e8f0;margin:32px 0}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>Word &amp; Excel Support Design</h1>
+<p><strong>Date:</strong> 2026-05-08<br />
+<strong>Status:</strong> Approved</p>
+<h2>Overview</h2>
+<p>Add comprehensive Word (<code>.docx</code>) and Excel (<code>.xlsx</code>) support to the Gemma4 local LLM agent. This includes:</p>
+<ul>
+<li>Agent tools for reading and writing both formats (with full annotation extraction and rich authoring)</li>
+<li>RAG ingestion pipeline for both formats (same chunking + embedding flow as PDF)</li>
+<li>Upload UI extended to accept both formats</li>
+<li>Path-based ingestion tools for the agent to ingest local files</li>
+</ul>
+<h2>Architecture</h2>
+<h3>New module: <code>office_pipeline.py</code></h3>
+<p>Mirrors <code>pdf_pipeline.py</code> in structure and return shape. <code>chunk_text()</code> and <code>embed_texts()</code> are imported from <code>pdf_pipeline.py</code> — no duplication.</p>
+<pre><code>office_pipeline.py
+  extract_text_from_word(file_bytes)  → (list[(section_num, text)], metadata_dict)
+  extract_text_from_excel(file_bytes) → (list[(sheet_name, text)], metadata_dict)
+  ingest_office(file_bytes, filename) → {doc_id, filename, page_count, chunks, embeddings}
+</code></pre>
+<p><code>ingest_office</code> returns the same dict shape as <code>ingest_pdf</code> so the rest of the codebase treats it identically.</p>
+<h3><code>agent_utils.py</code> additions</h3>
+<p>Four new async tool functions following the existing <code>_read_pdf</code> / <code>_write_pdf</code> pattern:</p>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Risk</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>_read_word(path)</code></td>
+<td>safe</td>
+<td>Extract full text + all annotations from a Word file</td>
+</tr>
+<tr>
+<td><code>_write_word(path, spec)</code></td>
+<td>risky</td>
+<td>Create a Word file from a structured spec dict</td>
+</tr>
+<tr>
+<td><code>_read_excel(path)</code></td>
+<td>safe</td>
+<td>Extract full text + all annotations from an Excel file</td>
+</tr>
+<tr>
+<td><code>_write_excel(path, spec)</code></td>
+<td>risky</td>
+<td>Create an Excel file from a structured spec dict</td>
+</tr>
+</tbody>
+</table>
+<p>Registered via <code>register_tool()</code> at the bottom of <code>agent_utils.py</code>.</p>
+<h3>Upload endpoint</h3>
+<p>The existing multipart upload endpoint in <code>gemma-web/</code> gains a MIME-type / file extension check:<br />
+- <code>.docx</code> / <code>application/vnd.openxmlformats-officedocument.wordprocessingml.document</code> → <code>ingest_office()</code><br />
+- <code>.xlsx</code> / <code>application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</code> → <code>ingest_office()</code><br />
+- <code>.pdf</code> → <code>ingest_pdf()</code> (unchanged)</p>
+<p>No UI changes needed — the existing upload widget accepts any file.</p>
+<h3>Libraries added to <code>requirements.txt</code></h3>
+<ul>
+<li><code>python-docx</code> — Word read/write</li>
+<li><code>openpyxl</code> — Excel read/write</li>
+<li><code>oletools</code> — embedded OLE object text extraction inside Excel files</li>
+</ul>
+<h2>Reading &amp; Extraction</h2>
+<h3>Word (<code>extract_text_from_word</code>)</h3>
+<p>Returns <code>(list[(section_num, text)], metadata_dict)</code>. Section numbers follow heading boundaries.</p>
+<p><code>metadata_dict</code> keys:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>comments</code></td>
+<td><code>[{author, date, text, ref_text}]</code> — comment body plus the text it references</td>
+</tr>
+<tr>
+<td><code>tracked_changes</code></td>
+<td><code>[{author, date, type: "insert"\|"delete", text}]</code> — parsed from <code>&lt;w:ins&gt;</code>/<code>&lt;w:del&gt;</code> lxml nodes</td>
+</tr>
+<tr>
+<td><code>footnotes</code></td>
+<td><code>[{ref_num, text}]</code></td>
+</tr>
+<tr>
+<td><code>endnotes</code></td>
+<td><code>[{ref_num, text}]</code></td>
+</tr>
+<tr>
+<td><code>properties</code></td>
+<td><code>{title, author, created, modified, subject, keywords, description}</code> from <code>core_properties</code></td>
+</tr>
+</tbody>
+</table>
+<h3>Excel (<code>extract_text_from_excel</code>)</h3>
+<p>Returns <code>(list[(sheet_name, text)], metadata_dict)</code>. Each sheet's text is a TSV-style dump of cell coordinates + values.</p>
+<p><code>metadata_dict</code> keys:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>cell_notes</code></td>
+<td><code>[{sheet, cell, author, text}]</code> — legacy yellow-sticky notes</td>
+</tr>
+<tr>
+<td><code>threaded_comments</code></td>
+<td><code>[{sheet, cell, thread: [{author, date, text}]}]</code> — modern comment threads with replies</td>
+</tr>
+<tr>
+<td><code>formulas</code></td>
+<td><code>[{sheet, cell, formula, cached_value}]</code></td>
+</tr>
+<tr>
+<td><code>embedded_objects</code></td>
+<td><code>[{type, extracted_text}]</code> — text from OLE objects via oletools; macros flagged as <code>{type: "vba_macro", flagged: true}</code>, never executed</td>
+</tr>
+<tr>
+<td><code>properties</code></td>
+<td><code>{title, author, created, modified, keywords}</code></td>
+</tr>
+</tbody>
+</table>
+<h3><code>_read_word</code> / <code>_read_excel</code> tool output format</h3>
+<p>Both tools format extraction results into a single readable text block: body text first, followed by clearly labelled annotation sections (## Comments, ## Tracked Changes, etc.). This is what the agent receives.</p>
+<h2>Writing (Rich Authoring)</h2>
+<p>Both write tools accept a JSON-serializable <code>spec</code> dict.</p>
+<h3><code>_write_word(path, spec)</code></h3>
+<table>
+<thead>
+<tr>
+<th>Spec key</th>
+<th>Type</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>properties</code></td>
+<td>dict</td>
+<td><code>{title, author, subject, keywords}</code> — document metadata</td>
+</tr>
+<tr>
+<td><code>sections</code></td>
+<td>list</td>
+<td>Ordered list of content blocks</td>
+</tr>
+</tbody>
+</table>
+<p>Content block types:</p>
+<table>
+<thead>
+<tr>
+<th><code>type</code></th>
+<th>Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>"heading"</code></td>
+<td><code>level</code> (1–6), <code>text</code></td>
+</tr>
+<tr>
+<td><code>"paragraph"</code></td>
+<td><code>text</code>, <code>bold</code>, <code>italic</code>, <code>underline</code></td>
+</tr>
+<tr>
+<td><code>"table"</code></td>
+<td><code>rows</code> (list of lists), <code>header_row</code> (bool), <code>merge</code> (list of <code>{row, col, rowspan, colspan}</code>)</td>
+</tr>
+<tr>
+<td><code>"footnote"</code></td>
+<td><code>ref_paragraph</code> (int index), <code>text</code></td>
+</tr>
+<tr>
+<td><code>"endnote"</code></td>
+<td><code>ref_paragraph</code> (int index), <code>text</code></td>
+</tr>
+</tbody>
+</table>
+<h3><code>_write_excel(path, spec)</code></h3>
+<table>
+<thead>
+<tr>
+<th>Spec key</th>
+<th>Type</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>properties</code></td>
+<td>dict</td>
+<td><code>{title, author, subject, keywords}</code> — document metadata</td>
+</tr>
+<tr>
+<td><code>sheets</code></td>
+<td>list</td>
+<td>List of sheet definitions</td>
+</tr>
+</tbody>
+</table>
+<p>Sheet definition:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Content</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>str</td>
+<td>Sheet tab name</td>
+</tr>
+<tr>
+<td><code>rows</code></td>
+<td>list of lists</td>
+<td>Each cell: <code>{value, formula, bold, italic, bg_color, border, number_format, alignment}</code></td>
+</tr>
+<tr>
+<td><code>merges</code></td>
+<td>list</td>
+<td><code>[{range}]</code> e.g. <code>"A1:C3"</code></td>
+</tr>
+<tr>
+<td><code>charts</code></td>
+<td>list</td>
+<td><code>[{type: "bar"\|"line"\|"pie", title, data_range}]</code></td>
+</tr>
+</tbody>
+</table>
+<p>Both write tools return the written file path on success, or an <code>"ERROR: ..."</code> string on failure.</p>
+<h2>Error Handling</h2>
+<p>Follows the existing <code>agent_utils.py</code> pattern throughout:</p>
+<ul>
+<li>All tool functions wrap logic in <code>try/except</code>, log via <code>logger.error()</code> with structured <code>extra={}</code> kwargs</li>
+<li>Return <code>"ERROR: ..."</code> string to the agent — never raise</li>
+<li>Corrupt / password-protected files return a descriptive error; processing does not crash</li>
+<li>Missing annotations (e.g. a Word file with no comments) return empty lists — not an error</li>
+<li>Macros detected in Excel: flagged in <code>embedded_objects</code>, processing continues normally</li>
+</ul>
+<h2>Testing</h2>
+<p>New file: <code>tests/test_office_pipeline.py</code>, mirroring <code>tests/test_pdf_pipeline.py</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Coverage</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test_read_word_body</code></td>
+<td>Paragraph and heading extraction</td>
+</tr>
+<tr>
+<td><code>test_read_word_annotations</code></td>
+<td>Comments, tracked changes, footnotes, endnotes, metadata</td>
+</tr>
+<tr>
+<td><code>test_read_excel_cells</code></td>
+<td>Cell values, formulas, cached values</td>
+</tr>
+<tr>
+<td><code>test_read_excel_annotations</code></td>
+<td>Cell notes, threaded comments, embedded objects, macro flagging</td>
+</tr>
+<tr>
+<td><code>test_write_word_roundtrip</code></td>
+<td>Write then re-read, verify body + table structure</td>
+</tr>
+<tr>
+<td><code>test_write_excel_roundtrip</code></td>
+<td>Write then re-read, verify cells + chart presence</td>
+</tr>
+<tr>
+<td><code>test_ingest_office_word</code></td>
+<td>Returns same shape dict as <code>ingest_pdf</code></td>
+</tr>
+<tr>
+<td><code>test_ingest_office_excel</code></td>
+<td>Returns same shape dict as <code>ingest_pdf</code></td>
+</tr>
+</tbody>
+</table>
+<h2>Files to Create / Modify</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>office_pipeline.py</code></td>
+<td>Create</td>
+</tr>
+<tr>
+<td><code>agent_utils.py</code></td>
+<td>Modify — add 4 tool functions + registrations</td>
+</tr>
+<tr>
+<td><code>gemma-web/server.js</code> (or equivalent)</td>
+<td>Modify — extend upload endpoint MIME check</td>
+</tr>
+<tr>
+<td><code>requirements.txt</code></td>
+<td>Modify — add python-docx, openpyxl, oletools</td>
+</tr>
+<tr>
+<td><code>tests/test_office_pipeline.py</code></td>
+<td>Create</td>
+</tr>
+</tbody>
+</table>
+</div>
+</body>
+</html>
