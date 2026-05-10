@@ -28,3 +28,22 @@ def test_parse_size_square():
 def test_parse_size_portrait():
     w, h = _parse_size("512x768")
     assert w == 512 and h == 768
+
+
+from image_pipeline import _should_swap
+
+
+def test_fast_mode_skips_swap():
+    assert _should_swap(["phi-4-mini-4bit"]) is False
+
+
+def test_deepseek_mini_skips_swap():
+    assert _should_swap(["deepseek-v4-mini-7b-4bit"]) is False
+
+
+def test_large_model_requires_swap():
+    assert _should_swap(["gemma-4-26b-a4b-it-4bit"]) is True
+
+
+def test_empty_loaded_models_skips_swap():
+    assert _should_swap([]) is False
