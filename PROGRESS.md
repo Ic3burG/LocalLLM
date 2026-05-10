@@ -443,15 +443,40 @@ The Vitals pane in the Settings modal now features a sub-tabbed interface. Data 
 
 ---
 
+## 🎨 Advanced Sidebar & History Revamp — May 10, 2026 (Session 1)
+
+Transformed the chat history from a simple list into a robust management system.
+
+### Features
+- **Recents & Starred**: Renamed history to "Recents"; added a dedicated "Starred" section for pinned conversations.
+- **Context Menu**: Right-click (or kebab menu) support for Star, Rename, and Delete actions.
+- **All Chats Modal**: New full-screen management interface with real-time search and bulk delete capabilities.
+- **UI Persistence**: Starred items are mirrored in the Recents list for quick access while remaining fixed in the Starred section.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `gemma-web/index.html` | Implemented Starred section, Context Menu, All Chats modal, and search logic. |
+
+---
+
 ## 🧠 Deep Thinking Mode — May 10, 2026
 
 Implemented a multi-stage "Deep Thinking" pipeline that trades inference time for maximum reasoning quality.
+
 ### The "Council of Three" Pipeline
 
 When Deep Thinking is enabled, the agent executes a three-stage pre-reasoning process before entering the main ReAct loop:
 1. **Diversify (Tree of Thought)**: Generates 3 distinct, high-level strategies (Path A, B, and C) to solve the problem.
 2. **Critique (Self-Correction)**: Acts as a critical reviewer to identify logical flaws and edge cases in each path, assigning robustness scores.
 3. **Synthesize (Extended CoT)**: Merges the best elements into a single, robust "master reasoning" plan that addresses all identified flaws.
+
+### UI: Thinking Visibility
+
+Enhanced the frontend to provide transparency into the model's internal reasoning process.
+- **Multi-Stage Blocks**: Thinking content is rendered in a dedicated, collapsible `<details>` block with a "Deep Thinking Process" summary.
+- **Markdown Support**: Internal thoughts are parsed as Markdown for better readability of complex logic.
 
 ---
 
@@ -514,7 +539,7 @@ Implemented the on-device image generation pipeline using the `mflux` library, w
 | File | Change |
 |---|---|
 | `image_pipeline.py` | **New** — Full FLUX.1-schnell generation pipeline with model swap and threading locks. |
-| `tests/test_image_pipeline.py` | **New** — Unit tests for style application, size parsing, and model swap logic. |
+| `tests/test_image_pipeline.py` | **New** — Unit tests for style application, size parsing, and model swap logic. Fixed `TypeError` by mocking `_Config`. |
 | `requirements.txt` | Added `mflux`; restored full package list. |
 | `scripts/download_sd.sh` | **New** — Automated model download and verification script for FLUX.1-schnell. |
 | `docs/superpowers/plans/2026-05-10-mlx-sd.md` | **New** — Design and implementation roadmap for integrated image generation. |
@@ -528,6 +553,6 @@ Implemented the on-device image generation pipeline using the `mflux` library, w
 - **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning).
 - **Tools:** 36 registered tools.
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG; Word and Excel also agent-writable.
-- **UI:** Universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard; Deep Thinking toggle.
+- **UI:** Universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard; Deep Thinking toggle; Advanced Sidebar with search & starred chats.
 - **Integrity:** 100% test pass rate (100+ tests including telemetry and office pipeline suites).
 
