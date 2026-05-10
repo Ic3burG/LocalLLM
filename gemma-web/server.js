@@ -264,6 +264,29 @@ app.post("/api/backend/restart", (req, res) => {
   });
 });
 
+app.post("/api/image/generate", async (req, res) => {
+  try {
+    const response = await axios.post(
+      "http://localhost:9379/v1/image/generate",
+      req.body,
+      { timeout: 125000 }
+    );
+    res.json(response.data);
+  } catch (err) {
+    const status = err.response?.status || 500;
+    res.status(status).json(err.response?.data || { error: "proxy_error" });
+  }
+});
+
+app.get("/api/image/models", async (req, res) => {
+  try {
+    const response = await axios.get("http://localhost:9379/v1/image/models");
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: "proxy_error" });
+  }
+});
+
 process.on("unhandledRejection", (reason) => {
   log("ERROR", "unhandled promise rejection", { error: String(reason) });
 });
