@@ -683,3 +683,48 @@
     All Chats
   </div>
 </div>
+
+<!-- ── Main Area ── -->
+<div class="llm-main">
+
+  <!-- Topbar -->
+  <header class="llm-topbar">
+    <!-- Mobile menu button — id="mobile-menu-btn" preserved for JS -->
+    <button id="mobile-menu-btn" class="rail-btn md:hidden" style="margin-right:4px;" title="Menu">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+    </button>
+
+    <!-- Chat title — id="chat-title" preserved -->
+    <div class="topbar-title" id="chat-title">LocalLLM</div>
+
+    <!-- Model selector — id="model-select" preserved -->
+    <div class="model-pill">
+      <div class="model-status-dot"></div>
+      <select id="model-select" style="border:none;background:transparent;font-size:12px;font-weight:600;color:var(--llm-text-muted);cursor:pointer;outline:none;">
+        <option value="gemma4-e4b">gemma4:e4b</option>
+        <option value="gemma3:27b">gemma3:27b</option>
+        <option value="gemma3:12b">gemma3:12b</option>
+        <option value="llama3.2">llama3.2</option>
+        <option value="qwen2.5:32b">qwen2.5:32b</option>
+        <option value="deepseek-r1:8b">deepseek-r1:8b</option>
+      </select>
+    </div>
+
+    <!-- Mode pill — id="mode-pill", id="mode-chat-btn", id="mode-image-btn" preserved -->
+    <div class="mode-pill" id="mode-pill">
+      <button type="button" class="mode-btn active-chat" id="mode-chat-btn">💬 Chat</button>
+      <button type="button" class="mode-btn" id="mode-image-btn">🎨 Image</button>
+    </div>
+
+    <!-- Deep think toggle — id="deep-think-toggle" preserved -->
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;color:var(--llm-text-muted);cursor:pointer;flex-shrink:0;" title="Enable extended reasoning">
+      <input type="checkbox" id="deep-think-toggle" style="accent-color:var(--llm-accent-solid);" />
+      Deep Think
+    </label>
+
+    <!-- Server status — id="server-status", id="status-dot", id="status-label" preserved -->
+    <div id="server-status" class="hidden" style="display:flex;align-items:center;gap:6px;font-size:10px;font-family:monospace;cursor:default;flex-shrink:0;">
+      <span id="status-dot" style="width:8px;height:8px;border-radius:50%;background:#9ca3af;flex-shrink:0;"></span>
+      <span id="status-label" style="color:var(--llm-text-muted);">checking…</span>
+    </div>
+  </header>
