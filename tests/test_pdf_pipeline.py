@@ -54,7 +54,7 @@ def _make_doc_store():
 
 def test_retrieve_chunks_returns_top_k():
     doc_store = _make_doc_store()
-    results = retrieve_chunks("how do I reset", ["abc123"], doc_store, top_k=2)
+    results, _ = retrieve_chunks("how do I reset", ["abc123"], doc_store, top_k=2)
     assert len(results) == 2
     assert "filename" in results[0]
     assert "text" in results[0]
@@ -63,13 +63,13 @@ def test_retrieve_chunks_returns_top_k():
 
 def test_retrieve_chunks_skips_missing_doc():
     doc_store = _make_doc_store()
-    results = retrieve_chunks("anything", ["doesnotexist"], doc_store, top_k=5)
+    results, _ = retrieve_chunks("anything", ["doesnotexist"], doc_store, top_k=5)
     assert results == []
 
 
 def test_retrieve_chunks_empty_doc_ids():
     doc_store = _make_doc_store()
-    results = retrieve_chunks("anything", [], doc_store, top_k=5)
+    results, _ = retrieve_chunks("anything", [], doc_store, top_k=5)
     assert results == []
 
 

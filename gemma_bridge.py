@@ -10,6 +10,7 @@ import queue
 import json
 import logging
 import re
+import subprocess
 from fastapi import FastAPI, Request, BackgroundTasks, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -101,6 +102,36 @@ _current_process = psutil.Process(os.getpid())
 # In-memory document store: doc_id -> {filename, page_count, chunks, embeddings}
 doc_store: dict = {}
 
+# Pipeline telemetry accumulators
+_ingestion_times = []
+_embedding_latencies_ms = []
+
+def record_ingestion_time(duration_s: float):
+    _ingestion_times.append(duration_s)
+    if len(_ingestion_times) > 20:
+        _ingestion_times.pop(0)
+
+def record_embedding_latency(latency_ms: float):
+    _embedding_latencies_ms.append(latency_ms)
+    if len(_embedding_latencies_ms) > 50:
+        _embedding_latencies_ms.pop(0)
+
+def get_thermal_pressure():
+    """Get macOS thermal pressure level."""
+    try:
+        # 0=Nominal, 1=Fair, 2=Serious, 3=Critical
+        result = subprocess.run(
+            ["sysctl", "-n", "kern.thermal_level"],
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        level = int(result.stdout.strip())
+        mapping = {0: "nominal", 1: "fair", 2: "serious", 3: "critical"}
+        return mapping.get(level, "unknown")
+    except Exception:
+        return "nominal" # Default if not on macOS or sysctl fails
+
 def get_user_memory():
     try:
         if os.path.exists(MEMORY_FILE):
@@ -127,6 +158,7 @@ def strip_thinking(text):
     text = re.sub(r'<\|turn\|?>.*', '', text)
     return text.strip()
 
+from agent_utils import TelemetryManager
 from agent import (
     router as agent_router, 
     scheduler, 
@@ -199,31 +231,53 @@ async def list_models():
 
 @app.get("/v1/stats")
 async def get_stats():
-    """Exposes system and inference performance metrics."""
-    status_info = get_status_info()
+    """Exposes system, agent, and pipeline telemetry."""
+    # 1. System Telemetry
     try:
         ram_usage_mb = _current_process.memory_info().rss / (1024 * 1024)
     except Exception:
         ram_usage_mb = 0
 
-    vram_usage_mb = 0
+    vram_usage_gb = 0
     if mx is not None:
         try:
-            # Try multiple common MLX locations for memory stats
             if hasattr(mx, "get_active_memory"):
-                vram_usage_mb = mx.get_active_memory() / (1024 * 1024)
+                vram_usage_gb = mx.get_active_memory() / (1024 * 1024 * 1024)
             elif hasattr(mx, "metal") and hasattr(mx.metal, "get_active_memory"):
-                vram_usage_mb = mx.metal.get_active_memory() / (1024 * 1024)
+                vram_usage_gb = mx.metal.get_active_memory() / (1024 * 1024 * 1024)
         except Exception as e:
             logger.warning(f"Failed to gather MLX memory stats: {e}")
 
-    return {
-        "ram_usage_mb": round(ram_usage_mb, 2),
-        "vram_usage_mb": round(vram_usage_mb, 2),
-        "avg_latency_ms": round(get_avg_latency(), 2),
-        "model_cache": get_loaded_models(),
-        "status": status_info
+    system_block = {
+        "ram_mb": round(ram_usage_mb, 2),
+        "vram_gb": round(vram_usage_gb, 2),
+        "cpu_percent": psutil.cpu_percent(),
+        "thermal_pressure": get_thermal_pressure(),
+        "latency_ms": round(get_avg_latency(), 2),
+        "models": get_loaded_models()
     }
+
+    # 2. Agent Telemetry
+    agent_block = TelemetryManager().get_stats()
+
+    # 3. Pipeline Telemetry
+    total_chunks = sum(len(doc["chunks"]) for doc in doc_store.values())
+    avg_ingestion_s = sum(_ingestion_times) / len(_ingestion_times) if _ingestion_times else 0
+    avg_embedding_ms = sum(_embedding_latencies_ms) / len(_embedding_latencies_ms) if _embedding_latencies_ms else 0
+
+    pipeline_block = {
+        "doc_count": len(doc_store),
+        "chunk_count": total_chunks,
+        "ingestion_avg_s": round(avg_ingestion_s, 3),
+        "embedding_latency_ms": round(avg_embedding_ms, 2)
+    }
+
+    return {
+        "system": system_block,
+        "agent": agent_block,
+        "pipeline": pipeline_block
+    }
+
 
 @app.get("/v1/memory")
 async def get_memory_endpoint():
@@ -283,6 +337,7 @@ async def update_memory_manual(request: Request):
 @app.post("/v1/document")
 async def upload_document(file: UploadFile = File(...)):
     try:
+        t0 = time.monotonic()
         file_bytes = await file.read()
         filename = file.filename or "document.pdf"
 
@@ -305,6 +360,11 @@ async def upload_document(file: UploadFile = File(...)):
                 },
                 status_code=200,
             )
+
+        ingestion_time = time.monotonic() - t0
+        record_ingestion_time(ingestion_time)
+        if "embedding_latency_ms" in doc:
+            record_embedding_latency(doc["embedding_latency_ms"])
 
         doc_store[doc["doc_id"]] = {
             "filename": doc["filename"],
@@ -357,7 +417,8 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
             else:
                 last_user_text = last_content
 
-            chunks = pdf_pipeline.retrieve_chunks(last_user_text, doc_ids, doc_store, top_k=5)
+            chunks, emb_latency = pdf_pipeline.retrieve_chunks(last_user_text, doc_ids, doc_store, top_k=5)
+            record_embedding_latency(emb_latency)
             if chunks:
                 context_block = pdf_pipeline.build_document_context(chunks)
                 system_injected = False
@@ -424,7 +485,8 @@ async def chat_stream(request: Request):
             else:
                 last_user_text = last_content
 
-            chunks = pdf_pipeline.retrieve_chunks(last_user_text, doc_ids, doc_store, top_k=5)
+            chunks, emb_latency = pdf_pipeline.retrieve_chunks(last_user_text, doc_ids, doc_store, top_k=5)
+            record_embedding_latency(emb_latency)
             if chunks:
                 context_block = pdf_pipeline.build_document_context(chunks)
                 system_injected = False

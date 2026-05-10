@@ -358,10 +358,62 @@ Added dedicated wrapper tools for `gh`, `aws`, and `huggingface-cli` with per-CL
 - **Settings Modal Restoration**: Fixed the "messed up" Settings pane by restoring the full HTML content for the Vitals tab.
 - **Verification**: UI integrity confirmed via manual inspection and 100% pass on smoke tests.
 
-## 📈 Current Status (as of May 7, 2026)
+---
+
+## 📄 Word & Excel Support — May 8, 2026
+
+Added comprehensive `.docx` and `.xlsx` read/write capabilities to both the agent tool registry and the RAG ingestion pipeline.
+
+### New Module: `office_pipeline.py`
+
+Mirrors `pdf_pipeline.py` in structure and return shape. `chunk_text` and `embed_texts` are reused — no duplication.
+
+| Function | Description |
+|---|---|
+| `extract_text_from_word(file_bytes)` | Returns `(sections, metadata)` — body text split at heading boundaries; metadata includes comments, tracked changes, footnotes, endnotes, document properties |
+| `extract_text_from_excel(file_bytes)` | Returns `(sheets, metadata)` — per-sheet TSV cell dump; metadata includes cell notes, threaded comments, formulas + cached values, embedded OLE objects (macros flagged, never executed) |
+| `ingest_office(file_bytes, filename)` | Routes by extension; returns same `{doc_id, filename, page_count, chunks, embeddings}` shape as `ingest_pdf` |
+| `write_word_document(path, spec)` | Creates `.docx` from a spec dict — headings, paragraphs (bold/italic/underline), tables with merges, footnotes, endnotes, document properties |
+| `write_excel_document(path, spec)` | Creates `.xlsx` from a spec dict — multi-sheet, cell values/formulas, styling (bold/italic/fill/border/alignment/number_format), merges, bar/line/pie charts |
+
+### New Agent Tools
+
+| Tool | Risk | Description |
+|---|---|---|
+| `read_word(path)` | safe | Extract text, comments, tracked changes, footnotes, and metadata from a `.docx` file |
+| `write_word(path, spec)` | risky | Create a Word file from a JSON spec dict |
+| `read_excel(path)` | safe | Extract cell values, formulas, notes, and threaded comments from an `.xlsx` file |
+| `write_excel(path, spec)` | risky | Create an Excel file from a JSON spec dict |
+
+### Upload Routing
+
+`gemma_bridge.py` `/v1/document` endpoint now routes `.docx` and `.xlsx` to `ingest_office`; all other types continue to `ingest_pdf`.
+
+### UI: Universal Drag & Drop
+
+Removed the file type filter from the upload widget. All file types are now accepted via drag-and-drop and the attach button:
+- Images → inline base64 preview (unchanged)
+- `.txt` / `.md` → read as text (unchanged)
+- **Everything else** → uploaded to `/api/document` and shown as an indexed attachment chip; unsupported types surface an error in the chip rather than being silently ignored
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `office_pipeline.py` | **New** — ~540 lines: full Word/Excel extraction and writing |
+| `agent_utils.py` | Added 4 tool functions + registrations + system prompt entries |
+| `gemma_bridge.py` | Extended upload endpoint with extension-based routing |
+| `gemma-web/index.html` | Universal drag-and-drop; removed `accept` filter |
+| `requirements.txt` | Added `python-docx`, `openpyxl`, `oletools`, `olefile` |
+| `tests/test_office_pipeline.py` | **New** — 25 tests covering extraction, ingestion, tool roundtrips |
+
+---
+
+## 📈 Current Status (as of May 8, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
 - **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning).
-- **Tools:** 29 registered tools across all major categories.
-- **UI:** Polished, tabbed settings interface with live vitals, system prompt transparency, and persistent history.
-- **Integrity:** 100% test pass rate (70+ tests including contracts).
+- **Tools:** 33 registered tools — added `read_word`, `write_word`, `read_excel`, `write_excel`.
+- **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG; Word and Excel also agent-writable.
+- **UI:** Universal file drag-and-drop; unsupported types fail gracefully with a visible error chip.
+- **Integrity:** 100% test pass rate (95+ tests including contracts and new office pipeline suite).

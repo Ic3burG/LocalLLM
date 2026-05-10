@@ -1,5 +1,6 @@
 import io
 import uuid
+import time
 import numpy as np
 
 _embedding_model = None
@@ -45,9 +46,13 @@ def chunk_text(
     return chunks
 
 
-def embed_texts(texts: list[str]) -> np.ndarray:
+def embed_texts(texts: list[str]) -> tuple[np.ndarray, float]:
+    """Returns (embeddings, latency_ms)"""
+    t0 = time.monotonic()
     model = get_embedding_model()
-    return model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+    embeddings = model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
+    latency_ms = (time.monotonic() - t0) * 1000
+    return embeddings, latency_ms
 
 
 def ingest_pdf(file_bytes: bytes, filename: str) -> dict | None:
@@ -57,7 +62,7 @@ def ingest_pdf(file_bytes: bytes, filename: str) -> dict | None:
 
     chunks = chunk_text(pages)
     texts = [c["text"] for c in chunks]
-    embeddings = embed_texts(texts)
+    embeddings, emb_latency_ms = embed_texts(texts)
 
     doc_id = uuid.uuid4().hex[:8]
     page_count = pages[-1][0] if pages else 0
@@ -67,6 +72,7 @@ def ingest_pdf(file_bytes: bytes, filename: str) -> dict | None:
         "page_count": page_count,
         "chunks": chunks,
         "embeddings": embeddings,
+        "embedding_latency_ms": emb_latency_ms
     }
 
 
@@ -75,11 +81,13 @@ def retrieve_chunks(
     doc_ids: list[str],
     doc_store: dict,
     top_k: int = 5,
-) -> list[dict]:
+) -> tuple[list[dict], float]:
+    """Returns (chunks, query_embedding_latency_ms)"""
     if not doc_ids:
-        return []
+        return [], 0
 
-    query_vec = embed_texts([query])[0]
+    embs_data, emb_latency_ms = embed_texts([query])
+    query_vec = embs_data[0]
     scored = []
     for doc_id in doc_ids:
         doc = doc_store.get(doc_id)
@@ -95,7 +103,8 @@ def retrieve_chunks(
             scored.append((float(score), doc["filename"], doc["chunks"][i]))
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    return [{"score": s, "filename": fn, **ch} for s, fn, ch in scored[:top_k]]
+    chunks = [{"score": s, "filename": fn, **ch} for s, fn, ch in scored[:top_k]]
+    return chunks, emb_latency_ms
 
 
 def build_document_context(chunks: list[dict]) -> str:
