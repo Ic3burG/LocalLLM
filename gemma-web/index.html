@@ -243,9 +243,23 @@
             <div class="flex-1 overflow-y-auto p-2">
                 <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2 px-2">Recents</div>
                 <div id="history-list" class="space-y-1"></div>
+                <button onclick="showAllChats()" class="w-full mt-4 flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors group">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover:translate-x-0.5 transition-transform"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v10"/><path d="M8 11h8"/></svg>
+                    All Chats
+                </button>
             </div>
 
-        <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">
+            <div id="memory-preview-container" class="p-4 border-t border-gray-100 dark:border-gray-800">
+                <div class="text-[10px] text-blue-600 dark:text-blue-400 font-mono uppercase tracking-wider mb-2 flex items-center justify-between">
+                    <span>🧠 Learned Memory</span>
+                    <button onclick="openSettings('memory')" class="hover:underline">Edit</button>
+                </div>
+                <div id="memory-preview" class="text-[10px] text-gray-500 line-clamp-3 italic leading-relaxed">
+                    Loading memory...
+                </div>
+            </div>
+
+            <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">
             <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2">Settings</div>
             <button id="theme-toggle" class="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm">
                 <span id="theme-icon-container"></span>
@@ -329,7 +343,15 @@
             <div id="typing" class="hidden absolute -top-6 left-8 text-xs text-blue-500 dark:text-blue-400 font-medium typing-indicator">Thinking...</div>
             <div id="attachment-preview" class="hidden flex flex-wrap gap-2 mb-3 px-2"></div>
 
-            <form id="chat-form" class="flex items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl">
+            <div id="mode-selector" class="flex justify-center mb-4">
+                <div class="inline-flex bg-gray-100 dark:bg-gray-800 p-1 rounded-full shadow-inner border border-gray-200 dark:border-gray-700">
+                    <button id="mode-chat" class="px-6 py-1.5 rounded-full text-xs font-semibold transition-all bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm">Chat</button>
+                    <button id="mode-agent" class="px-6 py-1.5 rounded-full text-xs font-semibold transition-all text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Agent</button>
+                </div>
+            </div>
+
+            <form id="chat-form"
+ class="flex items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl">
                 <input type="file" id="file-input" class="hidden" multiple>
                 <button type="button" id="attach-btn" class="text-gray-400 hover:text-blue-500 p-2 rounded-xl transition-colors flex-shrink-0" title="Attach file">
                     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
@@ -607,9 +629,32 @@
         // State
         let currentChatId = null;
         let contextChatId = null;
+        let selectedChatIds = new Set();
+        let searchQuery = "";
+        let isAgentMode = false;
         const alwaysAllowedTools = new Set(); // tools auto-approved for this browser session
         let chats = JSON.parse(localStorage.getItem('gemma_chats') || '[]');
         let currentAttachments = [];
+
+        // Mode Switching
+        const modeChat = document.getElementById('mode-chat');
+        const modeAgent = document.getElementById('mode-agent');
+
+        function setMode(agent) {
+            isAgentMode = agent;
+            if (agent) {
+                modeAgent.className = 'px-6 py-1.5 rounded-full text-xs font-semibold transition-all bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm';
+                modeChat.className = 'px-6 py-1.5 rounded-full text-xs font-semibold transition-all text-gray-500 hover:text-gray-700 dark:hover:text-gray-300';
+                userInput.placeholder = 'Assign a task to your agent...';
+            } else {
+                modeChat.className = 'px-6 py-1.5 rounded-full text-xs font-semibold transition-all bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm';
+                modeAgent.className = 'px-6 py-1.5 rounded-full text-xs font-semibold transition-all text-gray-500 hover:text-gray-700 dark:hover:text-gray-300';
+                userInput.placeholder = 'Ask anything...';
+            }
+        }
+
+        modeChat.addEventListener('click', () => setMode(false));
+        modeAgent.addEventListener('click', () => setMode(true));
 
         // --- Context Menu Logic ---
         const contextMenu = document.getElementById('context-menu');
@@ -673,9 +718,142 @@
             hideContextMenu();
         }
 
+        // --- All Chats Modal Logic ---
+        const allChatsModal = document.getElementById('all-chats-modal');
+        const allChatsList = document.getElementById('all-chats-list');
+        const chatSearch = document.getElementById('chat-search');
+        const bulkDeleteBtn = document.getElementById('bulk-delete-btn');
+        const selectedCount = document.getElementById('selected-count');
+
+        function showAllChats() {
+            allChatsModal.classList.remove('hidden-modal');
+            renderAllChats();
+            selectedChatIds.clear();
+            updateBulkDeleteUI();
+        }
+
+        function closeAllChats() {
+            allChatsModal.classList.add('hidden-modal');
+        }
+
+        function renderAllChats() {
+            const filtered = chats.filter(c => {
+                const titleMatch = c.title.toLowerCase().includes(searchQuery.toLowerCase());
+                const messageMatch = c.messages && c.messages.some(m => {
+                    const content = m.content;
+                    if (typeof content === 'string') return content.toLowerCase().includes(searchQuery.toLowerCase());
+                    if (Array.isArray(content)) return content.some(part => part.type === 'text' && part.text && part.text.toLowerCase().includes(searchQuery.toLowerCase()));
+                    return false;
+                });
+                return titleMatch || messageMatch;
+            });
+
+            allChatsList.innerHTML = filtered.length ? filtered.map(chat => `
+                <div class="all-chats-item ${selectedChatIds.has(chat.id) ? 'selected' : ''}" onclick="toggleSelectChat('${chat.id}', event)">
+                    <input type="checkbox" class="all-chats-checkbox" ${selectedChatIds.has(chat.id) ? 'checked' : ''} onclick="event.stopPropagation(); toggleSelectChat('${chat.id}', event)">
+                    <div class="flex-1 min-w-0" onclick="event.stopPropagation(); loadFromAllChats('${chat.id}')">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="font-semibold dark:text-white truncate">${chat.title}</span>
+                            ${chat.starred ? '<svg class="text-yellow-400 fill-current" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' : ''}
+                        </div>
+                        <div class="text-xs text-gray-500 flex items-center gap-3">
+                            <span>${chat.model || 'Gemma 4'}</span>
+                            <span>•</span>
+                            <span>${formatTimeAgo(chat.timestamp)}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                         <button onclick="event.stopPropagation(); deleteChat('${chat.id}', event)" class="p-2 hover:text-red-500 transition-colors">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('') : `
+                <div class="p-12 text-center text-gray-500">
+                    <p>No chats found matching your search.</p>
+                </div>
+            `;
+        }
+
+        function formatTimeAgo(timestamp) {
+            if (!timestamp) return 'Unknown time';
+            const seconds = Math.floor((Date.now() - timestamp) / 1000);
+            if (seconds < 60) return 'Just now';
+            const minutes = Math.floor(seconds / 60);
+            if (minutes < 60) return `${minutes}m ago`;
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) return `${hours}h ago`;
+            const days = Math.floor(hours / 24);
+            if (days < 7) return `${days}d ago`;
+            return new Date(timestamp).toLocaleDateString();
+        }
+
+        function toggleSelectChat(id, e) {
+            if (selectedChatIds.has(id)) selectedChatIds.delete(id);
+            else selectedChatIds.add(id);
+            renderAllChats();
+            updateBulkDeleteUI();
+        }
+
+        function updateBulkDeleteUI() {
+            const count = selectedChatIds.size;
+            selectedCount.textContent = count;
+            bulkDeleteBtn.classList.toggle('hidden', count === 0);
+        }
+
+        function loadFromAllChats(id) {
+            loadChat(id);
+            closeAllChats();
+        }
+
+        async function bulkDelete() {
+            if (!confirm(`Are you sure you want to delete ${selectedChatIds.size} chats?`)) return;
+            chats = chats.filter(c => !selectedChatIds.has(c.id));
+            if (selectedChatIds.has(currentChatId)) {
+                currentChatId = null;
+                chatBox.innerHTML = '';
+                chatBox.appendChild(welcomeMessage);
+                chatTitle.textContent = 'Gemma 4 Local';
+            }
+            selectedChatIds.clear();
+            saveChats();
+            renderAllChats();
+            updateBulkDeleteUI();
+        }
+
+        chatSearch.addEventListener('input', (e) => {
+            searchQuery = e.target.value;
+            renderAllChats();
+        });
+
+        allChatsModal.addEventListener('click', (e) => {
+            if (e.target === allChatsModal) closeAllChats();
+        });
+
         function saveChats() {
             localStorage.setItem('gemma_chats', JSON.stringify(chats));
             renderHistory();
+        }
+
+        // --- Settings Logic ---
+        function openSettings(tab = 'vitals') {
+            settingsModal.classList.remove('hidden-modal');
+            if (tab === 'vitals') tabVitals.click();
+            else if (tab === 'prompt') tabPrompt.click();
+            else if (tab === 'memory') tabMemory.click();
+        }
+
+        async function refreshMemoryPreview() {
+            try {
+                const res = await fetch('http://localhost:3001/api/memory');
+                const data = await res.json();
+                const previewEl = document.getElementById('memory-preview');
+                if (previewEl && data.content) {
+                    previewEl.textContent = data.content;
+                }
+            } catch (err) {
+                console.error("Failed to refresh memory preview:", err);
+            }
         }
 
         function createNewChat() {
@@ -766,8 +944,14 @@
 
         // --- All Chats Modal Logic ---
         function showAllChats() {
-            // Re-purposing showAllChats to just renderHistory for now
-            renderHistory();
+            allChatsModal.classList.remove('hidden-modal');
+            renderAllChats();
+            selectedChatIds.clear();
+            updateBulkDeleteUI();
+        }
+
+        function closeAllChats() {
+            allChatsModal.classList.add('hidden-modal');
         }
 
         // Theme Icons
@@ -1313,6 +1497,163 @@
                 clearAgentStatus();
             } 
         });
+
+        newChatBtn.addEventListener('click', createNewChat);
+
+        attachBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(Array.from(e.target.files));
+            fileInput.value = '';
+        });
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            document.body.addEventListener(eventName, (e) => { e.preventDefault(); chatBox.classList.add('active'); }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            document.body.addEventListener(eventName, (e) => { e.preventDefault(); chatBox.classList.remove('active'); }, false);
+        });
+
+        document.body.addEventListener('drop', (e) => {
+            const dt = e.dataTransfer;
+            handleFiles(Array.from(dt.files));
+        }, false);
+
+        async function handleFiles(files) {
+            for (const file of files) {
+                if (file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => addAttachment({ type: 'image', name: file.name, data: e.target.result });
+                    reader.readAsDataURL(file);
+                } else if (file.type === 'text/plain' || file.name.endsWith('.txt') || file.name.endsWith('.md')) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => addAttachment({ type: 'text', name: file.name, content: e.target.result });
+                    reader.readAsText(file);
+                } else if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+                    const attachId = `pdf-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                    currentAttachments.push({ type: 'pdf', name: file.name, attachId, status: 'processing' });
+                    renderPreviews();
+
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    fetch('http://localhost:3001/api/document', { method: 'POST', body: formData })
+                        .then(r => r.json())
+                        .then(data => {
+                            const att = currentAttachments.find(a => a.attachId === attachId);
+                            if (!att) return;
+                            if (data.warnings && data.warnings.includes('no_text_found')) {
+                                att.status = 'error';
+                                att.errorMsg = 'No text found (scanned PDF)';
+                            } else if (data.doc_id) {
+                                att.status = 'ready';
+                                att.doc_id = data.doc_id;
+                                att.pageCount = data.page_count;
+                            } else {
+                                att.status = 'error';
+                                att.errorMsg = 'Upload failed';
+                            }
+                            renderPreviews();
+                        })
+                        .catch(() => {
+                            const att = currentAttachments.find(a => a.attachId === attachId);
+                            if (att) { att.status = 'error'; att.errorMsg = 'Upload failed'; }
+                            renderPreviews();
+                        });
+                }
+            }
+        }
+
+        function addAttachment(at) { currentAttachments.push(at); renderPreviews(); }
+        function removeAttachment(index) { currentAttachments.splice(index, 1); renderPreviews(); }
+        function removePdfAttachment(attachId) { currentAttachments = currentAttachments.filter(a => a.attachId !== attachId); renderPreviews(); }
+
+        function makePdfChip(at) {
+            const chip = document.createElement('div');
+            chip.className = 'flex items-center gap-2 bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 rounded-lg px-3 py-2 text-sm border border-blue-200 dark:border-blue-700';
+
+            const icon = document.createElement('span');
+            icon.textContent = '📄';
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'font-medium truncate max-w-[120px]';
+            nameSpan.textContent = at.name;
+
+            const statusSpan = document.createElement('span');
+            statusSpan.className = 'text-xs opacity-70 whitespace-nowrap';
+            if (at.status === 'processing') statusSpan.textContent = 'Processing…';
+            else if (at.status === 'ready') statusSpan.textContent = at.pageCount + ' pages · indexed';
+            else if (at.status === 'error') statusSpan.textContent = '⚠ ' + (at.errorMsg || 'Error');
+
+            chip.append(icon, nameSpan, statusSpan);
+
+            if (at.status !== 'processing') {
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '×';
+                removeBtn.className = 'ml-1 text-blue-500 hover:text-red-500 font-bold text-sm leading-none';
+                const id = at.attachId;
+                removeBtn.addEventListener('click', () => removePdfAttachment(id));
+                chip.appendChild(removeBtn);
+            }
+            return chip;
+        }
+
+        function makeFileChip(at, i) {
+            const wrap = document.createElement('div');
+            wrap.className = 'relative group bg-gray-200 dark:bg-gray-700 rounded-lg p-2 flex items-center gap-2 max-w-[200px]';
+
+            if (at.type === 'image') {
+                const img = document.createElement('img');
+                img.src = at.data;
+                img.className = 'w-8 h-8 rounded object-cover';
+                wrap.appendChild(img);
+            } else {
+                const svgNS = 'http://www.w3.org/2000/svg';
+                const svg = document.createElementNS(svgNS, 'svg');
+                svg.setAttribute('width', '16'); svg.setAttribute('height', '16');
+                svg.setAttribute('viewBox', '0 0 24 24'); svg.setAttribute('fill', 'none');
+                svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
+                svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round');
+                svg.classList.add('text-blue-500');
+                const p1 = document.createElementNS(svgNS, 'path');
+                p1.setAttribute('d', 'M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z');
+                const p2 = document.createElementNS(svgNS, 'polyline');
+                p2.setAttribute('points', '14 2 14 8 20 8');
+                svg.append(p1, p2);
+                wrap.appendChild(svg);
+            }
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'text-[10px] truncate max-w-[100px]';
+            nameSpan.textContent = at.name;
+
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const xSvg = document.createElementNS(svgNS, 'svg');
+            xSvg.setAttribute('width', '12'); xSvg.setAttribute('height', '12');
+            xSvg.setAttribute('viewBox', '0 0 24 24'); xSvg.setAttribute('fill', 'none');
+            xSvg.setAttribute('stroke', 'currentColor'); xSvg.setAttribute('stroke-width', '3');
+            xSvg.setAttribute('stroke-linecap', 'round'); xSvg.setAttribute('stroke-linejoin', 'round');
+            const xp1 = document.createElementNS(svgNS, 'path'); xp1.setAttribute('d', 'M18 6 6 18');
+            const xp2 = document.createElementNS(svgNS, 'path'); xp2.setAttribute('d', 'm6 6 12 12');
+            xSvg.append(xp1, xp2);
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 transition-opacity';
+            const idx = i;
+            removeBtn.addEventListener('click', () => removeAttachment(idx));
+            removeBtn.appendChild(xSvg);
+
+            wrap.append(nameSpan, removeBtn);
+            return wrap;
+        }
+
+        function renderPreviews() {
+            if (currentAttachments.length === 0) { attachmentPreview.classList.add('hidden'); return; }
+            attachmentPreview.classList.remove('hidden');
+            attachmentPreview.replaceChildren(
+                ...currentAttachments.map((at, i) => at.type === 'pdf' ? makePdfChip(at) : makeFileChip(at, i))
+            );
+        }
 
         userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); chatForm.dispatchEvent(new Event('submit')); } });
 
