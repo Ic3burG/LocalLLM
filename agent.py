@@ -438,7 +438,29 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
             elapsed = int((time.monotonic() - t0) * 1000)
             await q.put(json.dumps({"type": "step", "tool": name_or_msg,
                                     "args": dict(enumerate(args)), "result": result, "elapsed_ms": elapsed}))
-            messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
+
+            model_tool_result = result
+            if isinstance(result, str) and result.startswith('{"__image__":'):
+                try:
+                    img_data = json.loads(result)
+                    await q.put(json.dumps({
+                        "type": "image",
+                        "image_b64": img_data["image_b64"],
+                        "width": img_data["width"],
+                        "height": img_data["height"],
+                        "steps": img_data["steps"],
+                        "elapsed_ms": img_data["elapsed_ms"],
+                        "prompt": img_data["prompt"],
+                        "size": img_data.get("size", "512x512"),
+                    }))
+                    model_tool_result = (
+                        f"[IMAGE GENERATED: {img_data['width']}x{img_data['height']}, "
+                        f"{img_data['steps']} steps — displayed in chat]"
+                    )
+                except Exception:
+                    pass
+
+            messages.append({"role": "user", "content": f"TOOL_RESULT: {model_tool_result}"})
 
         logger.warning("max iterations reached")
         await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))
