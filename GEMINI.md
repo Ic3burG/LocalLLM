@@ -10,8 +10,8 @@
 - Respect the premium, minimalist aesthetic established in recent sessions.
 - Preserve the Advanced Sidebar structure:
     - **Starred** chats at the top.
-    - **Recents** list below.
-    - **All Chats & Management** button at the bottom of the Recents list.
+    - **Recents** list below (scrollable area).
+    - **All Chats** button pinned below the Recents list (always visible).
 - **Settings Modal** is the primary location for system configurations, memory management, and technical telemetry (Vitals).
 
 ## 🧠 Memory System
