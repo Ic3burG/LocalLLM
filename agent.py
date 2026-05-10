@@ -260,6 +260,61 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
 
 
 # ---------------------------------------------------------------------------
+# Deep Thinking Pipeline
+# ---------------------------------------------------------------------------
+
+async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id: str) -> str:
+    """
+    Council of Three pipeline: Diversify, Critique, Synthesize.
+    Emits status updates to the SSE queue.
+    """
+    last_user_message = ""
+    for m in reversed(messages):
+        if m["role"] == "user":
+            last_user_message = m["content"]
+            break
+
+    # Stage 1: Diversify
+    await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Exploring 3 reasoning paths…"}))
+    diversify_prompt = (
+        "Generate 3 distinct, high-level strategies to solve this problem. "
+        "Label them Path A, Path B, and Path C.\n\n"
+        f"PROBLEM:\n{last_user_message}"
+    )
+    diversify_messages = [{"role": "user", "content": diversify_prompt}]
+    path_responses = await run_inference(diversify_messages, model_id)
+
+    # Stage 2: Critique
+    await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Critiquing strategies…"}))
+    critique_prompt = (
+        "Act as a critical reviewer. For each Path (A, B, C) mentioned above, "
+        "identify one major logical flaw or edge case. Score each 1-10 based on robustness."
+    )
+    critique_messages = [
+        {"role": "user", "content": diversify_prompt},
+        {"role": "assistant", "content": path_responses},
+        {"role": "user", "content": critique_prompt}
+    ]
+    critique_responses = await run_inference(critique_messages, model_id)
+
+    # Stage 3: Synthesize
+    await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Synthesizing final plan…"}))
+    synthesize_prompt = (
+        "Based on the original problem and your critique, synthesize the absolute best solution. "
+        "Address the flaws identified. Output ONLY the final synthesized reasoning."
+    )
+    synthesize_messages = [
+        {"role": "user", "content": diversify_prompt},
+        {"role": "assistant", "content": path_responses},
+        {"role": "user", "content": critique_prompt},
+        {"role": "assistant", "content": critique_responses},
+        {"role": "user", "content": synthesize_prompt}
+    ]
+    final_reasoning = await run_inference(synthesize_messages, model_id)
+    return final_reasoning
+
+
+# ---------------------------------------------------------------------------
 # SSE ReAct loop (with streaming + confirmation gate)
 # ---------------------------------------------------------------------------
 
@@ -288,6 +343,15 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
     messages[0]["content"] = f"Current date and time: {now_str}\n\n" + messages[0]["content"]
 
     try:
+        if deep_think:
+            reasoning = await run_deep_thinking_pipeline(q, messages, model_id)
+            await q.put(json.dumps({"type": "thinking", "content": reasoning}))
+            # Inject the reasoning to guide the agent
+            messages.append({
+                "role": "user", 
+                "content": f"Use this reasoning to guide your tool use:\n<thought>\n{reasoning}\n</thought>"
+            })
+
         empty_retries = 0
         for _ in range(20):
             # Notify the UI when the model needs to be loaded from disk so the
