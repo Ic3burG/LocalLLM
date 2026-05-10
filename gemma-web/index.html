@@ -295,9 +295,9 @@
             
             <div id="vitals-pane" class="p-6 flex-1 overflow-y-auto">
                 <div class="flex gap-2 mb-6 border-b border-gray-100 dark:border-[#3c3d40] pb-3">
-                    <button onclick="switchVitalsSubTab('system')" id="vitals-subtab-system" class="px-3 py-1 text-xs font-medium rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors">System</button>
-                    <button onclick="switchVitalsSubTab('agent')" id="vitals-subtab-agent" class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Agent</button>
-                    <button onclick="switchVitalsSubTab('pipeline')" id="vitals-subtab-pipeline" class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Pipeline</button>
+                    <button id="vitals-subtab-system" class="px-3 py-1 text-xs font-medium rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors">System</button>
+                    <button id="vitals-subtab-agent" class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Agent</button>
+                    <button id="vitals-subtab-pipeline" class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Pipeline</button>
                 </div>
 
                 <div id="vitals-subpane-system">
@@ -520,18 +520,27 @@
 
         function switchVitalsSubTab(tab) {
             const subpanes = ['system', 'agent', 'pipeline'];
+            const activeClasses = ['bg-blue-100', 'dark:bg-blue-900/30', 'text-blue-600', 'dark:text-blue-400'];
+            const inactiveClasses = ['text-gray-500', 'hover:bg-gray-100', 'dark:hover:bg-gray-800'];
+
             subpanes.forEach(p => {
                 const el = document.getElementById(`vitals-subpane-${p}`);
                 const btn = document.getElementById(`vitals-subtab-${p}`);
-                if (p === tab) {
-                    el.classList.remove('hidden');
-                    btn.className = 'px-3 py-1 text-xs font-medium rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors';
-                } else {
-                    el.classList.add('hidden');
-                    btn.className = 'px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors';
-                }
+                if (!el || !btn) return;
+                
+                const isActive = (p === tab);
+                el.classList.toggle('hidden', !isActive);
+                
+                // Remove all state classes first
+                btn.classList.remove(...activeClasses, ...inactiveClasses);
+                // Add correct state classes
+                btn.classList.add(...(isActive ? activeClasses : inactiveClasses));
             });
         }
+
+        document.getElementById('vitals-subtab-system').addEventListener('click', () => switchVitalsSubTab('system'));
+        document.getElementById('vitals-subtab-agent').addEventListener('click', () => switchVitalsSubTab('agent'));
+        document.getElementById('vitals-subtab-pipeline').addEventListener('click', () => switchVitalsSubTab('pipeline'));
 
         tabVitals.addEventListener('click', () => switchTab('vitals'));
         tabPrompt.addEventListener('click', () => switchTab('prompt'));
