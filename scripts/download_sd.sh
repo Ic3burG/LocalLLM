@@ -1,18 +1,26 @@
 #!/usr/bin/env bash
+# Warm up the mflux FLUX.1-schnell model by triggering its first-run download.
+# mflux downloads weights from HuggingFace automatically on first use.
+# Run this once after installing mflux to avoid a cold start during generation.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
-MODEL_DIR="$REPO_ROOT/mlx_models/sd-1.5"
 
-if [ -d "$MODEL_DIR" ]; then
-  echo "SD 1.5 already downloaded at $MODEL_DIR"
-  exit 0
-fi
+echo "Warming up FLUX.1-schnell (4-bit quantized)..."
+echo "This will download weights from HuggingFace on first run (~few GB)."
+echo ""
 
-echo "Downloading mlx-community/stable-diffusion-2-1-mlx to $MODEL_DIR..."
-mkdir -p "$MODEL_DIR"
-huggingface-cli download mlx-community/stable-diffusion-2-1-mlx \
-  --local-dir "$MODEL_DIR" \
-  --local-dir-use-symlinks False
-echo "Done. Model saved to $MODEL_DIR"
+source "$REPO_ROOT/.venv/bin/activate"
+python3 - <<'PYEOF'
+from mflux import Flux1, Config
+print("Initializing FLUX.1-schnell (quantize=4)...")
+flux = Flux1.from_name("flux-schnell", quantize=4)
+print("Model ready. Generating a 1-step test image to verify...")
+img = flux.generate_image(
+    seed=0,
+    prompt="test",
+    config=Config(num_inference_steps=1, height=256, width=256),
+)
+print("FLUX.1-schnell is ready for use.")
+PYEOF
