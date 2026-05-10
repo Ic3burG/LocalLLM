@@ -294,7 +294,7 @@
             </button>
         </div>
         
-        <div class="flex-1 overflow-y-auto flex flex-col">
+        <div class="flex-1 flex flex-col min-h-0">
             <div id="starred-section" class="p-2 border-b border-gray-100 dark:border-gray-800 hidden">
                 <div class="text-[10px] text-yellow-600 dark:text-yellow-500 font-mono uppercase tracking-wider mb-2 px-2 flex items-center gap-1">
                     <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -305,14 +305,18 @@
 
             <div class="flex-1 overflow-y-auto p-2">
                 <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2 px-2">Recents</div>
-                <div id="history-list" class="space-y-1 mb-4"></div>
-                <button onclick="showAllChats()" class="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors group border border-dashed border-gray-200 dark:border-gray-700">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover:translate-x-0.5 transition-transform"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v10"/><path d="M8 11h8"/></svg>
-                    All Chats & Management
-                </button>
+                <div id="history-list" class="space-y-1"></div>
             </div>
 
-            <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">
+            <div class="p-2 border-t border-gray-100 dark:border-gray-800">
+                <button onclick="showAllChats()" class="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors group border border-dashed border-gray-200 dark:border-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="group-hover:translate-x-0.5 transition-transform"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v10"/><path d="M8 11h8"/></svg>
+                    All Chats
+                </button>
+            </div>
+        </div>
+
+        <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">
             <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2">Settings</div>
             <button id="theme-toggle" class="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm">
                 <span id="theme-icon-container"></span>
