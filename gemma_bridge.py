@@ -78,12 +78,17 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             elapsed_ms = int((time.monotonic() - t0) * 1000)
             logger.error(
                 "http request failed",
-                extra={"method": request.method, "path": request.url.path, "elapsed_ms": elapsed_ms},
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "elapsed_ms": elapsed_ms,
+                },
                 exc_info=True,
             )
             raise
         finally:
             task_id_var.reset(token)
+
 
 app.add_middleware(RequestLoggingMiddleware)
 
@@ -100,15 +105,18 @@ doc_store: dict = {}
 _ingestion_times = []
 _embedding_latencies_ms = []
 
+
 def record_ingestion_time(duration_s: float):
     _ingestion_times.append(duration_s)
     if len(_ingestion_times) > 20:
         _ingestion_times.pop(0)
 
+
 def record_embedding_latency(latency_ms: float):
     _embedding_latencies_ms.append(latency_ms)
     if len(_embedding_latencies_ms) > 50:
         _embedding_latencies_ms.pop(0)
+
 
 def get_thermal_pressure():
     """Get macOS thermal pressure level."""
@@ -118,13 +126,14 @@ def get_thermal_pressure():
             ["sysctl", "-n", "kern.thermal_level"],
             capture_output=True,
             text=True,
-            check=True
+            check=True,
         )
         level = int(result.stdout.strip())
         mapping = {0: "nominal", 1: "fair", 2: "serious", 3: "critical"}
         return mapping.get(level, "unknown")
     except Exception:
-        return "nominal" # Default if not on macOS or sysctl fails
+        return "nominal"  # Default if not on macOS or sysctl fails
+
 
 def get_user_memory():
     try:
@@ -135,22 +144,26 @@ def get_user_memory():
         logger.error(f"Error reading memory: {e}")
     return ""
 
+
 def strip_thinking(text):
     """Helper to remove common thinking tags from model output"""
     # Handle Gemma 4 specific channel markers: <|channel>thought\n...<channel|>
     # We use multiple patterns to be robust to minor variations
-    text = re.sub(r'<\|channel\|?>thought\n?.*?<channel\|?>', '', text, flags=re.DOTALL)
-    text = re.sub(r'<\|channel\|?>thought\n?.*?<\|channel\|?>', '', text, flags=re.DOTALL)
-    
+    text = re.sub(r"<\|channel\|?>thought\n?.*?<channel\|?>", "", text, flags=re.DOTALL)
+    text = re.sub(
+        r"<\|channel\|?>thought\n?.*?<\|channel\|?>", "", text, flags=re.DOTALL
+    )
+
     # Remove <thought>...</thought>
-    text = re.sub(r'<thought>.*?</thought>', '', text, flags=re.DOTALL)
-    
+    text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.DOTALL)
+
     # Remove ***Thinking*** ...
-    text = re.sub(r'\*\*\*Thinking\*\*\*.*?\*\*\*', '', text, flags=re.DOTALL)
-    
+    text = re.sub(r"\*\*\*Thinking\*\*\*.*?\*\*\*", "", text, flags=re.DOTALL)
+
     # Remove turn markers if any leaked
-    text = re.sub(r'<\|turn\|?>.*', '', text)
+    text = re.sub(r"<\|turn\|?>.*", "", text)
     return text.strip()
+
 
 from agent import (
     confirm_queues,
@@ -164,20 +177,23 @@ from agent_utils import TelemetryManager
 
 app.include_router(agent_router, prefix="/v1/agent")
 
+
 @app.on_event("startup")
 async def startup():
     scheduler.start()
     load_scheduler_tasks_on_startup()
 
+
 @app.get("/v1/system_prompt")
 async def get_system_prompt_endpoint():
     return {"system_prompt": AGENT_SYSTEM_PROMPT}
+
 
 async def update_memory_task(user_msg, assistant_msg):
     """Background task to learn from the interaction and update USER_MEMORY.md"""
     try:
         current_memory = get_user_memory()
-        
+
         learning_prompt = f"""You are a specialized Memory Subagent. Your task is to update a User Memory file based on a new interaction.
         
 CURRENT MEMORY FILE:
@@ -197,21 +213,24 @@ INSTRUCTIONS:
 5. Output ONLY the updated Markdown content. Do NOT include any reasoning, thoughts, or preamble.
 """
 
-        raw_content = await run_inference([{"role": "user", "content": learning_prompt}], "gemma4-e4b")
+        raw_content = await run_inference(
+            [{"role": "user", "content": learning_prompt}], "gemma4-e4b"
+        )
         updated_content = strip_thinking(raw_content)
-        
+
         if updated_content.strip() and "# User Memory" in updated_content:
             # Strip wrapping code fences the model sometimes adds
-            updated_content = re.sub(r'^```\w*\n', '', updated_content)
-            updated_content = re.sub(r'\n```$', '', updated_content)
+            updated_content = re.sub(r"^```\w*\n", "", updated_content)
+            updated_content = re.sub(r"\n```$", "", updated_content)
             # Deduplicate horizontal lines
-            updated_content = re.sub(r'\n---+\n---+', '\n---', updated_content)
+            updated_content = re.sub(r"\n---+\n---+", "\n---", updated_content)
             with open(MEMORY_FILE, "w") as f:
                 f.write(updated_content.strip())
             logger.info("Memory updated successfully.")
-            
+
     except Exception as e:
         logger.error(f"Memory update failed: {e}")
+
 
 @app.get("/v1/models")
 async def list_models():
@@ -221,8 +240,11 @@ async def list_models():
         for d in os.listdir(MLX_MODELS_DIR):
             if os.path.isdir(os.path.join(MLX_MODELS_DIR, d)):
                 model_id = _reverse_map.get(d, d)
-                available.append({"id": model_id, "object": "model", "provider": "mlx_vlm"})
+                available.append(
+                    {"id": model_id, "object": "model", "provider": "mlx_vlm"}
+                )
     return {"data": available}
+
 
 @app.get("/v1/stats")
 async def get_stats():
@@ -249,7 +271,7 @@ async def get_stats():
         "cpu_percent": psutil.cpu_percent(),
         "thermal_pressure": get_thermal_pressure(),
         "latency_ms": round(get_avg_latency(), 2),
-        "models": get_loaded_models()
+        "models": get_loaded_models(),
     }
 
     # 2. Agent Telemetry
@@ -257,26 +279,29 @@ async def get_stats():
 
     # 3. Pipeline Telemetry
     total_chunks = sum(len(doc["chunks"]) for doc in doc_store.values())
-    avg_ingestion_s = sum(_ingestion_times) / len(_ingestion_times) if _ingestion_times else 0
-    avg_embedding_ms = sum(_embedding_latencies_ms) / len(_embedding_latencies_ms) if _embedding_latencies_ms else 0
+    avg_ingestion_s = (
+        sum(_ingestion_times) / len(_ingestion_times) if _ingestion_times else 0
+    )
+    avg_embedding_ms = (
+        sum(_embedding_latencies_ms) / len(_embedding_latencies_ms)
+        if _embedding_latencies_ms
+        else 0
+    )
 
     pipeline_block = {
         "doc_count": len(doc_store),
         "chunk_count": total_chunks,
         "ingestion_avg_s": round(avg_ingestion_s, 3),
-        "embedding_latency_ms": round(avg_embedding_ms, 2)
+        "embedding_latency_ms": round(avg_embedding_ms, 2),
     }
 
-    return {
-        "system": system_block,
-        "agent": agent_block,
-        "pipeline": pipeline_block
-    }
+    return {"system": system_block, "agent": agent_block, "pipeline": pipeline_block}
 
 
 @app.get("/v1/memory")
 async def get_memory_endpoint():
     return {"memory": get_user_memory()}
+
 
 @app.post("/v1/title")
 async def generate_title(request: Request):
@@ -285,14 +310,16 @@ async def generate_title(request: Request):
         messages = body.get("messages", [])
         if not messages:
             return {"title": "New Chat"}
-        
+
         # We only need the first few messages for a title
         conversation_context = ""
         for msg in messages[:5]:
             role = msg.get("role", "user")
             content = msg.get("content", "")
             if isinstance(content, list):
-                content = " ".join([c.get("text", "") for c in content if c.get("type") == "text"])
+                content = " ".join(
+                    [c.get("text", "") for c in content if c.get("type") == "text"]
+                )
             conversation_context += f"{role}: {content}\n"
 
         title_prompt = f"""You are a Title Generator Subagent.
@@ -307,9 +334,11 @@ INSTRUCTIONS:
 - Output ONLY the title text.
 - No quotes, no preamble, no thinking.
 """
-        raw_title = await run_inference([{"role": "user", "content": title_prompt}], "gemma4-e4b")
+        raw_title = await run_inference(
+            [{"role": "user", "content": title_prompt}], "gemma4-e4b"
+        )
         title = strip_thinking(raw_title).strip().strip('"').strip("'")
-        
+
         # If model fails or produces empty, fallback
         if not title:
             title = "New Chat"
@@ -317,6 +346,7 @@ INSTRUCTIONS:
     except Exception as e:
         logger.error(f"Title generation failed: {e}")
         return {"title": "New Chat"}
+
 
 @app.put("/v1/memory")
 async def update_memory_manual(request: Request):
@@ -329,6 +359,7 @@ async def update_memory_manual(request: Request):
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
+
 @app.post("/v1/document")
 async def upload_document(file: UploadFile = File(...)):
     try:
@@ -340,6 +371,7 @@ async def upload_document(file: UploadFile = File(...)):
 
         if ext in ("docx", "xlsx"):
             import office_pipeline
+
             doc = office_pipeline.ingest_office(file_bytes, filename)
         else:
             doc = pdf_pipeline.ingest_pdf(file_bytes, filename)
@@ -367,7 +399,9 @@ async def upload_document(file: UploadFile = File(...)):
             "chunks": doc["chunks"],
             "embeddings": doc["embeddings"],
         }
-        logger.info(f"Indexed {filename}: {len(doc['chunks'])} chunks, doc_id={doc['doc_id']}")
+        logger.info(
+            f"Indexed {filename}: {len(doc['chunks'])} chunks, doc_id={doc['doc_id']}"
+        )
 
         return {
             "doc_id": doc["doc_id"],
@@ -431,14 +465,18 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
         logger.info(f"Received request for model {model_id}")
 
         if not messages:
-            return JSONResponse(content={"error": "No messages provided"}, status_code=400)
+            return JSONResponse(
+                content={"error": "No messages provided"}, status_code=400
+            )
 
         # Inject Memory into System Prompt
         user_memory = get_user_memory()
         if user_memory:
             for msg in messages:
                 if msg.get("role") == "system":
-                    msg["content"] = f"{msg['content']}\n\nRELEVANT CONTEXT ABOUT THE USER:\n{user_memory}"
+                    msg["content"] = (
+                        f"{msg['content']}\n\nRELEVANT CONTEXT ABOUT THE USER:\n{user_memory}"
+                    )
                     break
 
         # RAG: inject retrieved document chunks into system prompt
@@ -446,12 +484,16 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
             last_content = messages[-1].get("content", "") if messages else ""
             if isinstance(last_content, list):
                 last_user_text = " ".join(
-                    item.get("text", "") for item in last_content if item.get("type") == "text"
+                    item.get("text", "")
+                    for item in last_content
+                    if item.get("type") == "text"
                 )
             else:
                 last_user_text = last_content
 
-            chunks, emb_latency = pdf_pipeline.retrieve_chunks(last_user_text, doc_ids, doc_store, top_k=5)
+            chunks, emb_latency = pdf_pipeline.retrieve_chunks(
+                last_user_text, doc_ids, doc_store, top_k=5
+            )
             record_embedding_latency(emb_latency)
             if chunks:
                 context_block = pdf_pipeline.build_document_context(chunks)
@@ -470,9 +512,11 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
 
         # Trigger background learning
         last_user_msg = messages[-1].get("content")
-        if isinstance(last_user_msg, list): 
-            last_user_msg = " ".join([m.get("text", "") for m in last_user_msg if m.get("type") == "text"])
-        
+        if isinstance(last_user_msg, list):
+            last_user_msg = " ".join(
+                [m.get("text", "") for m in last_user_msg if m.get("type") == "text"]
+            )
+
         assistant_reply = response["choices"][0]["message"]["content"]
         background_tasks.add_task(update_memory_task, last_user_msg, assistant_reply)
 
@@ -482,10 +526,11 @@ async def chat_completions(request: Request, background_tasks: BackgroundTasks):
         logger.error(f"Error during inference: {e}", exc_info=True)
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
+
 @app.post("/v1/chat/stream")
 async def chat_stream(request: Request):
     """
-    Unified streaming endpoint. 
+    Unified streaming endpoint.
     Standard chat messages that can trigger tools via ReAct loop.
     """
     try:
@@ -496,7 +541,9 @@ async def chat_stream(request: Request):
         deep_think = body.get("deep_think", False)
 
         if not messages:
-            return JSONResponse(content={"error": "No messages provided"}, status_code=400)
+            return JSONResponse(
+                content={"error": "No messages provided"}, status_code=400
+            )
 
         # Inject Memory into System Prompt
         user_memory = get_user_memory()
@@ -504,23 +551,35 @@ async def chat_stream(request: Request):
             system_injected = False
             for msg in messages:
                 if msg.get("role") == "system":
-                    msg["content"] = f"{msg['content']}\n\nRELEVANT CONTEXT ABOUT THE USER:\n{user_memory}"
+                    msg["content"] = (
+                        f"{msg['content']}\n\nRELEVANT CONTEXT ABOUT THE USER:\n{user_memory}"
+                    )
                     system_injected = True
                     break
             if not system_injected:
-                messages.insert(0, {"role": "system", "content": f"RELEVANT CONTEXT ABOUT THE USER:\n{user_memory}"})
+                messages.insert(
+                    0,
+                    {
+                        "role": "system",
+                        "content": f"RELEVANT CONTEXT ABOUT THE USER:\n{user_memory}",
+                    },
+                )
 
         # RAG: inject retrieved document chunks into system prompt
         if doc_ids:
             last_content = messages[-1].get("content", "") if messages else ""
             if isinstance(last_content, list):
                 last_user_text = " ".join(
-                    item.get("text", "") for item in last_content if item.get("type") == "text"
+                    item.get("text", "")
+                    for item in last_content
+                    if item.get("type") == "text"
                 )
             else:
                 last_user_text = last_content
 
-            chunks, emb_latency = pdf_pipeline.retrieve_chunks(last_user_text, doc_ids, doc_store, top_k=5)
+            chunks, emb_latency = pdf_pipeline.retrieve_chunks(
+                last_user_text, doc_ids, doc_store, top_k=5
+            )
             record_embedding_latency(emb_latency)
             if chunks:
                 context_block = pdf_pipeline.build_document_context(chunks)
@@ -537,14 +596,17 @@ async def chat_stream(request: Request):
         task_id = str(uuid.uuid4())
         sse_queues[task_id] = asyncio.Queue()
         confirm_queues[task_id] = asyncio.Queue()
-        
-        asyncio.create_task(react_loop_sse(task_id, messages, model_id, deep_think=deep_think))
-        
+
+        asyncio.create_task(
+            react_loop_sse(task_id, messages, model_id, deep_think=deep_think)
+        )
+
         return {"task_id": task_id}
 
     except Exception as e:
         logger.error(f"Error in chat_stream: {e}", exc_info=True)
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 if __name__ == "__main__":
     logger.info(f"Starting mlx_vlm Gemma Bridge on port {PORT}...")

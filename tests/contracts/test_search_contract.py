@@ -13,6 +13,7 @@ def has_internet():
     except OSError:
         return False
 
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(not has_internet(), reason="No internet connection")
 async def test_google_search_contract():
@@ -22,20 +23,22 @@ async def test_google_search_contract():
     """
     query = "python programming"
     result = await _google_search(query)
-    
+
     # Implementation returns a string, verify it's not an error message
     assert isinstance(result, str), "Result should be a string"
     assert not result.startswith("ERROR:"), f"Search failed with error: {result}"
     assert result != "No results found.", "Search should return at least one result"
-    
+
     # Verify structure: results are separated by double newlines
     blocks = result.split("\n\n")
     assert len(blocks) > 0, "Should have at least one block of results"
-    
+
     # Verify each block looks like a search result
     # Format: title\nurl\nbody
     for block in blocks:
         lines = block.split("\n")
         assert len(lines) >= 2, "Each result block should have at least title and URL"
-        assert lines[1].startswith("http"), f"Second line should be a URL, got: {lines[1]}"
+        assert lines[1].startswith("http"), (
+            f"Second line should be a URL, got: {lines[1]}"
+        )
         # The body might be empty or missing in some cases, but title and URL should be there.

@@ -18,6 +18,7 @@ from typing import Any
 # Security: The audit log is stored outside the sandbox so the agent cannot delete it.
 AUDIT_LOG_PATH = "/Users/ojdavis/Claude Code/Gemma4/audit.log"
 
+
 def log_audit(action: str):
     """Consistently log risky actions to the audit log."""
     try:
@@ -27,7 +28,9 @@ def log_audit(action: str):
         # If we can't write to the audit log, we should at least print to stderr
         print(f"CRITICAL: Failed to write to audit log: {e}", file=sys.stderr)
 
+
 logger = logging.getLogger(__name__)
+
 
 class TelemetryManager:
     _instance = None
@@ -74,19 +77,23 @@ class TelemetryManager:
         with self._lock:
             duration_ms = 0
             if task_id in self.task_start_times:
-                duration_ms = int((time.monotonic() - self.task_start_times.pop(task_id)) * 1000)
+                duration_ms = int(
+                    (time.monotonic() - self.task_start_times.pop(task_id)) * 1000
+                )
 
             if status == "success":
                 self.success_count += 1
             elif status == "error":
                 self.error_count += 1
 
-            self.recent.appendleft({
-                "id": task_id,
-                "status": status,
-                "duration_ms": duration_ms,
-                "timestamp": datetime.now().isoformat()
-            })
+            self.recent.appendleft(
+                {
+                    "id": task_id,
+                    "status": status,
+                    "duration_ms": duration_ms,
+                    "timestamp": datetime.now().isoformat(),
+                }
+            )
 
     def get_stats(self) -> dict:
         with self._lock:
@@ -97,8 +104,11 @@ class TelemetryManager:
                 "error_count": self.error_count,
                 "top_tools": self.top_tools.copy(),
                 "recent": list(self.recent),
-                "success_rate": self.success_count / completed_tasks if completed_tasks > 0 else 0
+                "success_rate": self.success_count / completed_tasks
+                if completed_tasks > 0
+                else 0,
             }
+
 
 @dataclass
 class Tool:
@@ -107,9 +117,11 @@ class Tool:
     description: str
     fn: Any  # callable
 
+
 # ---------------------------------------------------------------------------
 # Tool implementations
 # ---------------------------------------------------------------------------
+
 
 def validate_path(path_str: str, must_exist: bool = True) -> Path:
     # Resolve the project root (base) and the requested path (target)
@@ -275,8 +287,11 @@ async def _get_current_datetime() -> str:
 async def _google_search(query: str) -> str:
     try:
         from ddgs import DDGS
+
         loop = asyncio.get_running_loop()
-        results = await loop.run_in_executor(None, lambda: DDGS().text(query, max_results=5))
+        results = await loop.run_in_executor(
+            None, lambda: DDGS().text(query, max_results=5)
+        )
         lines = [f"{r['title']}\n{r['href']}\n{r.get('body', '')}" for r in results]
         return "\n\n".join(lines) if lines else "No results found."
     except Exception as e:
@@ -286,6 +301,7 @@ async def _google_search(query: str) -> str:
 
 def validate_url(url: str):
     from urllib.parse import urlparse
+
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Only http/https allowed, got: {parsed.scheme}")
@@ -306,6 +322,7 @@ async def _web_fetch(url: str) -> str:
         validate_url(url)
         import requests
         from bs4 import BeautifulSoup
+
         loop = asyncio.get_running_loop()
 
         def _sync_fetch():
@@ -363,7 +380,9 @@ async def _grep_search(pattern: str, path: str = ".") -> str:
 
         return "\n".join(results) if results else "No matches found."
     except Exception as e:
-        logger.error("grep_search failed: %s", e, extra={"pattern": pattern, "path": path})
+        logger.error(
+            "grep_search failed: %s", e, extra={"pattern": pattern, "path": path}
+        )
         return f"ERROR: {e}"
 
 
@@ -398,6 +417,7 @@ async def _git_log(limit: int = 5) -> str:
 async def _clipboard_copy(text: str) -> str:
     try:
         import pyperclip
+
         pyperclip.copy(text)
         return "OK: copied to clipboard"
     except Exception as e:
@@ -409,6 +429,7 @@ async def _clipboard_paste() -> str:
     log_audit("CLIPBOARD_PASTE")
     try:
         import pyperclip
+
         return pyperclip.paste()
     except Exception as e:
         logger.error("clipboard_paste failed: %s", e)
@@ -427,7 +448,9 @@ async def _python_interpreter(code: str) -> str:
     except Exception:
         sys.stdout = old_stdout
         tb = traceback.format_exc()
-        logger.error("python_interpreter raised exception", extra={"code_preview": code[:200]})
+        logger.error(
+            "python_interpreter raised exception", extra={"code_preview": code[:200]}
+        )
         return tb
     finally:
         sys.stdout = old_stdout
@@ -462,7 +485,9 @@ async def _find_file(pattern: str, path: str = ".") -> str:
                         return "\n".join(matches) + "\n(truncated at 100)"
         return "\n".join(matches) if matches else "No files found."
     except Exception as e:
-        logger.error("find_file failed: %s", e, extra={"pattern": pattern, "path": path})
+        logger.error(
+            "find_file failed: %s", e, extra={"pattern": pattern, "path": path}
+        )
         return f"ERROR: {e}"
 
 
@@ -485,6 +510,7 @@ async def _read_pdf(path: str) -> str:
     try:
         p = validate_path(path)
         from pdf_pipeline import extract_text_from_pdf
+
         loop = asyncio.get_running_loop()
         file_bytes = p.read_bytes()
         pages = await loop.run_in_executor(None, extract_text_from_pdf, file_bytes)
@@ -504,6 +530,7 @@ async def _write_pdf(path: str, content: str) -> str:
         p = validate_path(path, must_exist=False)
         p.parent.mkdir(parents=True, exist_ok=True)
         from fpdf import FPDF
+
         loop = asyncio.get_running_loop()
 
         def _sync_write():
@@ -525,6 +552,7 @@ async def _read_word(path: str) -> str:
     try:
         p = validate_path(path)
         from office_pipeline import extract_text_from_word, format_office_read_output
+
         loop = asyncio.get_running_loop()
         file_bytes = p.read_bytes()
         sections, metadata = await loop.run_in_executor(
@@ -540,6 +568,7 @@ async def _read_excel(path: str) -> str:
     try:
         p = validate_path(path)
         from office_pipeline import extract_text_from_excel, format_office_read_output
+
         loop = asyncio.get_running_loop()
         file_bytes = p.read_bytes()
         sheets, metadata = await loop.run_in_executor(
@@ -557,6 +586,7 @@ async def _write_word(path: str, spec: str) -> str:
         p = validate_path(path, must_exist=False)
         p.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
+
         spec_dict = _json.loads(spec) if isinstance(spec, str) else spec
         loop = asyncio.get_running_loop()
         from office_pipeline import write_word_document
@@ -577,6 +607,7 @@ async def _write_excel(path: str, spec: str) -> str:
         p = validate_path(path, must_exist=False)
         p.parent.mkdir(parents=True, exist_ok=True)
         import json as _json
+
         spec_dict = _json.loads(spec) if isinstance(spec, str) else spec
         loop = asyncio.get_running_loop()
         from office_pipeline import write_excel_document
@@ -591,13 +622,16 @@ async def _write_excel(path: str, spec: str) -> str:
         return f"ERROR: {e}"
 
 
-async def _http_request(method: str, url: str, headers: str = "{}", body: str = "") -> str:
+async def _http_request(
+    method: str, url: str, headers: str = "{}", body: str = ""
+) -> str:
     log_audit(f"HTTP_REQUEST: {method.upper()} {url}")
     try:
         validate_url(url)
         import json as _json
 
         import requests
+
         loop = asyncio.get_running_loop()
         parsed_headers = _json.loads(headers) if headers.strip() else {}
 
@@ -631,6 +665,7 @@ async def _notify(title: str, message: str) -> str:
 async def _system_info() -> str:
     try:
         import psutil
+
         cpu = psutil.cpu_percent(interval=0.5)
         mem = psutil.virtual_memory()
         disk = psutil.disk_usage("/")
@@ -652,6 +687,7 @@ async def _sqlite_query(db_path: str, sql: str) -> str:
         if not sql.strip().upper().startswith("SELECT"):
             return "ERROR: only SELECT queries are allowed"
         import sqlite3
+
         loop = asyncio.get_running_loop()
 
         def _sync_query():
@@ -660,7 +696,9 @@ async def _sqlite_query(db_path: str, sql: str) -> str:
                 cur = conn.execute(sql)
                 cols = [d[0] for d in cur.description] if cur.description else []
                 rows = cur.fetchmany(200)
-                lines = ["\t".join(cols)] + ["\t".join(str(v) for v in row) for row in rows]
+                lines = ["\t".join(cols)] + [
+                    "\t".join(str(v) for v in row) for row in rows
+                ]
                 suffix = "\n(truncated at 200 rows)" if len(rows) == 200 else ""
                 return "\n".join(lines) + suffix
             finally:
@@ -677,15 +715,20 @@ async def _diff_files(path_a: str, path_b: str) -> str:
         a = validate_path(path_a)
         b = validate_path(path_b)
         import difflib
+
         lines_a = a.read_text().splitlines(keepends=True)
         lines_b = b.read_text().splitlines(keepends=True)
-        diff = list(difflib.unified_diff(lines_a, lines_b, fromfile=str(a), tofile=str(b)))
+        diff = list(
+            difflib.unified_diff(lines_a, lines_b, fromfile=str(a), tofile=str(b))
+        )
         if not diff:
             return "Files are identical."
         result = "".join(diff)
         return result[:8000] if len(result) > 8000 else result
     except Exception as e:
-        logger.error("diff_files failed: %s", e, extra={"path_a": path_a, "path_b": path_b})
+        logger.error(
+            "diff_files failed: %s", e, extra={"path_a": path_a, "path_b": path_b}
+        )
         return f"ERROR: {e}"
 
 
@@ -693,6 +736,7 @@ async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) ->
     log_audit(f"GENERATE_IMAGE: prompt={prompt!r} size={size} steps={steps}")
     try:
         import requests as _requests
+
         loop = asyncio.get_running_loop()
         payload = {"prompt": prompt, "size": size, "steps": int(steps)}
 
@@ -710,16 +754,18 @@ async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) ->
             error = data.get("error", "generation_failed")
             return f"ERROR: Image generation failed — {error}"
 
-        return json.dumps({
-            "__image__": True,
-            "image_b64": data["image_b64"],
-            "width": data["width"],
-            "height": data["height"],
-            "steps": data["steps"],
-            "elapsed_ms": data["elapsed_ms"],
-            "prompt": prompt,
-            "size": size,
-        })
+        return json.dumps(
+            {
+                "__image__": True,
+                "image_b64": data["image_b64"],
+                "width": data["width"],
+                "height": data["height"],
+                "steps": data["steps"],
+                "elapsed_ms": data["elapsed_ms"],
+                "prompt": prompt,
+                "size": size,
+            }
+        )
     except Exception as e:
         logger.error("_generate_image failed: %s", e)
         return f"ERROR: {e}"
@@ -738,6 +784,7 @@ async def _gh_run(args: str) -> str:
     log_audit(f"GH_RUN: {args}")
     try:
         import shlex
+
         result = subprocess.run(
             ["gh"] + shlex.split(args),
             capture_output=True,
@@ -760,6 +807,7 @@ async def _aws_run(args: str) -> str:
     log_audit(f"AWS_RUN: {args}")
     try:
         import shlex
+
         result = subprocess.run(
             ["aws"] + shlex.split(args),
             capture_output=True,
@@ -782,6 +830,7 @@ async def _hf_run(args: str) -> str:
     log_audit(f"HF_RUN: {args}")
     try:
         import shlex
+
         result = subprocess.run(
             ["huggingface-cli"] + shlex.split(args),
             capture_output=True,
@@ -806,14 +855,18 @@ async def _hf_run(args: str) -> str:
 
 TOOL_REGISTRY: dict[str, Tool] = {}
 
+
 def register_tool(name: str, risk: str, description: str, fn: Any) -> None:
     """Register a tool in the global TOOL_REGISTRY."""
     TOOL_REGISTRY[name] = Tool(name, risk, description, fn)
 
+
 # Register default tools
 register_tool("read_file", "safe", "Read file contents", _read_file)
 register_tool("list_dir", "safe", "List directory", _list_dir)
-register_tool("grep_search", "safe", "Grep search for a pattern in a path", _grep_search)
+register_tool(
+    "grep_search", "safe", "Grep search for a pattern in a path", _grep_search
+)
 register_tool("list_crons", "safe", "List crontab", _list_crons)
 register_tool("write_file", "risky", "Write file", _write_file)
 register_tool("append_file", "risky", "Append to file", _append_file)
@@ -823,32 +876,77 @@ register_tool("create_cron", "risky", "Create cron job", _create_cron)
 register_tool("delete_cron", "risky", "Delete cron job", _delete_cron)
 register_tool("git_status", "safe", "Get git status --short", _git_status)
 register_tool("git_log", "safe", "Get git log --oneline", _git_log)
-register_tool("clipboard_copy", "safe", "Copy text to system clipboard", _clipboard_copy)
-register_tool("clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste)
+register_tool(
+    "clipboard_copy", "safe", "Copy text to system clipboard", _clipboard_copy
+)
+register_tool(
+    "clipboard_paste", "risky", "Paste text from system clipboard", _clipboard_paste
+)
 register_tool("google_search", "safe", "Search Google for a query", _google_search)
 register_tool("web_fetch", "safe", "Fetch and clean text from a URL", _web_fetch)
-register_tool("get_current_datetime", "safe", "Get the current local date, time, and timezone", _get_current_datetime)
+register_tool(
+    "get_current_datetime",
+    "safe",
+    "Get the current local date, time, and timezone",
+    _get_current_datetime,
+)
 register_tool("git_diff", "safe", "Show git diff vs HEAD", _git_diff)
 register_tool("find_file", "safe", "Find files by name/glob pattern", _find_file)
-register_tool("edit_file", "risky", "Replace a specific string in a file (first occurrence)", _edit_file)
+register_tool(
+    "edit_file",
+    "risky",
+    "Replace a specific string in a file (first occurrence)",
+    _edit_file,
+)
 register_tool("read_pdf", "safe", "Extract text from a PDF file", _read_pdf)
 register_tool("write_pdf", "risky", "Create a PDF file from text content", _write_pdf)
-register_tool("read_word", "safe", "Extract text and annotations from a Word (.docx) file", _read_word)
-register_tool("read_excel", "safe", "Extract text and annotations from an Excel (.xlsx) file", _read_excel)
-register_tool("write_word", "risky", "Create a Word (.docx) file from a JSON spec", _write_word)
-register_tool("write_excel", "risky", "Create an Excel (.xlsx) file from a JSON spec", _write_excel)
-register_tool("http_request", "risky", "Make an HTTP request (GET/POST/PUT/DELETE)", _http_request)
+register_tool(
+    "read_word",
+    "safe",
+    "Extract text and annotations from a Word (.docx) file",
+    _read_word,
+)
+register_tool(
+    "read_excel",
+    "safe",
+    "Extract text and annotations from an Excel (.xlsx) file",
+    _read_excel,
+)
+register_tool(
+    "write_word", "risky", "Create a Word (.docx) file from a JSON spec", _write_word
+)
+register_tool(
+    "write_excel",
+    "risky",
+    "Create an Excel (.xlsx) file from a JSON spec",
+    _write_excel,
+)
+register_tool(
+    "http_request", "risky", "Make an HTTP request (GET/POST/PUT/DELETE)", _http_request
+)
 register_tool("notify", "safe", "Send a macOS system notification", _notify)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
-register_tool("sqlite_query", "risky", "Run a SELECT query against a local SQLite database", _sqlite_query)
+register_tool(
+    "sqlite_query",
+    "risky",
+    "Run a SELECT query against a local SQLite database",
+    _sqlite_query,
+)
 register_tool("diff_files", "safe", "Show a unified diff of two files", _diff_files)
-register_tool("generate_image", "risky", "Generate an image on-device using FLUX.1-schnell via mflux", _generate_image)
+register_tool(
+    "generate_image",
+    "risky",
+    "Generate an image on-device using FLUX.1-schnell via mflux",
+    _generate_image,
+)
 register_tool("gh_run", "risky", "Run a GitHub CLI command (gh)", _gh_run)
 register_tool("aws_run", "risky", "Run an AWS CLI command (aws)", _aws_run)
-register_tool("hf_run", "risky", "Run a Hugging Face CLI command (huggingface-cli)", _hf_run)
+register_tool(
+    "hf_run", "risky", "Run a Hugging Face CLI command (huggingface-cli)", _hf_run
+)
 
-# Note: create_scheduled_task and list_scheduled_tasks are omitted from here 
-# because they depend on the scheduler in agent.py. 
+# Note: create_scheduled_task and list_scheduled_tasks are omitted from here
+# because they depend on the scheduler in agent.py.
 # We'll add them back to the registry in agent.py or keep them separate.
 
 # ---------------------------------------------------------------------------
@@ -913,16 +1011,21 @@ TOOL: google_search("Austin TX weather today")
 TOOL_RESULT: Austin, TX: 84°F, partly cloudy. High of 91°F expected.
 DONE: It's currently 84°F and partly cloudy in Austin, with a high of 91°F expected today."""
 
+
 def strip_thinking_blocks(text: str) -> str:
     """Strip all known thinking-block formats used by Gemma 4 and related models."""
     # Gemma 4 channel format — complete blocks (closing tag present)
-    text = re.sub(r'<\|channel\|?>thought\n?.*?<\|?channel\|>', '', text, flags=re.DOTALL)
+    text = re.sub(
+        r"<\|channel\|?>thought\n?.*?<\|?channel\|>", "", text, flags=re.DOTALL
+    )
     # Gemma 4 channel format — truncated/unclosed blocks (output hit token limit mid-thought)
-    text = re.sub(r'<\|channel\|?>thought\n?.*$', '', text, flags=re.DOTALL)
+    text = re.sub(r"<\|channel\|?>thought\n?.*$", "", text, flags=re.DOTALL)
     # Generic XML-style thinking blocks
-    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<thinking>.*?</thinking>', '', text, flags=re.DOTALL | re.IGNORECASE)
-    text = re.sub(r'<thought>.*?</thought>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(
+        r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL | re.IGNORECASE
+    )
+    text = re.sub(r"<thought>.*?</thought>", "", text, flags=re.DOTALL | re.IGNORECASE)
     return text.strip()
 
 
@@ -934,10 +1037,12 @@ def parse_model_output(text: str) -> tuple[str, str, list] | None:
     clean_text = strip_thinking_blocks(text)
 
     # Native Gemma format: <|tool_call>call:tool_name("arg")<tool_call|>
-    native_match = re.search(r'<\|tool_call\>call:(\w+)\((.*?)\)<tool_call\|>', clean_text, re.DOTALL)
+    native_match = re.search(
+        r"<\|tool_call\>call:(\w+)\((.*?)\)<tool_call\|>", clean_text, re.DOTALL
+    )
     # Text-based format: TOOL: tool_name("arg")
-    tool_match = re.search(r'TOOL:\s*(\w+)\((.*)\)\s*$', clean_text, re.MULTILINE)
-    done_match = re.search(r'DONE:\s*(.+)', clean_text, re.MULTILINE)
+    tool_match = re.search(r"TOOL:\s*(\w+)\((.*)\)\s*$", clean_text, re.MULTILINE)
+    done_match = re.search(r"DONE:\s*(.+)", clean_text, re.MULTILINE)
 
     active_match = native_match or tool_match
     if active_match:
@@ -947,7 +1052,7 @@ def parse_model_output(text: str) -> tuple[str, str, list] | None:
             args = json.loads(f"[{raw_args}]") if raw_args else []
         except json.JSONDecodeError:
             # Heuristic: try splitting on comma+space for multi-arg tools
-            parts = [p.strip().strip('"\'') for p in raw_args.split(', ')]
+            parts = [p.strip().strip("\"'") for p in raw_args.split(", ")]
             args = parts if len(parts) > 1 else [raw_args]
         return ("tool", tool_name, args)
     if done_match:

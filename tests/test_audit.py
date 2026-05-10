@@ -12,18 +12,20 @@ async def test_read_file_outside_sandbox():
     # With sandboxing, it should return an error message containing "PermissionError" or similar.
     # However, the task says validate_path should raise PermissionError.
     # The current implementations catch all exceptions and return "ERROR: {e}".
-    
+
     path = "/etc/hosts"
     result = await _read_file(path)
     # Before fix, this returns the content of /etc/hosts
     # After fix, it should return "ERROR: Access denied: /etc/hosts is outside the sandbox."
     assert "Access denied" in result or "PermissionError" in result
 
+
 @pytest.mark.asyncio
 async def test_list_dir_outside_sandbox():
     path = "/"
     result = await _list_dir(path)
     assert "Access denied" in result or "PermissionError" in result
+
 
 @pytest.mark.asyncio
 async def test_write_file_outside_sandbox():
@@ -32,17 +34,20 @@ async def test_write_file_outside_sandbox():
     result = await _write_file(path, "test")
     assert "Access denied" in result or "PermissionError" in result
 
+
 @pytest.mark.asyncio
 async def test_append_file_outside_sandbox():
     path = "/tmp/gemma_sandbox_test_append.txt"
     result = await _append_file(path, "test")
     assert "Access denied" in result or "PermissionError" in result
 
+
 @pytest.mark.asyncio
 async def test_grep_search_outside_sandbox():
     # Grep in /etc
     result = await _grep_search("root", "/etc")
     assert "Access denied" in result or "PermissionError" in result
+
 
 from agent_utils import _web_fetch
 
@@ -57,11 +62,13 @@ async def test_web_fetch_ssrf_localhost():
     result = await _web_fetch(url)
     assert "SSRF detected" in result
 
+
 @pytest.mark.asyncio
 async def test_web_fetch_ssrf_ip():
     url = "http://127.0.0.1/etc"
     result = await _web_fetch(url)
     assert "SSRF detected" in result
+
 
 from agent_utils import AUDIT_LOG_PATH, _python_interpreter, _shell
 
@@ -75,17 +82,17 @@ async def test_audit_logging_expansion():
             log_path.unlink()
         except Exception:
             pass
-    
+
     # 1. Test SHELL logging
     test_command = "echo 'hello shell audit'"
     await _shell(test_command)
-    
+
     # 2. Test WRITE_FILE logging
     await _write_file("test_audit.txt", "some content")
-    
+
     # 3. Test PYTHON logging
     await _python_interpreter("print('hello from python')")
-    
+
     assert log_path.exists()
     content = log_path.read_text()
     assert "SHELL: echo 'hello shell audit'" in content
@@ -94,4 +101,3 @@ async def test_audit_logging_expansion():
 
     # Clean up test file
     Path("test_audit.txt").unlink(missing_ok=True)
-

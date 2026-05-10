@@ -80,8 +80,10 @@ def _make_mock_flux(fake_png: bytes):
 def test_generate_image_returns_expected_shape():
     fake_png = _fake_png_bytes()
     mock_flux = _make_mock_flux(fake_png)
-    with patch("image_pipeline.get_loaded_models", return_value=[]), \
-         patch("image_pipeline._Flux1") as MockFlux1:
+    with (
+        patch("image_pipeline.get_loaded_models", return_value=[]),
+        patch("image_pipeline._Flux1") as MockFlux1,
+    ):
         MockFlux1.from_name.return_value = mock_flux
         result = generate_image("a sunset", size="512x512", steps=4)
     assert "image_b64" in result
@@ -95,8 +97,10 @@ def test_generate_image_returns_expected_shape():
 def test_generate_image_applies_style():
     fake_png = _fake_png_bytes()
     mock_flux = _make_mock_flux(fake_png)
-    with patch("image_pipeline.get_loaded_models", return_value=[]), \
-         patch("image_pipeline._Flux1") as MockFlux1:
+    with (
+        patch("image_pipeline.get_loaded_models", return_value=[]),
+        patch("image_pipeline._Flux1") as MockFlux1,
+    ):
         MockFlux1.from_name.return_value = mock_flux
         generate_image("a cat", style="photorealistic")
     call_kwargs = mock_flux.generate_image.call_args
@@ -107,9 +111,13 @@ def test_generate_image_applies_style():
 def test_generate_image_triggers_swap_for_large_model():
     fake_png = _fake_png_bytes()
     mock_flux = _make_mock_flux(fake_png)
-    with patch("image_pipeline.get_loaded_models", return_value=["gemma-4-26b-a4b-it-4bit"]), \
-         patch("image_pipeline._unload_text_model") as mock_unload, \
-         patch("image_pipeline._Flux1") as MockFlux1:
+    with (
+        patch(
+            "image_pipeline.get_loaded_models", return_value=["gemma-4-26b-a4b-it-4bit"]
+        ),
+        patch("image_pipeline._unload_text_model") as mock_unload,
+        patch("image_pipeline._Flux1") as MockFlux1,
+    ):
         MockFlux1.from_name.return_value = mock_flux
         generate_image("a cat")
     # called twice: once to swap out text model before loading Flux, once after to free Flux weights

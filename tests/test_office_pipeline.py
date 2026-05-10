@@ -11,6 +11,7 @@ import pytest
 def _make_word_bytes_simple() -> bytes:
     """Build a minimal .docx with headings and paragraphs."""
     from docx import Document
+
     doc = Document()
     doc.add_heading("Introduction", level=1)
     doc.add_paragraph("Hello world paragraph.")
@@ -26,6 +27,7 @@ def _make_word_bytes_simple() -> bytes:
 
 def test_extract_word_returns_sections():
     from office_pipeline import extract_text_from_word
+
     sections, metadata = extract_text_from_word(_make_word_bytes_simple())
     assert len(sections) >= 1
     all_text = " ".join(text for _, text in sections)
@@ -35,6 +37,7 @@ def test_extract_word_returns_sections():
 
 def test_extract_word_section_numbers_are_ints():
     from office_pipeline import extract_text_from_word
+
     sections, _ = extract_text_from_word(_make_word_bytes_simple())
     for num, _ in sections:
         assert isinstance(num, int)
@@ -42,6 +45,7 @@ def test_extract_word_section_numbers_are_ints():
 
 def test_extract_word_metadata_has_required_keys():
     from office_pipeline import extract_text_from_word
+
     _, metadata = extract_text_from_word(_make_word_bytes_simple())
     for key in ("comments", "tracked_changes", "footnotes", "endnotes", "properties"):
         assert key in metadata, f"Missing key: {key}"
@@ -49,6 +53,7 @@ def test_extract_word_metadata_has_required_keys():
 
 def test_extract_word_properties():
     from office_pipeline import extract_text_from_word
+
     _, metadata = extract_text_from_word(_make_word_bytes_simple())
     props = metadata["properties"]
     assert props["title"] == "Test Doc"
@@ -59,6 +64,7 @@ def test_extract_word_properties():
 
 def test_extract_word_empty_annotations_are_lists():
     from office_pipeline import extract_text_from_word
+
     _, metadata = extract_text_from_word(_make_word_bytes_simple())
     assert metadata["comments"] == []
     assert metadata["tracked_changes"] == []
@@ -78,21 +84,24 @@ def _make_word_bytes_with_comments() -> bytes:
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
         '<w:comment w:id="1" w:author="Alice" w:date="2026-01-01T00:00:00Z">'
-        '<w:p><w:r><w:t>Great point!</w:t></w:r></w:p>'
-        '</w:comment>'
-        '</w:comments>'
+        "<w:p><w:r><w:t>Great point!</w:t></w:r></w:p>"
+        "</w:comment>"
+        "</w:comments>"
     )
 
     # Inject comments part into the docx package
     from docx.opc.packuri import PackURI
     from docx.opc.part import Part
+
     comments_part = Part(
         PackURI("/word/comments.xml"),
         "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml",
         comments_xml.encode(),
         doc.part.package,
     )
-    rel_type = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
+    rel_type = (
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
+    )
     doc.part.relate_to(comments_part, rel_type)
 
     buf = io.BytesIO()
@@ -115,8 +124,8 @@ def _make_word_bytes_with_tracked_changes() -> bytes:
     ins_xml = (
         '<w:ins xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
         'w:id="1" w:author="Bob" w:date="2026-01-02T00:00:00Z">'
-        '<w:r><w:t>Inserted text.</w:t></w:r>'
-        '</w:ins>'
+        "<w:r><w:t>Inserted text.</w:t></w:r>"
+        "</w:ins>"
     )
     ins_el = etree.fromstring(ins_xml)
     para._element.append(ins_el)
@@ -128,6 +137,7 @@ def _make_word_bytes_with_tracked_changes() -> bytes:
 
 def test_extract_word_comments():
     from office_pipeline import extract_text_from_word
+
     _, metadata = extract_text_from_word(_make_word_bytes_with_comments())
     assert len(metadata["comments"]) == 1
     c = metadata["comments"][0]
@@ -139,6 +149,7 @@ def test_extract_word_comments():
 
 def test_extract_word_tracked_changes():
     from office_pipeline import extract_text_from_word
+
     _, metadata = extract_text_from_word(_make_word_bytes_with_tracked_changes())
     inserts = [tc for tc in metadata["tracked_changes"] if tc["type"] == "insert"]
     assert len(inserts) >= 1
@@ -148,6 +159,7 @@ def test_extract_word_tracked_changes():
 
 def _make_excel_bytes_simple() -> bytes:
     from openpyxl import Workbook
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Results"
@@ -167,6 +179,7 @@ def _make_excel_bytes_simple() -> bytes:
 
 def test_extract_excel_returns_sheets():
     from office_pipeline import extract_text_from_excel
+
     sheets, metadata = extract_text_from_excel(_make_excel_bytes_simple())
     assert len(sheets) == 2
     names = [name for name, _ in sheets]
@@ -176,6 +189,7 @@ def test_extract_excel_returns_sheets():
 
 def test_extract_excel_cell_values_in_text():
     from office_pipeline import extract_text_from_excel
+
     sheets, _ = extract_text_from_excel(_make_excel_bytes_simple())
     results_text = next(text for name, text in sheets if name == "Results")
     assert "Alice" in results_text
@@ -185,13 +199,21 @@ def test_extract_excel_cell_values_in_text():
 
 def test_extract_excel_metadata_has_required_keys():
     from office_pipeline import extract_text_from_excel
+
     _, metadata = extract_text_from_excel(_make_excel_bytes_simple())
-    for key in ("cell_notes", "threaded_comments", "formulas", "embedded_objects", "properties"):
+    for key in (
+        "cell_notes",
+        "threaded_comments",
+        "formulas",
+        "embedded_objects",
+        "properties",
+    ):
         assert key in metadata, f"Missing key: {key}"
 
 
 def test_extract_excel_empty_annotations_are_lists():
     from office_pipeline import extract_text_from_excel
+
     _, metadata = extract_text_from_excel(_make_excel_bytes_simple())
     assert metadata["cell_notes"] == []
     assert metadata["threaded_comments"] == []
@@ -200,6 +222,7 @@ def test_extract_excel_empty_annotations_are_lists():
 
 def _make_excel_bytes_with_formulas() -> bytes:
     from openpyxl import Workbook
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Calc"
@@ -214,6 +237,7 @@ def _make_excel_bytes_with_formulas() -> bytes:
 def _make_excel_bytes_with_cell_note() -> bytes:
     from openpyxl import Workbook
     from openpyxl.comments import Comment
+
     wb = Workbook()
     ws = wb.active
     ws.title = "Notes"
@@ -227,6 +251,7 @@ def _make_excel_bytes_with_cell_note() -> bytes:
 
 def test_extract_excel_formulas():
     from office_pipeline import extract_text_from_excel
+
     _, metadata = extract_text_from_excel(_make_excel_bytes_with_formulas())
     formulas = metadata["formulas"]
     assert len(formulas) >= 1
@@ -239,6 +264,7 @@ def test_extract_excel_formulas():
 
 def test_extract_excel_cell_notes():
     from office_pipeline import extract_text_from_excel
+
     _, metadata = extract_text_from_excel(_make_excel_bytes_with_cell_note())
     notes = metadata["cell_notes"]
     assert len(notes) >= 1
@@ -251,6 +277,7 @@ def test_extract_excel_cell_notes():
 
 def test_ingest_office_word_shape():
     from office_pipeline import ingest_office
+
     doc = ingest_office(_make_word_bytes_simple(), "test.docx")
     assert doc is not None
     assert "doc_id" in doc
@@ -266,6 +293,7 @@ def test_ingest_office_word_shape():
 
 def test_ingest_office_excel_shape():
     from office_pipeline import ingest_office
+
     doc = ingest_office(_make_excel_bytes_simple(), "data.xlsx")
     assert doc is not None
     assert doc["filename"] == "data.xlsx"
@@ -275,6 +303,7 @@ def test_ingest_office_excel_shape():
 
 def test_ingest_office_unknown_extension_returns_none():
     from office_pipeline import ingest_office
+
     result = ingest_office(b"garbage", "file.txt")
     assert result is None
 
@@ -283,6 +312,7 @@ def test_ingest_office_empty_word_returns_none():
     from docx import Document
 
     from office_pipeline import ingest_office
+
     doc = Document()
     buf = io.BytesIO()
     doc.save(buf)
@@ -295,6 +325,7 @@ async def test_read_word_tool_returns_text(tmp_path):
     import os
 
     from agent_utils import _read_word
+
     # Write inside project sandbox (cwd)
     project_tmp = os.path.join(os.getcwd(), "tmp_test_word.docx")
     try:
@@ -313,6 +344,7 @@ async def test_read_excel_tool_returns_text(tmp_path):
     import os
 
     from agent_utils import _read_excel
+
     # Write inside project sandbox (cwd)
     project_tmp = os.path.join(os.getcwd(), "tmp_test_excel.xlsx")
     try:
@@ -329,6 +361,7 @@ async def test_read_excel_tool_returns_text(tmp_path):
 @pytest.mark.asyncio
 async def test_read_word_tool_missing_file():
     from agent_utils import _read_word
+
     result = await _read_word("/tmp/does_not_exist_abc123.docx")
     assert result.startswith("ERROR")
 
@@ -336,6 +369,7 @@ async def test_read_word_tool_missing_file():
 @pytest.mark.asyncio
 async def test_read_excel_tool_missing_file():
     from agent_utils import _read_excel
+
     result = await _read_excel("/tmp/does_not_exist_abc123.xlsx")
     assert result.startswith("ERROR")
 
@@ -352,9 +386,13 @@ async def test_write_word_roundtrip_body():
         "properties": {"title": "My Report", "author": "Omar"},
         "sections": [
             {"type": "heading", "level": 1, "text": "Executive Summary"},
-            {"type": "paragraph", "text": "Revenue grew 15% this quarter.", "bold": False},
+            {
+                "type": "paragraph",
+                "text": "Revenue grew 15% this quarter.",
+                "bold": False,
+            },
             {"type": "paragraph", "text": "Key finding.", "bold": True},
-        ]
+        ],
     }
     path = os.path.join(os.getcwd(), "tmp_test_write_word.docx")
     try:
@@ -385,7 +423,7 @@ async def test_write_word_roundtrip_table():
                 "type": "table",
                 "rows": [["Name", "Score"], ["Alice", "95"], ["Bob", "87"]],
                 "header_row": True,
-                "merge": []
+                "merge": [],
             }
         ]
     }
@@ -395,6 +433,7 @@ async def test_write_word_roundtrip_table():
         assert "ERROR" not in result
 
         from docx import Document
+
         doc = Document(path)
         tables = doc.tables
         assert len(tables) == 1
@@ -425,9 +464,9 @@ async def test_write_excel_roundtrip_cells():
                     [{"value": "Bob"}, {"value": 35000}],
                 ],
                 "merges": [],
-                "charts": []
+                "charts": [],
             }
-        ]
+        ],
     }
     path = os.path.join(os.getcwd(), "tmp_test_write_excel.xlsx")
     try:
@@ -464,7 +503,7 @@ async def test_write_excel_roundtrip_formula():
                     [{"formula": "=A1+A2"}],
                 ],
                 "merges": [],
-                "charts": []
+                "charts": [],
             }
         ]
     }

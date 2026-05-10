@@ -20,8 +20,13 @@ def clean_root_handlers():
 
 def _make_record(msg="test message", name="mylogger", level=logging.INFO):
     return logging.LogRecord(
-        name=name, level=level, pathname="", lineno=0,
-        msg=msg, args=(), exc_info=None,
+        name=name,
+        level=level,
+        pathname="",
+        lineno=0,
+        msg=msg,
+        args=(),
+        exc_info=None,
     )
 
 
@@ -109,19 +114,23 @@ async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
 
     from fastapi import FastAPI
 
-    with patch.dict("sys.modules", {
-        "mlx_vlm": MagicMock(),
-        "inference_engine": MagicMock(),
-        "pdf_pipeline": MagicMock(),
-        "uvicorn": MagicMock(),
-        "apscheduler": MagicMock(),
-        "apscheduler.schedulers": MagicMock(),
-        "apscheduler.schedulers.asyncio": MagicMock(),
-        "agent": MagicMock(),
-    }):
+    with patch.dict(
+        "sys.modules",
+        {
+            "mlx_vlm": MagicMock(),
+            "inference_engine": MagicMock(),
+            "pdf_pipeline": MagicMock(),
+            "uvicorn": MagicMock(),
+            "apscheduler": MagicMock(),
+            "apscheduler.schedulers": MagicMock(),
+            "apscheduler.schedulers.asyncio": MagicMock(),
+            "agent": MagicMock(),
+        },
+    ):
         import importlib
 
         import gemma_bridge as gb
+
         importlib.reload(gb)
         middleware_cls = gb.RequestLoggingMiddleware
 
@@ -134,6 +143,7 @@ async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
 
     # Use a manual handler to capture records instead of relying on caplog
     records = []
+
     class TestHandler(logging.Handler):
         def emit(self, record):
             records.append(record)
@@ -149,7 +159,9 @@ async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
     from httpx import ASGITransport, AsyncClient
 
     try:
-        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=ASGITransport(app=test_app), base_url="http://testserver"
+        ) as client:
             resp = await client.get("/ping")
 
         assert resp.status_code == 200
@@ -168,20 +180,26 @@ async def test_request_logging_middleware_logs_http_fields(tmp_path, caplog):
 async def test_run_inference_logs_timing(caplog):
     """run_inference emits INFO records with model_id and elapsed_ms."""
     from unittest.mock import MagicMock, patch
+
     FAKE = {"choices": [{"message": {"content": "hi"}}]}
 
     with patch.dict("sys.modules", {"mlx_vlm": MagicMock()}):
         import importlib
 
         import inference_engine as ie
+
         importlib.reload(ie)
 
     async def fake_run_in_thread(fn, *args):
         return FAKE
 
-    with patch.object(ie, "run_in_inference_thread", side_effect=fake_run_in_thread), \
-         caplog.at_level(logging.INFO, logger="inference_engine"):
-        result = await ie.run_inference([{"role": "user", "content": "hi"}], "gemma4-e4b")
+    with (
+        patch.object(ie, "run_in_inference_thread", side_effect=fake_run_in_thread),
+        caplog.at_level(logging.INFO, logger="inference_engine"),
+    ):
+        result = await ie.run_inference(
+            [{"role": "user", "content": "hi"}], "gemma4-e4b"
+        )
 
     assert result == "hi"
     start_records = [r for r in caplog.records if "inference start" in r.getMessage()]

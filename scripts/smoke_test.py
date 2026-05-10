@@ -15,6 +15,7 @@ TINY_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAOAAAADgCAIAAACVT/22AAACaklEQVR4nO3SMQEA
 results = []
 json_mode = False
 
+
 def print_result(name, success, message=""):
     if json_mode:
         results.append({"name": name, "success": success, "message": message})
@@ -23,6 +24,7 @@ def print_result(name, success, message=""):
         print(f"{status} {name}")
         if message:
             print(f"       {message}")
+
 
 def test_node_health():
     """Checks if the Node.js proxy is up and reports the bridge as online."""
@@ -36,14 +38,19 @@ def test_node_health():
                     print_result("Node.js Heartbeat", True)
                     return True
                 else:
-                    print_result("Node.js Heartbeat", False, "Node reports bridge is offline")
+                    print_result(
+                        "Node.js Heartbeat", False, "Node reports bridge is offline"
+                    )
             except json.JSONDecodeError:
-                print_result("Node.js Heartbeat", False, "Invalid JSON from health check")
+                print_result(
+                    "Node.js Heartbeat", False, "Invalid JSON from health check"
+                )
         else:
             print_result("Node.js Heartbeat", False, f"HTTP {resp.status_code}")
     except Exception as e:
         print_result("Node.js Heartbeat", False, str(e))
     return False
+
 
 def test_bridge_models():
     """Checks if the Python Bridge is reachable and lists models."""
@@ -54,15 +61,22 @@ def test_bridge_models():
             try:
                 models = resp.json().get("data", [])
                 model_ids = [m.get("id") for m in models]
-                print_result("Python Bridge model list", True, f"Available: {', '.join(model_ids)}")
+                print_result(
+                    "Python Bridge model list",
+                    True,
+                    f"Available: {', '.join(model_ids)}",
+                )
                 return True
             except json.JSONDecodeError:
-                print_result("Python Bridge model list", False, "Invalid JSON from bridge")
+                print_result(
+                    "Python Bridge model list", False, "Invalid JSON from bridge"
+                )
         else:
             print_result("Python Bridge model list", False, f"HTTP {resp.status_code}")
     except Exception as e:
         print_result("Python Bridge model list", False, str(e))
     return False
+
 
 def test_text_roundtrip():
     """Tests a standard text chat request through the Node.js proxy."""
@@ -72,20 +86,22 @@ def test_text_roundtrip():
         payload = {
             "model": MODEL_ID,
             "messages": [{"role": "user", "content": "Ping"}],
-            "stream": False
+            "stream": False,
         }
-        
+
         resp = requests.post(url, json=payload, timeout=30)
-        
+
         # Fallback to /v1/chat/completions if needed, though /api/chat is preferred
         if resp.status_code == 404:
             url = f"{NODE_URL}/v1/chat/completions"
             resp = requests.post(url, json=payload, timeout=30)
-            
+
         if resp.ok:
             try:
                 data = resp.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                content = (
+                    data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                )
                 if content:
                     print_result("Text Roundtrip", True, f"Response: {content[:50]}...")
                     return True
@@ -94,10 +110,13 @@ def test_text_roundtrip():
             except json.JSONDecodeError:
                 print_result("Text Roundtrip", False, "Failed to decode JSON response")
         else:
-            print_result("Text Roundtrip", False, f"HTTP {resp.status_code}: {resp.text}")
+            print_result(
+                "Text Roundtrip", False, f"HTTP {resp.status_code}: {resp.text}"
+            )
     except Exception as e:
         print_result("Text Roundtrip", False, str(e))
     return False
+
 
 def test_vision_roundtrip():
     """Tests a vision chat request through the Node.js proxy."""
@@ -110,15 +129,20 @@ def test_vision_roundtrip():
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "What is in this image?"},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{TINY_PNG_B64}"}}
-                    ]
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{TINY_PNG_B64}"
+                            },
+                        },
+                    ],
                 }
             ],
-            "stream": False
+            "stream": False,
         }
-        
+
         resp = requests.post(url, json=payload, timeout=30)
-        
+
         if resp.status_code == 404:
             url = f"{NODE_URL}/v1/chat/completions"
             resp = requests.post(url, json=payload, timeout=30)
@@ -126,19 +150,28 @@ def test_vision_roundtrip():
         if resp.ok:
             try:
                 data = resp.json()
-                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                content = (
+                    data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                )
                 if content:
-                    print_result("Vision Roundtrip", True, f"Response: {content[:50]}...")
+                    print_result(
+                        "Vision Roundtrip", True, f"Response: {content[:50]}..."
+                    )
                     return True
                 else:
                     print_result("Vision Roundtrip", False, "Empty response content")
             except json.JSONDecodeError:
-                print_result("Vision Roundtrip", False, "Failed to decode JSON response")
+                print_result(
+                    "Vision Roundtrip", False, "Failed to decode JSON response"
+                )
         else:
-            print_result("Vision Roundtrip", False, f"HTTP {resp.status_code}: {resp.text}")
+            print_result(
+                "Vision Roundtrip", False, f"HTTP {resp.status_code}: {resp.text}"
+            )
     except Exception as e:
         print_result("Vision Roundtrip", False, str(e))
     return False
+
 
 def test_image_models():
     """Checks that the image models endpoint returns the expected shape."""
@@ -154,10 +187,17 @@ def test_image_models():
                 print_result("Image models endpoint", False, "missing 'downloaded' key")
                 return False
             if "flux-schnell" not in data["available"]:
-                print_result("Image models endpoint", False, f"flux-schnell not in available: {data['available']}")
+                print_result(
+                    "Image models endpoint",
+                    False,
+                    f"flux-schnell not in available: {data['available']}",
+                )
                 return False
-            print_result("Image models endpoint", True,
-                         f"available={data['available']}, downloaded={data['downloaded']}")
+            print_result(
+                "Image models endpoint",
+                True,
+                f"available={data['available']}, downloaded={data['downloaded']}",
+            )
             return True
         else:
             print_result("Image models endpoint", False, f"HTTP {resp.status_code}")
@@ -176,14 +216,14 @@ def main():
 
     if not json_mode:
         print("--- Gemma 4 Connectivity Smoke Test ---")
-    
+
     # Infrastructure checks
     node_ok = test_node_health()
     bridge_ok = test_bridge_models()
     img_ok = test_image_models()
 
     all_passed = node_ok and bridge_ok and img_ok
-    
+
     # Functional checks (dependency: node_ok must be True)
     if node_ok:
         t1 = test_text_roundtrip()
@@ -191,7 +231,9 @@ def main():
         all_passed = all_passed and t1 and t2
     else:
         if not json_mode:
-            print("\n[SKIP] Functional tests skipped because Node.js health check failed.")
+            print(
+                "\n[SKIP] Functional tests skipped because Node.js health check failed."
+            )
         all_passed = False
 
     if json_mode:
@@ -202,8 +244,9 @@ def main():
             print("RESULT: All connectivity tests PASSED.")
         else:
             print("RESULT: One or more connectivity tests FAILED.")
-    
+
     sys.exit(0 if all_passed else 1)
+
 
 if __name__ == "__main__":
     main()

@@ -19,23 +19,27 @@ logger = logging.getLogger(__name__)
 _inference_latencies = collections.deque(maxlen=10)
 _cache_lock = threading.Lock()
 
+
 def get_avg_latency():
     """Returns the average latency of the last few inference calls in ms."""
     if not _inference_latencies:
         return 0
     return sum(_inference_latencies) / len(_inference_latencies)
 
+
 def get_status_info():
     """Returns information about the current engine status. Thread-safe."""
     return {
         "is_busy": _is_job_running,
-        "current_model": _current_model_id if _is_job_running else None
+        "current_model": _current_model_id if _is_job_running else None,
     }
+
 
 def get_loaded_models():
     """Returns a list of model IDs currently in cache. Thread-safe."""
     with _cache_lock:
         return list(_vlm_cache.keys()) + list(_lm_cache.keys())
+
 
 # ---------------------------------------------------------------------------
 # Single dedicated inference thread
@@ -62,14 +66,24 @@ _stop_inference = threading.Event()
 _is_job_running = False
 _current_model_id = None
 
+
 def _inference_worker():
     """Long-lived thread that owns all mlx GPU state."""
-    global _mlx_vlm_load, _mlx_vlm_generate, _mlx_vlm_stream_generate, _mlx_lm_load, _mlx_lm_stream_generate, _is_job_running, _last_inference_activity, _current_model_id
+    global \
+        _mlx_vlm_load, \
+        _mlx_vlm_generate, \
+        _mlx_vlm_stream_generate, \
+        _mlx_lm_load, \
+        _mlx_lm_stream_generate, \
+        _is_job_running, \
+        _last_inference_activity, \
+        _current_model_id
     logger.info("Starting MLX inference worker thread...")
     try:
         from mlx_vlm import generate as _gen
         from mlx_vlm import load as _load
         from mlx_vlm import stream_generate as _stream_gen
+
         _mlx_vlm_load = _load
         _mlx_vlm_generate = _gen
         _mlx_vlm_stream_generate = _stream_gen
@@ -79,6 +93,7 @@ def _inference_worker():
     try:
         from mlx_lm import load as _lm_load
         from mlx_lm import stream_generate as _lm_stream_gen
+
         _mlx_lm_load = _lm_load
         _mlx_lm_stream_generate = _lm_stream_gen
     except Exception as e:
@@ -105,11 +120,15 @@ def _inference_worker():
         finally:
             _is_job_running = False
             _current_model_id = None
-            _stop_inference.clear() # Reset stop event for next job
+            _stop_inference.clear()  # Reset stop event for next job
+
 
 # Start the worker thread exactly once
-_worker_thread = threading.Thread(target=_inference_worker, daemon=True, name="mlx-inference-worker")
+_worker_thread = threading.Thread(
+    target=_inference_worker, daemon=True, name="mlx-inference-worker"
+)
 _worker_thread.start()
+
 
 def _watchdog_loop():
     """Monitors inference activity and kills hung jobs."""
@@ -121,13 +140,19 @@ def _watchdog_loop():
             idle_time = time.monotonic() - _last_inference_activity
             if idle_time > 180:
                 model_id = _current_model_id or "unknown"
-                logger.error(f"Inference watchdog: job hung for {int(idle_time)}s. Triggering stop.")
+                logger.error(
+                    f"Inference watchdog: job hung for {int(idle_time)}s. Triggering stop."
+                )
                 log_audit(f"WATCHDOG: Interrupted stalled inference for {model_id}")
                 _stop_inference.set()
 
+
 # Start the watchdog thread
-_watchdog_thread = threading.Thread(target=_watchdog_loop, daemon=True, name="inference-watchdog")
+_watchdog_thread = threading.Thread(
+    target=_watchdog_loop, daemon=True, name="inference-watchdog"
+)
 _watchdog_thread.start()
+
 
 def is_model_loaded(model_id: str) -> bool:
     """Check whether a model is currently in cache. Safe to call from any thread."""
@@ -141,7 +166,9 @@ async def run_in_inference_thread(fn, *args):
     """Submit *fn(*args)* to the inference thread and await the result."""
     if not _inference_ready.is_set():
         loop = asyncio.get_running_loop()
-        is_ready = await loop.run_in_executor(None, lambda: _inference_ready.wait(timeout=60))
+        is_ready = await loop.run_in_executor(
+            None, lambda: _inference_ready.wait(timeout=60)
+        )
         if not is_ready:
             raise RuntimeError("Inference worker failed to start within 60 seconds")
 
@@ -153,6 +180,7 @@ async def run_in_inference_thread(fn, *args):
     except asyncio.TimeoutError:
         raise RuntimeError("Inference timed out after 900 seconds")
 
+
 # ---------------------------------------------------------------------------
 # MLX VLM Inference Logic
 # ---------------------------------------------------------------------------
@@ -160,29 +188,30 @@ async def run_in_inference_thread(fn, *args):
 MLX_MODELS_DIR = os.path.join(os.getcwd(), "mlx_models")
 
 # Model caches — only accessed from the single inference thread, no lock needed.
-_vlm_cache: dict = {}   # model_id -> (model, processor)  for mlx_vlm
-_lm_cache: dict = {}    # model_id -> (model, tokenizer)  for mlx_lm
+_vlm_cache: dict = {}  # model_id -> (model, processor)  for mlx_vlm
+_lm_cache: dict = {}  # model_id -> (model, tokenizer)  for mlx_lm
 
 _MODEL_DIR_MAP = {
-    "gemma4-e4b":     "gemma-4-e4b-it-4bit",
+    "gemma4-e4b": "gemma-4-e4b-it-4bit",
     "gemma4-26b-mlx": "gemma-4-26b-a4b-it-4bit",
     "gemma4-31b-mlx": "gemma-4-31b-it-4bit",
-    "phi4-mini":      "phi-4-mini-4bit",
+    "phi4-mini": "phi-4-mini-4bit",
     "deepseek-v4-mini": "deepseek-v4-mini-7b-4bit",
 }
+
 
 def get_mlx_vlm_model(model_id: str):
     """Must only be called from the inference thread."""
     if not _inference_ready.wait(timeout=30):
         raise RuntimeError("Inference worker failed to start within 30 seconds")
-    
+
     with _cache_lock:
         if model_id in _vlm_cache:
             # Move to end to track LRU (Python 3.7+ dicts preserve insertion order)
             val = _vlm_cache.pop(model_id)
             _vlm_cache[model_id] = val
             return val
-        
+
         if len(_vlm_cache) >= 2:
             # Remove the oldest entry (first item in the dict)
             lru_model_id = next(iter(_vlm_cache))
@@ -196,12 +225,13 @@ def get_mlx_vlm_model(model_id: str):
     model_path = os.path.join(MLX_MODELS_DIR, dir_name)
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"mlx_vlm model directory not found: {model_path}")
-    
+
     logger.info(f"Loading mlx_vlm model {model_id} from {model_path}...")
     model, processor = _mlx_vlm_load(model_path)
     with _cache_lock:
         _vlm_cache[model_id] = (model, processor)
     return model, processor
+
 
 def get_mlx_lm_model(model_id: str):
     """Must only be called from the inference thread."""
@@ -240,7 +270,9 @@ def handle_mlx_lm_request(model_id: str, messages: list) -> dict:
         role = msg.get("role", "user")
         content = msg.get("content", "")
         if isinstance(content, list):
-            text = " ".join(c.get("text", "") for c in content if c.get("type") == "text")
+            text = " ".join(
+                c.get("text", "") for c in content if c.get("type") == "text"
+            )
             clean_messages.append({"role": role, "content": text})
         else:
             clean_messages.append({"role": role, "content": content or ""})
@@ -255,9 +287,11 @@ def handle_mlx_lm_request(model_id: str, messages: list) -> dict:
     tokens = []
     for token in _mlx_lm_stream_generate(model, tokenizer, prompt, max_tokens=8192):
         if _stop_inference.is_set():
-            logger.warning(f"Inference watchdog triggered: stopping generation for {model_id}")
+            logger.warning(
+                f"Inference watchdog triggered: stopping generation for {model_id}"
+            )
             break
-        tokens.append(token.text if hasattr(token, 'text') else token)
+        tokens.append(token.text if hasattr(token, "text") else token)
         _last_inference_activity = time.monotonic()
 
     return format_openai_response(model_id, "".join(tokens))
@@ -280,10 +314,10 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
         if isinstance(content, list):
             text_parts = [c.get("text", "") for c in content if c.get("type") == "text"]
             text = " ".join(text_parts)
-            
+
             # Preserve the multimodal structure for the chat template
             msg_content = [{"type": "text", "text": text}]
-            
+
             if is_last and temp_image_path is None:
                 for c in content:
                     if c.get("type") == "image_url":
@@ -298,11 +332,15 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
                                 ) as tmp:
                                     tmp.write(data)
                                     temp_image_path = tmp.name
-                                logger.info(f"Saved temp image for mlx_vlm: {temp_image_path}")
+                                logger.info(
+                                    f"Saved temp image for mlx_vlm: {temp_image_path}"
+                                )
                                 # Add the image token to the content list
                                 msg_content.insert(0, {"type": "image"})
                             except Exception as e:
-                                logger.error(f"Failed to decode image, continuing text-only: {e}")
+                                logger.error(
+                                    f"Failed to decode image, continuing text-only: {e}"
+                                )
                             break
             clean_messages.append({"role": role, "content": msg_content})
         else:
@@ -314,27 +352,35 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
             clean_messages, tokenize=False, add_generation_prompt=True
         )
     except Exception as e:
-        logger.warning(f"processor.apply_chat_template failed ({e}), trying tokenizer fallback")
+        logger.warning(
+            f"processor.apply_chat_template failed ({e}), trying tokenizer fallback"
+        )
         prompt = processor.tokenizer.apply_chat_template(
             clean_messages, tokenize=False, add_generation_prompt=True
         )
 
     has_image = temp_image_path is not None
-    logger.info(f"Starting mlx_vlm inference for {model_id} (image={'yes' if has_image else 'no'})...")
+    logger.info(
+        f"Starting mlx_vlm inference for {model_id} (image={'yes' if has_image else 'no'})..."
+    )
     try:
         tokens = []
         global _last_inference_activity
         _last_inference_activity = time.monotonic()
 
         for token in _mlx_vlm_stream_generate(
-            model, processor, prompt,
+            model,
+            processor,
+            prompt,
             image=temp_image_path,
             max_tokens=8192,
         ):
             if _stop_inference.is_set():
-                logger.warning(f"Inference watchdog triggered: stopping generation for {model_id}")
+                logger.warning(
+                    f"Inference watchdog triggered: stopping generation for {model_id}"
+                )
                 break
-            tokens.append(token.text if hasattr(token, 'text') else token)
+            tokens.append(token.text if hasattr(token, "text") else token)
             _last_inference_activity = time.monotonic()
 
         generated_text = "".join(tokens)
@@ -347,6 +393,7 @@ def handle_mlx_vlm_request(model_id: str, messages: list) -> dict:
 
     return format_openai_response(model_id, generated_text)
 
+
 def format_openai_response(model_id, content):
     completion_id = f"chatcmpl-{uuid.uuid4()}"
     return {
@@ -354,20 +401,31 @@ def format_openai_response(model_id, content):
         "object": "chat.completion",
         "created": int(time.time()),
         "model": model_id,
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        "choices": [
+            {
+                "index": 0,
+                "message": {"role": "assistant", "content": content},
+                "finish_reason": "stop",
+            }
+        ],
+        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
+
 
 async def run_inference(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Shared inference helper — runs blocking inference in the dedicated mlx
     thread so the asyncio event loop stays responsive and mlx GPU streams remain
     valid (streams are thread-local in mlx)."""
     t0 = time.monotonic()
-    logger.info("inference start", extra={"model_id": model_id, "msg_count": len(messages)})
+    logger.info(
+        "inference start", extra={"model_id": model_id, "msg_count": len(messages)}
+    )
     result = await run_in_inference_thread(handle_mlx_vlm_request, model_id, messages)
     elapsed_ms = int((time.monotonic() - t0) * 1000)
     _inference_latencies.append(elapsed_ms)
-    logger.info("inference complete", extra={"model_id": model_id, "elapsed_ms": elapsed_ms})
+    logger.info(
+        "inference complete", extra={"model_id": model_id, "elapsed_ms": elapsed_ms}
+    )
     try:
         return result["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as e:
