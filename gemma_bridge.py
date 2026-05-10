@@ -409,6 +409,8 @@ async def generate_image_route(request: Request):
         return JSONResponse(result)
     except asyncio.TimeoutError:
         return JSONResponse({"error": "timeout"}, status_code=504)
+    except ValueError as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
     except FileNotFoundError:
         return JSONResponse({"error": "model_not_found"}, status_code=503)
     except MemoryError:

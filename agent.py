@@ -440,9 +440,11 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
                                     "args": dict(enumerate(args)), "result": result, "elapsed_ms": elapsed}))
 
             model_tool_result = result
-            if isinstance(result, str) and result.startswith('{"__image__":'):
+            if isinstance(result, str):
                 try:
                     img_data = json.loads(result)
+                    if not img_data.get("__image__"):
+                        raise ValueError
                     await q.put(json.dumps({
                         "type": "image",
                         "image_b64": img_data["image_b64"],

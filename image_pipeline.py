@@ -31,8 +31,14 @@ def _apply_style(prompt: str, style: str) -> str:
     return prompt + STYLE_SUFFIXES.get(style, "")
 
 
+_VALID_SIZES = {"512x512", "768x768", "512x768", "768x512", "1024x1024"}
+
+
 def _parse_size(size: str) -> tuple[int, int]:
-    w, h = size.lower().split("x")
+    normalized = size.lower().strip()
+    if normalized not in _VALID_SIZES:
+        raise ValueError(f"invalid size {size!r}; must be one of {sorted(_VALID_SIZES)}")
+    w, h = normalized.split("x")
     return int(w), int(h)
 
 
@@ -81,6 +87,7 @@ def generate_image(
             width=width,
         )
         elapsed_ms = int((time.monotonic() - t0) * 1000)
+        _unload_text_model()  # free Flux weights from Metal cache immediately
 
     buf = io.BytesIO()
     result.image.save(buf, format="PNG")
