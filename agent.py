@@ -263,10 +263,10 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
 # SSE ReAct loop (with streaming + confirmation gate)
 # ---------------------------------------------------------------------------
 
-async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
+async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think: bool = False) -> None:
     """Run ReAct loop, emitting SSE events to sse_queues[task_id]."""
     task_id_var.set(task_id)
-    logger.info("sse react loop started", extra={"model_id": model_id})
+    logger.info("sse react loop started", extra={"model_id": model_id, "deep_think": deep_think})
     telemetry.record_start(task_id)
 
     q = sse_queues[task_id]
@@ -391,6 +391,7 @@ class AgentRequest(BaseModel):
     prompt: str | None = None
     messages: list[dict] | None = None
     model_id: str = "gemma4-e4b"
+    deep_think: bool = False
 
 
 class ConfirmRequest(BaseModel):
@@ -416,10 +417,9 @@ async def run_agent(req: AgentRequest):
     messages = req.messages or []
     if req.prompt:
         messages.append({"role": "user", "content": req.prompt})
-        
-    asyncio.create_task(react_loop_sse(task_id, messages, req.model_id))
-    return {"task_id": task_id}
 
+    asyncio.create_task(react_loop_sse(task_id, messages, req.model_id, deep_think=req.deep_think))
+    return {"task_id": task_id}
 
 @router.get("/stream/{task_id}")
 async def stream_agent(task_id: str):
