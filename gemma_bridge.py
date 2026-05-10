@@ -22,6 +22,7 @@ try:
 except ImportError:
     mx = None
 import pdf_pipeline
+import image_pipeline
 from agent_utils import (
     AGENT_SYSTEM_PROMPT,
     log_audit,
@@ -384,6 +385,43 @@ async def upload_document(file: UploadFile = File(...)):
     except Exception as e:
         logger.error(f"Document ingestion failed: {e}", exc_info=True)
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.post("/v1/image/generate")
+async def generate_image_route(request: Request):
+    body = await request.json()
+    prompt = body.get("prompt", "").strip()
+    if not prompt:
+        return JSONResponse({"error": "prompt_required"}, status_code=400)
+    size = body.get("size", "512x512")
+    steps = int(body.get("steps", 4))
+    style = body.get("style", "default")
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await asyncio.wait_for(
+            loop.run_in_executor(
+                None,
+                lambda: image_pipeline.generate_image(prompt, size, steps, style),
+            ),
+            timeout=120.0,
+        )
+        return JSONResponse(result)
+    except FileNotFoundError:
+        return JSONResponse({"error": "model_not_found"}, status_code=503)
+    except asyncio.TimeoutError:
+        return JSONResponse({"error": "timeout"}, status_code=504)
+    except MemoryError:
+        return JSONResponse({"error": "insufficient_memory"}, status_code=507)
+    except Exception as e:
+        logger.error("image generation failed: %s", e, exc_info=True)
+        return JSONResponse({"error": "generation_failed", "detail": str(e)}, status_code=500)
+
+
+@app.get("/v1/image/models")
+async def image_models_route():
+    downloaded = image_pipeline.get_downloaded_models()
+    return JSONResponse({"available": ["flux-schnell"], "downloaded": downloaded})
 
 
 @app.post("/v1/chat/completions")
