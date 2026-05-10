@@ -1,9 +1,17 @@
 import io
 import base64
 import logging
+import random
 import threading
 import time
 from pathlib import Path
+
+from inference_engine import get_loaded_models
+
+try:
+    from mflux.models.flux.variants.txt2img.flux import Flux1 as _Flux1
+except ImportError:
+    _Flux1 = None  # type: ignore
 
 logger = logging.getLogger("image_pipeline")
 
@@ -51,8 +59,40 @@ def generate_image(
     steps: int = 4,
     style: str = "default",
 ) -> dict:
-    """Generate an image. Returns dict with image_b64 and metadata."""
-    raise NotImplementedError("implement in Task 4")
+    """Generate an image using FLUX.1-schnell via mflux. Returns dict with image_b64 and metadata."""
+    if _Flux1 is None:
+        raise ImportError("mflux not installed. Run: pip install mflux")
+
+    width, height = _parse_size(size)
+    styled_prompt = _apply_style(prompt, style)
+
+    with _sd_lock:
+        loaded = get_loaded_models()
+        if _should_swap(loaded):
+            _unload_text_model()
+
+        t0 = time.monotonic()
+        flux = _Flux1.from_name("flux-schnell", quantize=4)
+        result = flux.generate_image(
+            seed=random.randint(0, 2**31 - 1),
+            prompt=styled_prompt,
+            num_inference_steps=steps,
+            height=height,
+            width=width,
+        )
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+    buf = io.BytesIO()
+    result.image.save(buf, format="PNG")
+    png_bytes = buf.getvalue()
+
+    return {
+        "image_b64": base64.b64encode(png_bytes).decode("utf-8"),
+        "width": width,
+        "height": height,
+        "steps": steps,
+        "elapsed_ms": elapsed_ms,
+    }
 
 
 def get_downloaded_models() -> list[str]:

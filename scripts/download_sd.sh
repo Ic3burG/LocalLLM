@@ -13,14 +13,16 @@ echo ""
 
 source "$REPO_ROOT/.venv/bin/activate"
 python3 - <<'PYEOF'
-from mflux import Flux1, Config
+from mflux.models.flux.variants.txt2img.flux import Flux1
 print("Initializing FLUX.1-schnell (quantize=4)...")
 flux = Flux1.from_name("flux-schnell", quantize=4)
 print("Model ready. Generating a 1-step test image to verify...")
 img = flux.generate_image(
     seed=0,
     prompt="test",
-    config=Config(num_inference_steps=1, height=256, width=256),
+    num_inference_steps=1,
+    height=256,
+    width=256,
 )
 print("FLUX.1-schnell is ready for use.")
 PYEOF
