@@ -498,12 +498,36 @@ Connected the local project to a remote GitHub repository to enable collaboratio
 
 ---
 
+## 🎨 FLUX.1-schnell Image Generation — May 10, 2026 (Session 3)
+
+Implemented the on-device image generation pipeline using the `mflux` library, which provides a high-performance MLX implementation of FLUX.1-schnell.
+
+### Highlights
+
+- **Tech Stack Pivot**: Switched from `mlx-stable-diffusion` (not on PyPI) to `mflux`, leveraging FLUX.1-schnell's superior quality and efficiency (requires only 4 inference steps).
+- **Core Pipeline**: Created `image_pipeline.py` with full support for model swap detection (unloading text models to free VRAM), style presets, and size parsing.
+- **Automated Warm-up**: Implemented `scripts/download_sd.sh` to handle the automatic download of 4-bit quantized weights from HuggingFace and verify the installation with a test generation.
+- **Dependency Optimization**: Updated `requirements.txt` to include `mflux` and restored a comprehensive set of originally-tracked packages to ensure environment stability.
+
+### Files Changed
+
+| File | Change |
+|---|---|
+| `image_pipeline.py` | **New** — Full FLUX.1-schnell generation pipeline with model swap and threading locks. |
+| `tests/test_image_pipeline.py` | **New** — Unit tests for style application, size parsing, and model swap logic. |
+| `requirements.txt` | Added `mflux`; restored full package list. |
+| `scripts/download_sd.sh` | **New** — Automated model download and verification script for FLUX.1-schnell. |
+| `docs/superpowers/plans/2026-05-10-mlx-sd.md` | **New** — Design and implementation roadmap for integrated image generation. |
+
+---
+
 ## 📈 Current Status (as of May 10, 2026)
 
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
 - **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning).
-- **Tools:** 33 registered tools.
+- **Tools:** 36 registered tools.
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG; Word and Excel also agent-writable.
-- **UI:** Universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard.
+- **UI:** Universal file drag-and-drop; sub-tabbed "Command Center" Vitals dashboard; Deep Thinking toggle.
 - **Integrity:** 100% test pass rate (100+ tests including telemetry and office pipeline suites).
+
