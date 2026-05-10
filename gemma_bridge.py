@@ -459,6 +459,7 @@ async def chat_stream(request: Request):
         messages = body.get("messages", [])
         model_id = body.get("model", "gemma4-e4b")
         doc_ids = body.get("doc_ids", [])
+        deep_think = body.get("deep_think", False)
 
         if not messages:
             return JSONResponse(content={"error": "No messages provided"}, status_code=400)
@@ -503,7 +504,7 @@ async def chat_stream(request: Request):
         sse_queues[task_id] = asyncio.Queue()
         confirm_queues[task_id] = asyncio.Queue()
         
-        asyncio.create_task(react_loop_sse(task_id, messages, model_id))
+        asyncio.create_task(react_loop_sse(task_id, messages, model_id, deep_think=deep_think))
         
         return {"task_id": task_id}
 
