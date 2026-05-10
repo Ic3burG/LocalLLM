@@ -23,12 +23,13 @@ from pydantic import BaseModel
 
 from agent_utils import (
     AGENT_SYSTEM_PROMPT, TOOL_REGISTRY, Tool, parse_model_output, register_tool, log_audit,
-    strip_thinking_blocks,
+    strip_thinking_blocks, TelemetryManager
 )
 
 router = APIRouter()
 scheduler = AsyncIOScheduler()
 logger = logging.getLogger(__name__)
+telemetry = TelemetryManager()
 
 def estimate_tokens(messages: list[dict]) -> int:
     """
@@ -197,6 +198,7 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
     loop_id = f"sched-{str(uuid.uuid4())[:8]}"
     task_id_var.set(loop_id)
     logger.info("internal react loop started", extra={"model_id": model_id})
+    telemetry.record_start(loop_id)
 
     # Merge all system messages into a single agent system prompt to prevent
     # consecutive system-role messages, which Gemma 3 rejects outright.
@@ -214,36 +216,47 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
     now_str = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M:%S %Z")
     messages[0]["content"] = f"Current date and time: {now_str}\n\n" + messages[0]["content"]
 
-    for _ in range(20):
-        messages = await summarize_history(messages)
-        response_text = await run_inference(messages, model_id)
-        messages.append({"role": "assistant", "content": response_text})
-        logger.info("model raw output", extra={"model_id": model_id, "preview": response_text[:500]})
-        parsed = parse_model_output(response_text)
-        if parsed is None:
-            clean_response = strip_thinking_blocks(response_text)
-            if not clean_response:
-                logger.warning("empty response after stripping thinking, nudging model")
-                messages.append({"role": "user", "content": "Please provide your answer."})
+    try:
+        for _ in range(20):
+            messages = await summarize_history(messages)
+            response_text = await run_inference(messages, model_id)
+            messages.append({"role": "assistant", "content": response_text})
+            logger.info("model raw output", extra={"model_id": model_id, "preview": response_text[:500]})
+            parsed = parse_model_output(response_text)
+            if parsed is None:
+                clean_response = strip_thinking_blocks(response_text)
+                if not clean_response:
+                    logger.warning("empty response after stripping thinking, nudging model")
+                    messages.append({"role": "user", "content": "Please provide your answer."})
+                    continue
+                logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
+                telemetry.record_complete(loop_id, "success")
+                return clean_response
+            kind, name_or_msg, args = parsed
+            if kind == "done":
+                telemetry.record_complete(loop_id, "success")
+                return name_or_msg
+            tool = TOOL_REGISTRY.get(name_or_msg)
+            if not tool:
+                logger.warning("unknown tool called", extra={"tool": name_or_msg})
+                messages.append({"role": "user", "content": f"TOOL_RESULT: ERROR: unknown tool {name_or_msg}"})
                 continue
-            logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
-            return clean_response
-        kind, name_or_msg, args = parsed
-        if kind == "done":
-            return name_or_msg
-        tool = TOOL_REGISTRY.get(name_or_msg)
-        if not tool:
-            logger.warning("unknown tool called", extra={"tool": name_or_msg})
-            messages.append({"role": "user", "content": f"TOOL_RESULT: ERROR: unknown tool {name_or_msg}"})
-            continue
-        try:
-            result = await tool.fn(*args)
-        except Exception as e:
-            logger.error("tool execution failed", extra={"tool": name_or_msg, "error": str(e)}, exc_info=True)
-            result = f"ERROR: {e}"
-        messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
-    logger.warning("max iterations reached")
-    return "Max iterations reached"
+            
+            telemetry.record_tool_use(name_or_msg)
+            try:
+                result = await tool.fn(*args)
+            except Exception as e:
+                logger.error("tool execution failed", extra={"tool": name_or_msg, "error": str(e)}, exc_info=True)
+                result = f"ERROR: {e}"
+            messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
+        
+        logger.warning("max iterations reached")
+        telemetry.record_complete(loop_id, "error")
+        return "Max iterations reached"
+    except Exception as e:
+        logger.error("internal react loop crashed", extra={"error": str(e)}, exc_info=True)
+        telemetry.record_complete(loop_id, "error")
+        return f"ERROR: {e}"
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +267,7 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
     """Run ReAct loop, emitting SSE events to sse_queues[task_id]."""
     task_id_var.set(task_id)
     logger.info("sse react loop started", extra={"model_id": model_id})
+    telemetry.record_start(task_id)
 
     q = sse_queues[task_id]
 
@@ -304,18 +318,21 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
                     if empty_retries >= 3:
                         logger.error("model produced no response after 3 attempts, giving up")
                         await q.put(json.dumps({"type": "error", "message": f"Model {model_id} produced no response after 3 attempts. Try a simpler query or a different model."}))
+                        telemetry.record_complete(task_id, "error")
                         return
                     messages.append({"role": "user", "content": "Please provide your answer."})
                     continue
                 empty_retries = 0
                 logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
                 await q.put(json.dumps({"type": "done", "message": clean_response}))
+                telemetry.record_complete(task_id, "success")
                 return
 
             kind, name_or_msg, args = parsed
             if kind == "done":
                 logger.info("DONE marker found, sending done event", extra={"model_id": model_id, "preview": name_or_msg[:200]})
                 await q.put(json.dumps({"type": "done", "message": name_or_msg}))
+                telemetry.record_complete(task_id, "success")
                 return
 
             tool = TOOL_REGISTRY.get(name_or_msg)
@@ -344,6 +361,7 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
                     messages.append({"role": "user", "content": "TOOL_RESULT: denied by user"})
                     continue
 
+            telemetry.record_tool_use(name_or_msg)
             t0 = time.monotonic()
             try:
                 result = await tool.fn(*args)
@@ -357,8 +375,10 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str) -> None:
 
         logger.warning("max iterations reached")
         await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))
+        telemetry.record_complete(task_id, "error")
     except Exception as e:
         await q.put(json.dumps({"type": "error", "message": str(e)}))
+        telemetry.record_complete(task_id, "error")
     finally:
         await q.put(None)
 

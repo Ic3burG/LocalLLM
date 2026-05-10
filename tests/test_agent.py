@@ -26,6 +26,7 @@ def mock_deps():
         "apscheduler": MagicMock(),
         "apscheduler.schedulers": MagicMock(),
         "apscheduler.schedulers.asyncio": MagicMock(),
+        "psutil": MagicMock(),
     }
     # FastAPI() is called at module level; make it return a proper mock
     stubs["fastapi"].FastAPI.return_value = MagicMock()
@@ -215,6 +216,27 @@ async def test_react_loop_internal_executes_safe_tool(mock_deps):
                       return_value="0 9 * * * echo hi"):
         result = await agent._react_loop_internal([{"role": "user", "content": "check my crons"}])
     assert result == "found cron"
+
+@pytest.mark.asyncio
+async def test_react_loop_internal_records_telemetry(mock_deps):
+    _, agent = mock_deps
+    responses = iter(["TOOL: list_crons()", "DONE: all done"])
+    
+    # Mock telemetry manager methods
+    agent.telemetry.record_start = MagicMock()
+    agent.telemetry.record_tool_use = MagicMock()
+    agent.telemetry.record_complete = MagicMock()
+
+    with patch.object(agent, "run_inference", new_callable=AsyncMock,
+                      side_effect=lambda msgs, model_id="gemma4-e4b": next(responses)), \
+         patch("agent_utils._list_crons", new_callable=AsyncMock,
+                      return_value="0 9 * * * echo hi"):
+        await agent._react_loop_internal([{"role": "user", "content": "do something"}])
+    
+    agent.telemetry.record_start.assert_called_once()
+    agent.telemetry.record_tool_use.assert_called_with("list_crons")
+    from unittest.mock import ANY
+    agent.telemetry.record_complete.assert_called_with(ANY, "success")
 
 @pytest.mark.asyncio
 async def test_react_loop_internal_max_iterations(mock_deps):
