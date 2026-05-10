@@ -95,9 +95,7 @@
         .reasoning-block .reasoning-body {
             padding: 10px 14px;
             font-size: 0.82em;
-            font-style: italic;
             color: var(--color-text-muted);
-            white-space: pre-wrap;
             border-top: 1px solid var(--color-border);
         }
 
@@ -1865,10 +1863,10 @@
             const details = document.createElement('details');
             details.className = 'reasoning-block';
             const summary = document.createElement('summary');
-            summary.textContent = 'Model reasoning';
+            summary.textContent = 'Deep Thinking Process';
             const body = document.createElement('div');
-            body.className = 'reasoning-body';
-            body.textContent = content;
+            body.className = 'reasoning-body prose dark:prose-invert max-w-none';
+            body.innerHTML = marked.parse(content);
             details.appendChild(summary);
             details.appendChild(body);
             return details;
@@ -1881,9 +1879,9 @@
                 return;
             }
             if (event.type === 'thinking') {
-                // Attach reasoning block to the trace container so it shows inline
-                // while the user is waiting; hidden under a disclosure toggle.
-                traceContainer.dataset.pendingThinking = event.content;
+                // Accumulate thinking content so multiple stages are shown together
+                const current = traceContainer.dataset.pendingThinking || '';
+                traceContainer.dataset.pendingThinking = current + event.content;
                 setAgentStatus('Reasoning...');
                 return;
             }

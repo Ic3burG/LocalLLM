@@ -283,6 +283,7 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
     )
     diversify_messages = [{"role": "user", "content": diversify_prompt}]
     path_responses = await run_inference(diversify_messages, model_id)
+    await q.put(json.dumps({"type": "thinking", "content": f"### DIVERSIFY (Tree of Thought)\n{path_responses}\n\n"}))
 
     # Stage 2: Critique
     await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Critiquing strategies…"}))
@@ -296,6 +297,7 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
         {"role": "user", "content": critique_prompt}
     ]
     critique_responses = await run_inference(critique_messages, model_id)
+    await q.put(json.dumps({"type": "thinking", "content": f"### CRITIQUE (Self-Correction)\n{critique_responses}\n\n"}))
 
     # Stage 3: Synthesize
     await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Synthesizing final plan…"}))
@@ -311,6 +313,7 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
         {"role": "user", "content": synthesize_prompt}
     ]
     final_reasoning = await run_inference(synthesize_messages, model_id)
+    await q.put(json.dumps({"type": "thinking", "content": f"### SYNTHESIZE (Final Plan)\n{final_reasoning}"}))
     return final_reasoning
 
 
