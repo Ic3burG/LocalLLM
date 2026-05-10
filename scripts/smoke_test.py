@@ -139,6 +139,32 @@ def test_vision_roundtrip():
         print_result("Vision Roundtrip", False, str(e))
     return False
 
+def test_image_models():
+    """Checks that the image models endpoint returns the expected shape."""
+    try:
+        url = f"{BRIDGE_URL}/v1/image/models"
+        resp = requests.get(url, timeout=5)
+        if resp.ok:
+            data = resp.json()
+            if "available" not in data:
+                print_result("Image models endpoint", False, "missing 'available' key")
+                return False
+            if "downloaded" not in data:
+                print_result("Image models endpoint", False, "missing 'downloaded' key")
+                return False
+            if "flux-schnell" not in data["available"]:
+                print_result("Image models endpoint", False, f"flux-schnell not in available: {data['available']}")
+                return False
+            print_result("Image models endpoint", True,
+                         f"available={data['available']}, downloaded={data['downloaded']}")
+            return True
+        else:
+            print_result("Image models endpoint", False, f"HTTP {resp.status_code}")
+    except Exception as e:
+        print_result("Image models endpoint", False, str(e))
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Gemma 4 Connectivity Smoke Test")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
@@ -153,8 +179,9 @@ def main():
     # Infrastructure checks
     node_ok = test_node_health()
     bridge_ok = test_bridge_models()
-    
-    all_passed = node_ok and bridge_ok
+    img_ok = test_image_models()
+
+    all_passed = node_ok and bridge_ok and img_ok
     
     # Functional checks (dependency: node_ok must be True)
     if node_ok:
