@@ -36,7 +36,9 @@ _VALID_SIZES = {"512x512", "768x768", "512x768", "768x512", "1024x1024"}
 def _parse_size(size: str) -> tuple[int, int]:
     normalized = size.lower().strip()
     if normalized not in _VALID_SIZES:
-        raise ValueError(f"invalid size {size!r}; must be one of {sorted(_VALID_SIZES)}")
+        raise ValueError(
+            f"invalid size {size!r}; must be one of {sorted(_VALID_SIZES)}"
+        )
     w, h = normalized.split("x")
     return int(w), int(h)
 
@@ -52,6 +54,7 @@ def _unload_text_model() -> None:
     """Clear MLX metal cache to free unified memory for the image model."""
     try:
         import mlx.core as mx
+
         mx.metal.clear_cache()
         logger.info("text model cache cleared for image model swap")
     except Exception as e:

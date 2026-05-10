@@ -11,12 +11,14 @@ def get_embedding_model():
     global _embedding_model
     if _embedding_model is None:
         from sentence_transformers import SentenceTransformer
+
         _embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
     return _embedding_model
 
 
 def extract_text_from_pdf(file_bytes: bytes) -> list[tuple[int, str]]:
     import pdfplumber
+
     pages = []
     with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
         for i, page in enumerate(pdf.pages, start=1):
@@ -73,7 +75,7 @@ def ingest_pdf(file_bytes: bytes, filename: str) -> dict | None:
         "page_count": page_count,
         "chunks": chunks,
         "embeddings": embeddings,
-        "embedding_latency_ms": emb_latency_ms
+        "embedding_latency_ms": emb_latency_ms,
     }
 
 

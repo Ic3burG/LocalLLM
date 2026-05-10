@@ -21,7 +21,7 @@ async def test_run_deep_thinking_pipeline():
     mock_responses = [
         "Path A: Add them. Path B: Use a calculator. Path C: Ask a friend.",
         "Path A is simple. Path B is overkill. Path C is slow. Scores: A: 10, B: 5, C: 2",
-        "The best way is to add them: 2+2=4."
+        "The best way is to add them: 2+2=4.",
     ]
 
     with patch("agent.run_inference", new_callable=AsyncMock) as mock_inf:
@@ -35,12 +35,12 @@ async def test_run_deep_thinking_pipeline():
 
         # Verify calls
         assert mock_inf.call_count == 3
-        
+
         # Verify SSE events
         events = []
         while not q.empty():
             events.append(json.loads(await q.get()))
-        
+
         assert len(events) == 3
         assert events[0]["message"] == "Deep Thinking: Exploring 3 reasoning paths…"
         assert events[1]["message"] == "Deep Thinking: Critiquing strategies…"

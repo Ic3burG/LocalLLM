@@ -67,7 +67,9 @@ def extract_text_from_word(file_bytes: bytes) -> tuple[list[tuple[int, str]], di
         "modified": str(props.modified) if props.modified else "",
         "subject": props.subject or "",
         "keywords": props.keywords or "",
-        "description": getattr(props, "description", None) or getattr(props, "comments", None) or "",
+        "description": getattr(props, "description", None)
+        or getattr(props, "comments", None)
+        or "",
     }
 
     metadata = {
@@ -83,8 +85,7 @@ def extract_text_from_word(file_bytes: bytes) -> tuple[list[tuple[int, str]], di
 def _extract_word_comments(doc) -> list[dict]:
     comments = []
     _COMMENTS_REL = (
-        "http://schemas.openxmlformats.org/officeDocument/2006/"
-        "relationships/comments"
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments"
     )
     try:
         part = doc.part.part_related_by(_COMMENTS_REL)
@@ -92,7 +93,9 @@ def _extract_word_comments(doc) -> list[dict]:
             author = c.get(qn("w:author"), "")
             date = c.get(qn("w:date"), "")
             text = "".join(t.text for t in c.iter(qn("w:t")) if t.text)
-            comments.append({"author": author, "date": date, "text": text, "ref_text": ""})
+            comments.append(
+                {"author": author, "date": date, "text": text, "ref_text": ""}
+            )
     except KeyError:
         pass
     return comments
@@ -106,13 +109,17 @@ def _extract_tracked_changes(doc) -> list[dict]:
         date = ins.get(qn("w:date"), "")
         text = "".join(t.text for t in ins.iter(qn("w:t")) if t.text)
         if text:
-            changes.append({"author": author, "date": date, "type": "insert", "text": text})
+            changes.append(
+                {"author": author, "date": date, "type": "insert", "text": text}
+            )
     for del_ in body.iter(qn("w:del")):
         author = del_.get(qn("w:author"), "")
         date = del_.get(qn("w:date"), "")
         text = "".join(t.text for t in del_.iter(qn("w:delText")) if t.text)
         if text:
-            changes.append({"author": author, "date": date, "type": "delete", "text": text})
+            changes.append(
+                {"author": author, "date": date, "type": "delete", "text": text}
+            )
     return changes
 
 
@@ -178,31 +185,39 @@ def extract_text_from_excel(file_bytes: bytes) -> tuple[list[tuple[str, str]], d
             for cell in row:
                 if isinstance(cell.value, str) and cell.value.startswith("="):
                     cached_cell = ws_cached[cell.coordinate]
-                    formulas.append({
-                        "sheet": sheet_name,
-                        "cell": cell.coordinate,
-                        "formula": cell.value,
-                        "cached_value": str(cached_cell.value) if cached_cell.value is not None else "",
-                    })
+                    formulas.append(
+                        {
+                            "sheet": sheet_name,
+                            "cell": cell.coordinate,
+                            "formula": cell.value,
+                            "cached_value": str(cached_cell.value)
+                            if cached_cell.value is not None
+                            else "",
+                        }
+                    )
 
         # Legacy cell notes (comments) — iterate cells to find per-cell comments
         for row in ws_cached.iter_rows():
             for cell in row:
                 comment = cell.comment
                 if comment is not None:
-                    cell_notes.append({
-                        "sheet": sheet_name,
-                        "cell": cell.coordinate,
-                        "author": comment.author or "",
-                        "text": str(comment.text) if comment.text else "",
-                    })
+                    cell_notes.append(
+                        {
+                            "sheet": sheet_name,
+                            "cell": cell.coordinate,
+                            "author": comment.author or "",
+                            "text": str(comment.text) if comment.text else "",
+                        }
+                    )
 
     threaded_comments = _extract_excel_threaded_comments(file_bytes)
     embedded_objects = _extract_excel_embedded_objects(file_bytes)
 
     # VBA macro detection
     if wb_formula.vba_archive is not None:
-        embedded_objects.append({"type": "vba_macro", "flagged": True, "extracted_text": ""})
+        embedded_objects.append(
+            {"type": "vba_macro", "flagged": True, "extracted_text": ""}
+        )
 
     props = wb_cached.properties
     properties = {
@@ -227,9 +242,13 @@ def _extract_excel_threaded_comments(file_bytes: bytes) -> list[dict]:
     results = []
     try:
         with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
-            thread_files = [n for n in z.namelist() if "threadedComment" in n and n.endswith(".xml")]
+            thread_files = [
+                n for n in z.namelist() if "threadedComment" in n and n.endswith(".xml")
+            ]
             for tf in thread_files:
-                ns = {"tc": "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"}
+                ns = {
+                    "tc": "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments"
+                }
                 root = ET.parse(z.open(tf)).getroot()
 
                 # First pass: collect all entries by their own id
@@ -253,7 +272,10 @@ def _extract_excel_threaded_comments(file_bytes: bytes) -> list[dict]:
                 for tc_id, item in all_entries.items():
                     parent_id = item["parent_id"]
                     if not parent_id:
-                        threads[tc_id] = {"cell": item["ref"], "thread": [item["entry"]]}
+                        threads[tc_id] = {
+                            "cell": item["ref"],
+                            "thread": [item["entry"]],
+                        }
                 for tc_id, item in all_entries.items():
                     parent_id = item["parent_id"]
                     if parent_id and parent_id in threads:
@@ -274,10 +296,16 @@ def _extract_excel_embedded_objects(file_bytes: bytes) -> list[dict]:
                 ext = ef.rsplit(".", 1)[-1].lower() if "." in ef else ""
                 data = z.read(ef)
                 if ext in ("docx", "xlsx", "pptx"):
-                    results.append({"type": f"embedded_{ext}", "extracted_text": f"[embedded {ext} — binary]"})
+                    results.append(
+                        {
+                            "type": f"embedded_{ext}",
+                            "extracted_text": f"[embedded {ext} — binary]",
+                        }
+                    )
                 elif ext in ("bin", "ole", ""):
                     try:
                         import olefile
+
                         if olefile.isOleFile(io.BytesIO(data)):
                             ole = olefile.OleFileIO(io.BytesIO(data))
                             if ole.exists("WordDocument"):
@@ -286,9 +314,19 @@ def _extract_excel_embedded_objects(file_bytes: bytes) -> list[dict]:
                                 obj_type = "embedded_excel_ole"
                             else:
                                 obj_type = "embedded_ole"
-                            results.append({"type": obj_type, "extracted_text": f"[OLE object: {ef}]"})
+                            results.append(
+                                {
+                                    "type": obj_type,
+                                    "extracted_text": f"[OLE object: {ef}]",
+                                }
+                            )
                     except Exception:
-                        results.append({"type": "embedded_binary", "extracted_text": f"[binary object: {ef}]"})
+                        results.append(
+                            {
+                                "type": "embedded_binary",
+                                "extracted_text": f"[binary object: {ef}]",
+                            }
+                        )
     except Exception:
         pass
     return results
@@ -339,7 +377,7 @@ def ingest_office(file_bytes: bytes, filename: str) -> dict | None:
         "page_count": page_count,
         "chunks": chunks,
         "embeddings": embeddings,
-        "embedding_latency_ms": emb_latency_ms
+        "embedding_latency_ms": emb_latency_ms,
     }
 
 
@@ -352,7 +390,9 @@ def _format_word_metadata_text(metadata: dict) -> str:
     if metadata.get("tracked_changes"):
         parts.append("## Tracked Changes")
         for tc in metadata["tracked_changes"]:
-            parts.append(f"[{tc['type'].upper()} by {tc['author']} on {tc['date']}]: {tc['text']}")
+            parts.append(
+                f"[{tc['type'].upper()} by {tc['author']} on {tc['date']}]: {tc['text']}"
+            )
     if metadata.get("footnotes"):
         parts.append("## Footnotes")
         for fn in metadata["footnotes"]:
@@ -383,7 +423,9 @@ def _format_excel_metadata_text(metadata: dict) -> str:
     if metadata.get("formulas"):
         parts.append("## Formulas")
         for f in metadata["formulas"]:
-            parts.append(f"[{f['sheet']}!{f['cell']}] {f['formula']} = {f['cached_value']}")
+            parts.append(
+                f"[{f['sheet']}!{f['cell']}] {f['formula']} = {f['cached_value']}"
+            )
     if metadata.get("embedded_objects"):
         parts.append("## Embedded Objects")
         for obj in metadata["embedded_objects"]:
@@ -442,7 +484,9 @@ def write_word_document(path, spec: dict) -> None:
                 for i, row in enumerate(rows_data):
                     for j, cell_val in enumerate(row):
                         if j < n_cols:
-                            table.cell(i, j).text = str(cell_val) if cell_val is not None else ""
+                            table.cell(i, j).text = (
+                                str(cell_val) if cell_val is not None else ""
+                            )
                 for merge in section.get("merge", []):
                     r, c = merge["row"], merge["col"]
                     rs, cs = merge["rowspan"], merge["colspan"]
@@ -452,7 +496,9 @@ def write_word_document(path, spec: dict) -> None:
             # python-docx has no public footnote/endnote API; render as labelled paragraph
             label = "Footnote" if stype == "footnote" else "Endnote"
             p = doc.add_paragraph()
-            run = p.add_run(f"[{label} {section.get('ref_paragraph', '')}]: {section.get('text', '')}")
+            run = p.add_run(
+                f"[{label} {section.get('ref_paragraph', '')}]: {section.get('text', '')}"
+            )
             run.font.size = Pt(9)
 
     doc.save(str(path))
@@ -486,7 +532,11 @@ def write_excel_document(path, spec: dict) -> None:
                     continue
                 cell = ws.cell(row=r_idx, column=c_idx)
                 if isinstance(cell_spec, dict):
-                    val = cell_spec.get("formula") if "formula" in cell_spec else cell_spec.get("value")
+                    val = (
+                        cell_spec.get("formula")
+                        if "formula" in cell_spec
+                        else cell_spec.get("value")
+                    )
                     cell.value = val
                     font_kw: dict = {}
                     if cell_spec.get("bold"):
@@ -497,10 +547,15 @@ def write_excel_document(path, spec: dict) -> None:
                         cell.font = Font(**font_kw)
                     if cell_spec.get("border"):
                         from openpyxl.styles import Border, Side
+
                         _side = Side(border_style="thin")
-                        cell.border = Border(left=_side, right=_side, top=_side, bottom=_side)
+                        cell.border = Border(
+                            left=_side, right=_side, top=_side, bottom=_side
+                        )
                     if cell_spec.get("bg_color"):
-                        cell.fill = PatternFill(fill_type="solid", fgColor=cell_spec["bg_color"])
+                        cell.fill = PatternFill(
+                            fill_type="solid", fgColor=cell_spec["bg_color"]
+                        )
                     if cell_spec.get("number_format"):
                         cell.number_format = cell_spec["number_format"]
                     if cell_spec.get("alignment"):
@@ -526,7 +581,13 @@ def write_excel_document(path, spec: dict) -> None:
             if data_range:
                 cell_range = data_range.split("!")[-1]
                 min_col, min_row, max_col, max_row = range_boundaries(cell_range)
-                data = Reference(ws, min_col=min_col, min_row=min_row, max_col=max_col, max_row=max_row)
+                data = Reference(
+                    ws,
+                    min_col=min_col,
+                    min_row=min_row,
+                    max_col=max_col,
+                    max_row=max_row,
+                )
                 chart.add_data(data, titles_from_data=True)
             ws.add_chart(chart, chart_spec.get("anchor", "E1"))
 
@@ -536,7 +597,9 @@ def write_excel_document(path, spec: dict) -> None:
     wb.save(str(path))
 
 
-def format_office_read_output(sections_or_sheets: list[tuple], metadata: dict, filetype: str) -> str:
+def format_office_read_output(
+    sections_or_sheets: list[tuple], metadata: dict, filetype: str
+) -> str:
     """Format extraction results into a single readable string for the agent."""
     parts = []
     label = "Section" if filetype == "word" else "Sheet"

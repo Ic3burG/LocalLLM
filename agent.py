@@ -28,6 +28,7 @@ scheduler = AsyncIOScheduler()
 logger = logging.getLogger(__name__)
 telemetry = TelemetryManager()
 
+
 def estimate_tokens(messages: list[dict]) -> int:
     """
     Estimates the number of tokens in a list of messages.
@@ -35,21 +36,24 @@ def estimate_tokens(messages: list[dict]) -> int:
     """
     return sum(len(str(msg.get("content") or "")) // 4 + 4 for msg in messages)
 
+
 async def summarize_history(messages: list[dict]) -> list[dict]:
     SOFT_LIMIT = 16000
     HARD_LIMIT = 28000
-    
+
     if estimate_tokens(messages) <= SOFT_LIMIT:
         return messages
 
     # Perform summarization
-    system_prompt_msg = messages[0] if messages and messages[0]["role"] == "system" else None
-    
+    system_prompt_msg = (
+        messages[0] if messages and messages[0]["role"] == "system" else None
+    )
+
     if system_prompt_msg:
         remaining = messages[1:]
     else:
         remaining = messages
-        
+
     midpoint = len(remaining) // 2
     to_summarize = remaining[:midpoint]
     keep = remaining[midpoint:]
@@ -62,13 +66,13 @@ async def summarize_history(messages: list[dict]) -> list[dict]:
         )
 
         import inference_engine
+
         summary = await inference_engine.run_inference(
-            [{"role": "user", "content": summary_prompt}],
-            model_id="gemma4-e4b"
+            [{"role": "user", "content": summary_prompt}], model_id="gemma4-e4b"
         )
-        
+
         summary_text = f"\n\n[PERSISTENT SESSION CONTEXT: {summary}]"
-        
+
         if system_prompt_msg:
             # Merge into existing system message
             new_system_content = system_prompt_msg["content"] + summary_text
@@ -86,11 +90,12 @@ async def summarize_history(messages: list[dict]) -> list[dict]:
             if len(new_messages) > 1:
                 new_messages.pop(1)
             else:
-                break # Can't drop the only system message
+                break  # Can't drop the only system message
         else:
             new_messages.pop(0)
-            
+
     return new_messages
+
 
 from inference_engine import is_model_loaded, run_inference
 
@@ -105,9 +110,11 @@ SCHEDULER_LOG_FILE = Path(__file__).parent / "scheduler_log.jsonl"
 # Scheduler tools (keep here because they use the local scheduler instance)
 # ---------------------------------------------------------------------------
 
+
 async def _list_scheduled_tasks() -> str:
     tasks = _load_scheduler_tasks()
     return json.dumps(tasks)
+
 
 async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
     log_audit(f"CREATE_SCHEDULED_TASK: {name} ({schedule}) {prompt}")
@@ -120,14 +127,20 @@ async def _create_scheduled_task(name: str, schedule: str, prompt: str) -> str:
     except Exception as e:
         return f"ERROR: {e}"
 
+
 # Register scheduler tools
-register_tool("list_scheduled_tasks", "safe", "List scheduled tasks", _list_scheduled_tasks)
-register_tool("create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task)
+register_tool(
+    "list_scheduled_tasks", "safe", "List scheduled tasks", _list_scheduled_tasks
+)
+register_tool(
+    "create_scheduled_task", "risky", "Create scheduled task", _create_scheduled_task
+)
 
 
 # ---------------------------------------------------------------------------
 # Scheduler helpers
 # ---------------------------------------------------------------------------
+
 
 def _load_scheduler_tasks() -> list:
     if SCHEDULER_TASKS_FILE.exists():
@@ -139,7 +152,9 @@ def _save_scheduler_tasks(tasks: list) -> None:
     SCHEDULER_TASKS_FILE.write_text(json.dumps(tasks, indent=2))
 
 
-async def _run_scheduler_task(task_name: str, prompt: str, model_id: str = "gemma4-e4b") -> None:
+async def _run_scheduler_task(
+    task_name: str, prompt: str, model_id: str = "gemma4-e4b"
+) -> None:
     """Run a full ReAct agent loop for a scheduled task and log the result."""
     try:
         messages = [
@@ -152,8 +167,15 @@ async def _run_scheduler_task(task_name: str, prompt: str, model_id: str = "gemm
         _log_scheduler_result(task_name, None, str(e))
 
 
-def _log_scheduler_result(task_name: str, summary: str | None, error: str | None) -> None:
-    entry = {"ts": datetime.utcnow().isoformat(), "task": task_name, "summary": summary, "error": error}
+def _log_scheduler_result(
+    task_name: str, summary: str | None, error: str | None
+) -> None:
+    entry = {
+        "ts": datetime.utcnow().isoformat(),
+        "task": task_name,
+        "summary": summary,
+        "error": error,
+    }
     with open(SCHEDULER_LOG_FILE, "a") as f:
         f.write(json.dumps(entry) + "\n")
 
@@ -168,7 +190,11 @@ def _register_scheduler_task(name: str, schedule: str, prompt: str) -> None:
         _run_scheduler_task,
         "cron",
         args=[name, prompt],
-        minute=minute, hour=hour, day=day, month=month, day_of_week=dow,
+        minute=minute,
+        hour=hour,
+        day=day,
+        month=month,
+        day_of_week=dow,
         id=f"gemma_task_{name}",
         replace_existing=True,
     )
@@ -189,6 +215,7 @@ def load_scheduler_tasks_on_startup() -> None:
 # ---------------------------------------------------------------------------
 # Internal ReAct loop (no SSE, for scheduler)
 # ---------------------------------------------------------------------------
+
 
 async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> str:
     """Run ReAct loop without SSE, return final DONE summary."""
@@ -211,22 +238,34 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
     # Prepend the current date/time so the model can resolve "today"/"tomorrow"
     # without needing to call get_current_datetime() first.
     now_str = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M:%S %Z")
-    messages[0]["content"] = f"Current date and time: {now_str}\n\n" + messages[0]["content"]
+    messages[0]["content"] = (
+        f"Current date and time: {now_str}\n\n" + messages[0]["content"]
+    )
 
     try:
         for _ in range(20):
             messages = await summarize_history(messages)
             response_text = await run_inference(messages, model_id)
             messages.append({"role": "assistant", "content": response_text})
-            logger.info("model raw output", extra={"model_id": model_id, "preview": response_text[:500]})
+            logger.info(
+                "model raw output",
+                extra={"model_id": model_id, "preview": response_text[:500]},
+            )
             parsed = parse_model_output(response_text)
             if parsed is None:
                 clean_response = strip_thinking_blocks(response_text)
                 if not clean_response:
-                    logger.warning("empty response after stripping thinking, nudging model")
-                    messages.append({"role": "user", "content": "Please provide your answer."})
+                    logger.warning(
+                        "empty response after stripping thinking, nudging model"
+                    )
+                    messages.append(
+                        {"role": "user", "content": "Please provide your answer."}
+                    )
                     continue
-                logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
+                logger.info(
+                    "plain text response, treating as done",
+                    extra={"preview": clean_response[:200]},
+                )
                 telemetry.record_complete(loop_id, "success")
                 return clean_response
             kind, name_or_msg, args = parsed
@@ -236,22 +275,33 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
             tool = TOOL_REGISTRY.get(name_or_msg)
             if not tool:
                 logger.warning("unknown tool called", extra={"tool": name_or_msg})
-                messages.append({"role": "user", "content": f"TOOL_RESULT: ERROR: unknown tool {name_or_msg}"})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"TOOL_RESULT: ERROR: unknown tool {name_or_msg}",
+                    }
+                )
                 continue
-            
+
             telemetry.record_tool_use(name_or_msg)
             try:
                 result = await tool.fn(*args)
             except Exception as e:
-                logger.error("tool execution failed", extra={"tool": name_or_msg, "error": str(e)}, exc_info=True)
+                logger.error(
+                    "tool execution failed",
+                    extra={"tool": name_or_msg, "error": str(e)},
+                    exc_info=True,
+                )
                 result = f"ERROR: {e}"
             messages.append({"role": "user", "content": f"TOOL_RESULT: {result}"})
-        
+
         logger.warning("max iterations reached")
         telemetry.record_complete(loop_id, "error")
         return "Max iterations reached"
     except Exception as e:
-        logger.error("internal react loop crashed", extra={"error": str(e)}, exc_info=True)
+        logger.error(
+            "internal react loop crashed", extra={"error": str(e)}, exc_info=True
+        )
         telemetry.record_complete(loop_id, "error")
         return f"ERROR: {e}"
 
@@ -260,7 +310,10 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
 # Deep Thinking Pipeline
 # ---------------------------------------------------------------------------
 
-async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id: str) -> str:
+
+async def run_deep_thinking_pipeline(
+    q: asyncio.Queue, messages: list, model_id: str
+) -> str:
     """
     Council of Three pipeline: Diversify, Critique, Synthesize.
     Emits status updates to the SSE queue.
@@ -272,7 +325,11 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
             break
 
     # Stage 1: Diversify
-    await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Exploring 3 reasoning paths…"}))
+    await q.put(
+        json.dumps(
+            {"type": "status", "message": "Deep Thinking: Exploring 3 reasoning paths…"}
+        )
+    )
     diversify_prompt = (
         "Generate 3 distinct, high-level strategies to solve this problem. "
         "Label them Path A, Path B, and Path C.\n\n"
@@ -280,10 +337,21 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
     )
     diversify_messages = [{"role": "user", "content": diversify_prompt}]
     path_responses = await run_inference(diversify_messages, model_id)
-    await q.put(json.dumps({"type": "thinking", "content": f"### DIVERSIFY (Tree of Thought)\n{path_responses}\n\n"}))
+    await q.put(
+        json.dumps(
+            {
+                "type": "thinking",
+                "content": f"### DIVERSIFY (Tree of Thought)\n{path_responses}\n\n",
+            }
+        )
+    )
 
     # Stage 2: Critique
-    await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Critiquing strategies…"}))
+    await q.put(
+        json.dumps(
+            {"type": "status", "message": "Deep Thinking: Critiquing strategies…"}
+        )
+    )
     critique_prompt = (
         "Act as a critical reviewer. For each Path (A, B, C) mentioned above, "
         "identify one major logical flaw or edge case. Score each 1-10 based on robustness."
@@ -291,13 +359,24 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
     critique_messages = [
         {"role": "user", "content": diversify_prompt},
         {"role": "assistant", "content": path_responses},
-        {"role": "user", "content": critique_prompt}
+        {"role": "user", "content": critique_prompt},
     ]
     critique_responses = await run_inference(critique_messages, model_id)
-    await q.put(json.dumps({"type": "thinking", "content": f"### CRITIQUE (Self-Correction)\n{critique_responses}\n\n"}))
+    await q.put(
+        json.dumps(
+            {
+                "type": "thinking",
+                "content": f"### CRITIQUE (Self-Correction)\n{critique_responses}\n\n",
+            }
+        )
+    )
 
     # Stage 3: Synthesize
-    await q.put(json.dumps({"type": "status", "message": "Deep Thinking: Synthesizing final plan…"}))
+    await q.put(
+        json.dumps(
+            {"type": "status", "message": "Deep Thinking: Synthesizing final plan…"}
+        )
+    )
     synthesize_prompt = (
         "Based on the original problem and your critique, synthesize the absolute best solution. "
         "Address the flaws identified. Output ONLY the final synthesized reasoning."
@@ -307,10 +386,17 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
         {"role": "assistant", "content": path_responses},
         {"role": "user", "content": critique_prompt},
         {"role": "assistant", "content": critique_responses},
-        {"role": "user", "content": synthesize_prompt}
+        {"role": "user", "content": synthesize_prompt},
     ]
     final_reasoning = await run_inference(synthesize_messages, model_id)
-    await q.put(json.dumps({"type": "thinking", "content": f"### SYNTHESIZE (Final Plan)\n{final_reasoning}"}))
+    await q.put(
+        json.dumps(
+            {
+                "type": "thinking",
+                "content": f"### SYNTHESIZE (Final Plan)\n{final_reasoning}",
+            }
+        )
+    )
     return final_reasoning
 
 
@@ -318,10 +404,15 @@ async def run_deep_thinking_pipeline(q: asyncio.Queue, messages: list, model_id:
 # SSE ReAct loop (with streaming + confirmation gate)
 # ---------------------------------------------------------------------------
 
-async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think: bool = False) -> None:
+
+async def react_loop_sse(
+    task_id: str, messages: list, model_id: str, deep_think: bool = False
+) -> None:
     """Run ReAct loop, emitting SSE events to sse_queues[task_id]."""
     task_id_var.set(task_id)
-    logger.info("sse react loop started", extra={"model_id": model_id, "deep_think": deep_think})
+    logger.info(
+        "sse react loop started", extra={"model_id": model_id, "deep_think": deep_think}
+    )
     telemetry.record_start(task_id)
 
     q = sse_queues[task_id]
@@ -340,61 +431,95 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
     # Prepend the current date/time so the model can resolve "today"/"tomorrow"
     # without needing to call get_current_datetime() first.
     now_str = datetime.now().astimezone().strftime("%A, %Y-%m-%d %H:%M:%S %Z")
-    messages[0]["content"] = f"Current date and time: {now_str}\n\n" + messages[0]["content"]
+    messages[0]["content"] = (
+        f"Current date and time: {now_str}\n\n" + messages[0]["content"]
+    )
 
     try:
         if deep_think:
             reasoning = await run_deep_thinking_pipeline(q, messages, model_id)
             await q.put(json.dumps({"type": "thinking", "content": reasoning}))
             # Inject the reasoning to guide the agent
-            messages.append({
-                "role": "user", 
-                "content": f"Use this reasoning to guide your tool use:\n<thought>\n{reasoning}\n</thought>"
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": f"Use this reasoning to guide your tool use:\n<thought>\n{reasoning}\n</thought>",
+                }
+            )
 
         empty_retries = 0
         for _ in range(20):
             # Notify the UI when the model needs to be loaded from disk so the
             # user sees a meaningful status instead of a silent "Thinking..." wait.
             if not is_model_loaded(model_id):
-                await q.put(json.dumps({"type": "status", "message": f"Loading {model_id}…"}))
+                await q.put(
+                    json.dumps({"type": "status", "message": f"Loading {model_id}…"})
+                )
 
             messages = await summarize_history(messages)
             response_text = await run_inference(messages, model_id)
             messages.append({"role": "assistant", "content": response_text})
-            logger.info("model raw output", extra={"model_id": model_id, "preview": response_text[:500]})
+            logger.info(
+                "model raw output",
+                extra={"model_id": model_id, "preview": response_text[:500]},
+            )
 
             parsed = parse_model_output(response_text)
             if parsed is None:
                 # Extract thinking content before stripping so we can surface it in the UI
                 thinking_match = re.search(
-                    r'<\|channel\|?>thought\n?(.*?)(?:<\|?channel\|>|$)',
-                    response_text, flags=re.DOTALL
+                    r"<\|channel\|?>thought\n?(.*?)(?:<\|?channel\|>|$)",
+                    response_text,
+                    flags=re.DOTALL,
                 )
-                thinking_content = thinking_match.group(1).strip() if thinking_match else None
+                thinking_content = (
+                    thinking_match.group(1).strip() if thinking_match else None
+                )
                 if thinking_content:
-                    await q.put(json.dumps({"type": "thinking", "content": thinking_content}))
+                    await q.put(
+                        json.dumps({"type": "thinking", "content": thinking_content})
+                    )
 
                 clean_response = strip_thinking_blocks(response_text)
                 if not clean_response:
                     empty_retries += 1
-                    logger.warning("empty response after stripping thinking", extra={"retry": empty_retries})
+                    logger.warning(
+                        "empty response after stripping thinking",
+                        extra={"retry": empty_retries},
+                    )
                     if empty_retries >= 3:
-                        logger.error("model produced no response after 3 attempts, giving up")
-                        await q.put(json.dumps({"type": "error", "message": f"Model {model_id} produced no response after 3 attempts. Try a simpler query or a different model."}))
+                        logger.error(
+                            "model produced no response after 3 attempts, giving up"
+                        )
+                        await q.put(
+                            json.dumps(
+                                {
+                                    "type": "error",
+                                    "message": f"Model {model_id} produced no response after 3 attempts. Try a simpler query or a different model.",
+                                }
+                            )
+                        )
                         telemetry.record_complete(task_id, "error")
                         return
-                    messages.append({"role": "user", "content": "Please provide your answer."})
+                    messages.append(
+                        {"role": "user", "content": "Please provide your answer."}
+                    )
                     continue
                 empty_retries = 0
-                logger.info("plain text response, treating as done", extra={"preview": clean_response[:200]})
+                logger.info(
+                    "plain text response, treating as done",
+                    extra={"preview": clean_response[:200]},
+                )
                 await q.put(json.dumps({"type": "done", "message": clean_response}))
                 telemetry.record_complete(task_id, "success")
                 return
 
             kind, name_or_msg, args = parsed
             if kind == "done":
-                logger.info("DONE marker found, sending done event", extra={"model_id": model_id, "preview": name_or_msg[:200]})
+                logger.info(
+                    "DONE marker found, sending done event",
+                    extra={"model_id": model_id, "preview": name_or_msg[:200]},
+                )
                 await q.put(json.dumps({"type": "done", "message": name_or_msg}))
                 telemetry.record_complete(task_id, "success")
                 return
@@ -409,8 +534,16 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
             # confirmation gate for risky tools
             if tool.risk == "risky":
                 args_dict = dict(enumerate(args))
-                await q.put(json.dumps({"type": "confirm_request", "task_id": task_id,
-                                        "tool": name_or_msg, "args": args_dict}))
+                await q.put(
+                    json.dumps(
+                        {
+                            "type": "confirm_request",
+                            "task_id": task_id,
+                            "tool": name_or_msg,
+                            "args": args_dict,
+                        }
+                    )
+                )
                 cq = confirm_queues[task_id]
                 try:
                     approved = await asyncio.wait_for(cq.get(), timeout=300)
@@ -420,9 +553,13 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
                         extra={"tool": name_or_msg},
                     )
                     approved = False
-                await q.put(json.dumps({"type": "confirm_resolved", "approved": approved}))
+                await q.put(
+                    json.dumps({"type": "confirm_resolved", "approved": approved})
+                )
                 if not approved:
-                    messages.append({"role": "user", "content": "TOOL_RESULT: denied by user"})
+                    messages.append(
+                        {"role": "user", "content": "TOOL_RESULT: denied by user"}
+                    )
                     continue
 
             telemetry.record_tool_use(name_or_msg)
@@ -430,11 +567,24 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
             try:
                 result = await tool.fn(*args)
             except Exception as e:
-                logger.error("tool execution failed", extra={"tool": name_or_msg, "error": str(e)}, exc_info=True)
+                logger.error(
+                    "tool execution failed",
+                    extra={"tool": name_or_msg, "error": str(e)},
+                    exc_info=True,
+                )
                 result = f"ERROR: {e}"
             elapsed = int((time.monotonic() - t0) * 1000)
-            await q.put(json.dumps({"type": "step", "tool": name_or_msg,
-                                    "args": dict(enumerate(args)), "result": result, "elapsed_ms": elapsed}))
+            await q.put(
+                json.dumps(
+                    {
+                        "type": "step",
+                        "tool": name_or_msg,
+                        "args": dict(enumerate(args)),
+                        "result": result,
+                        "elapsed_ms": elapsed,
+                    }
+                )
+            )
 
             model_tool_result = result
             if isinstance(result, str):
@@ -442,16 +592,20 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
                     img_data = json.loads(result)
                     if not img_data.get("__image__"):
                         raise ValueError
-                    await q.put(json.dumps({
-                        "type": "image",
-                        "image_b64": img_data["image_b64"],
-                        "width": img_data["width"],
-                        "height": img_data["height"],
-                        "steps": img_data["steps"],
-                        "elapsed_ms": img_data["elapsed_ms"],
-                        "prompt": img_data["prompt"],
-                        "size": img_data.get("size", "512x512"),
-                    }))
+                    await q.put(
+                        json.dumps(
+                            {
+                                "type": "image",
+                                "image_b64": img_data["image_b64"],
+                                "width": img_data["width"],
+                                "height": img_data["height"],
+                                "steps": img_data["steps"],
+                                "elapsed_ms": img_data["elapsed_ms"],
+                                "prompt": img_data["prompt"],
+                                "size": img_data.get("size", "512x512"),
+                            }
+                        )
+                    )
                     model_tool_result = (
                         f"[IMAGE GENERATED: {img_data['width']}x{img_data['height']}, "
                         f"{img_data['steps']} steps — displayed in chat]"
@@ -459,7 +613,9 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
                 except Exception:
                     pass
 
-            messages.append({"role": "user", "content": f"TOOL_RESULT: {model_tool_result}"})
+            messages.append(
+                {"role": "user", "content": f"TOOL_RESULT: {model_tool_result}"}
+            )
 
         logger.warning("max iterations reached")
         await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))
@@ -474,6 +630,7 @@ async def react_loop_sse(task_id: str, messages: list, model_id: str, deep_think
 # ---------------------------------------------------------------------------
 # Pydantic models for request bodies
 # ---------------------------------------------------------------------------
+
 
 class AgentRequest(BaseModel):
     prompt: str | None = None
@@ -496,23 +653,29 @@ class ScheduleTaskRequest(BaseModel):
 # API Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post("/run")
 async def run_agent(req: AgentRequest):
     task_id = str(uuid.uuid4())
     sse_queues[task_id] = asyncio.Queue()
     confirm_queues[task_id] = asyncio.Queue()
-    
+
     messages = req.messages or []
     if req.prompt:
         messages.append({"role": "user", "content": req.prompt})
 
-    asyncio.create_task(react_loop_sse(task_id, messages, req.model_id, deep_think=req.deep_think))
+    asyncio.create_task(
+        react_loop_sse(task_id, messages, req.model_id, deep_think=req.deep_think)
+    )
     return {"task_id": task_id}
+
 
 @router.get("/stream/{task_id}")
 async def stream_agent(task_id: str):
     if task_id not in sse_queues:
-        logger.warning("SSE stream requested for unknown task", extra={"task_id": task_id})
+        logger.warning(
+            "SSE stream requested for unknown task", extra={"task_id": task_id}
+        )
         raise HTTPException(status_code=404, detail="Task not found")
     q = sse_queues[task_id]
 

@@ -78,8 +78,18 @@ def test_retrieve_chunks_empty_doc_ids():
 
 def test_build_document_context_format():
     chunks = [
-        {"filename": "manual.pdf", "pages": [34], "text": "Reset is on back panel.", "score": 0.9},
-        {"filename": "manual.pdf", "pages": [35], "text": "Device reboots after reset.", "score": 0.8},
+        {
+            "filename": "manual.pdf",
+            "pages": [34],
+            "text": "Reset is on back panel.",
+            "score": 0.9,
+        },
+        {
+            "filename": "manual.pdf",
+            "pages": [35],
+            "text": "Device reboots after reset.",
+            "score": 0.8,
+        },
     ]
     ctx = build_document_context(chunks)
     assert '[DOCUMENT CONTEXT — "manual.pdf"]' in ctx

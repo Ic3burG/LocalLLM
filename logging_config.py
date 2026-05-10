@@ -20,8 +20,9 @@ class JsonLinesFormatter(logging.Formatter):
         entry = {
             **extras,  # extras first
             "ts": (
-                datetime.fromtimestamp(record.created, tz=timezone.utc)
-                .strftime("%Y-%m-%dT%H:%M:%S.")
+                datetime.fromtimestamp(record.created, tz=timezone.utc).strftime(
+                    "%Y-%m-%dT%H:%M:%S."
+                )
                 + f"{int(record.msecs):03d}Z"
             ),
             "level": record.levelname,
