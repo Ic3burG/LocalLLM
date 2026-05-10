@@ -822,3 +822,692 @@
     </footer>
 
   </div><!-- /.llm-main -->
+
+    <!-- Settings Modal -->
+    <div
+      id="settings-modal"
+      class="fixed inset-0 z-[60] flex items-center justify-center modal-overlay hidden-modal"
+    >
+      <div
+        class="modal-content w-full max-w-2xl max-h-[80vh] m-4 shadow-2xl flex flex-col overflow-hidden"
+      >
+        <div
+          class="p-6 border-b flex justify-between items-center"
+          style="border-color:var(--llm-panel-border)"
+        >
+          <div class="flex items-center gap-6">
+            <button
+              id="tab-vitals"
+              class="text-lg font-bold border-b-2 border-blue-500 pb-1 transition-all"
+            >
+              Vitals
+            </button>
+            <button
+              id="tab-prompt"
+              class="text-lg font-bold pb-1 transition-all"
+              style="color:var(--llm-text-muted)"
+            >
+              Prompt
+            </button>
+            <button
+              id="tab-memory"
+              class="text-lg font-bold pb-1 transition-all"
+              style="color:var(--llm-text-muted)"
+            >
+              Memory
+            </button>
+          </div>
+          <button
+            id="close-settings-btn"
+            class="transition-colors"
+            style="color:var(--llm-text-muted)"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M18 6 6 18" />
+              <path d="m6 6 12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div id="vitals-pane" class="p-6 flex-1 overflow-y-auto">
+          <div
+            class="flex gap-2 mb-6 border-b pb-3"
+            style="border-color:var(--llm-panel-border)"
+          >
+            <button
+              id="vitals-subtab-system"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+              style="background:var(--llm-panel);color:var(--llm-accent-solid)"
+            >
+              System
+            </button>
+            <button
+              id="vitals-subtab-agent"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+              style="color:var(--llm-text-muted)"
+            >
+              Agent
+            </button>
+            <button
+              id="vitals-subtab-pipeline"
+              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
+              style="color:var(--llm-text-muted)"
+            >
+              Pipeline
+            </button>
+          </div>
+
+          <div id="vitals-subpane-system">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Process RAM
+                </div>
+                <div
+                  id="vital-ram"
+                  class="text-2xl font-mono font-bold"
+                  style="color:var(--llm-accent-solid)"
+                >
+                  --
+                </div>
+              </div>
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  GPU VRAM
+                </div>
+                <div
+                  id="vital-vram"
+                  class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400"
+                >
+                  --
+                </div>
+              </div>
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Avg Latency
+                </div>
+                <div
+                  id="vital-latency"
+                  class="text-2xl font-mono font-bold text-green-600 dark:text-green-400"
+                >
+                  --
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  CPU Usage
+                </div>
+                <div
+                  id="vital-cpu"
+                  class="text-xl font-mono font-bold text-orange-600 dark:text-orange-400"
+                >
+                  --
+                </div>
+              </div>
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Thermal Pressure
+                </div>
+                <div
+                  id="vital-thermal"
+                  class="text-xl font-mono font-bold text-red-600 dark:text-red-400"
+                >
+                  --
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-8">
+              <h3 class="text-sm font-semibold mb-3 flex items-center gap-2">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="m7.5 4.27 9 5.15" />
+                  <path
+                    d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+                  />
+                  <path d="m3.3 7 8.7 5 8.7-5" />
+                  <path d="M12 22V12" />
+                </svg>
+                Loaded Models
+              </h3>
+              <div
+                id="vital-models"
+                class="flex flex-wrap gap-2 text-xs font-mono"
+              >
+                <span style="color:var(--llm-text-muted)" class="italic">None currently loaded</span>
+              </div>
+            </div>
+
+            <div>
+              <div class="flex justify-between items-center mb-3">
+                <h3
+                  class="text-sm font-semibold flex items-center gap-2"
+                  style="color:var(--llm-text)"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  >
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+                  </svg>
+                  System Integrity
+                </h3>
+                <button
+                  id="run-check-btn"
+                  class="text-xs font-medium text-blue-600 hover:underline"
+                >
+                  Run Post-Update Check
+                </button>
+              </div>
+              <div
+                id="check-output"
+                class="p-4 bg-gray-900 text-gray-300 rounded-xl font-mono text-[11px] leading-relaxed max-h-48 overflow-y-auto hidden"
+              >
+                Running integrity tests...
+              </div>
+            </div>
+          </div>
+
+          <div id="vitals-subpane-agent" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Success Rate
+                </div>
+                <div
+                  id="agent-success-rate"
+                  class="text-2xl font-mono font-bold text-green-600 dark:text-green-400"
+                >
+                  --
+                </div>
+                <div
+                  class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2"
+                >
+                  <div
+                    id="agent-success-bar"
+                    class="bg-green-500 h-1.5 rounded-full"
+                    style="width: 0%"
+                  ></div>
+                </div>
+              </div>
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Total Tasks
+                </div>
+                <div
+                  id="agent-total-tasks"
+                  class="text-2xl font-mono font-bold"
+                  style="color:var(--llm-accent-solid)"
+                >
+                  --
+                </div>
+              </div>
+            </div>
+
+            <div class="mb-6">
+              <h3 class="text-sm font-semibold mb-3">Top Tools</h3>
+              <div
+                id="agent-top-tools"
+                class="grid grid-cols-2 gap-2 text-xs font-mono"
+              >
+                <div style="color:var(--llm-text-muted)" class="italic">No tool usage recorded</div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="text-sm font-semibold mb-3">Recent Activity</h3>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-[10px] font-mono">
+                  <thead>
+                    <tr
+                      class="border-b"
+                      style="color:var(--llm-text-muted);border-color:var(--llm-panel-border)"
+                    >
+                      <th class="pb-2 font-medium">Status</th>
+                      <th class="pb-2 font-medium">Duration</th>
+                      <th class="pb-2 font-medium">Task ID</th>
+                    </tr>
+                  </thead>
+                  <tbody
+                    id="agent-recent-tasks"
+                    class="divide-y"
+                    style="border-color:var(--llm-panel-border)"
+                  >
+                    <tr>
+                      <td
+                        colspan="3"
+                        class="py-4 text-center italic"
+                        style="color:var(--llm-text-muted)"
+                      >
+                        No recent tasks
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div id="vitals-subpane-pipeline" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Total Documents
+                </div>
+                <div
+                  id="pipeline-doc-count"
+                  class="text-2xl font-mono font-bold"
+                  style="color:var(--llm-accent-solid)"
+                >
+                  --
+                </div>
+              </div>
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Total Chunks
+                </div>
+                <div
+                  id="pipeline-chunk-count"
+                  class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400"
+                >
+                  --
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Avg Ingestion
+                </div>
+                <div
+                  id="pipeline-ingestion-avg"
+                  class="text-2xl font-mono font-bold text-green-600 dark:text-green-400"
+                >
+                  --
+                </div>
+                <div class="text-[10px]" style="color:var(--llm-text-muted)">seconds / page</div>
+              </div>
+              <div
+                class="p-4 rounded-2xl"
+                style="background:var(--llm-panel)"
+              >
+                <div
+                  class="text-xs uppercase tracking-wider mb-1"
+                  style="color:var(--llm-text-muted)"
+                >
+                  Embedding Latency
+                </div>
+                <div
+                  id="pipeline-embed-latency"
+                  class="text-2xl font-mono font-bold text-orange-600 dark:text-orange-400"
+                >
+                  --
+                </div>
+                <div class="text-[10px]" style="color:var(--llm-text-muted)">ms / chunk</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div id="system-prompt-pane" class="p-6 flex-1 overflow-y-auto hidden">
+          <p class="text-sm mb-4" style="color:var(--llm-text-muted)">
+            This is the core instruction set (System Prompt) that guides Gemma's
+            behavior and tool usage.
+          </p>
+          <textarea
+            id="system-prompt-display"
+            readonly
+            class="w-full h-96 p-4 rounded-xl font-mono text-sm focus:outline-none resize-none"
+            style="background:var(--llm-panel);border:1px solid var(--llm-panel-border);color:var(--llm-text-muted)"
+          ></textarea>
+        </div>
+
+        <div id="memory-pane" class="p-6 flex-1 overflow-y-auto hidden">
+          <p class="text-sm mb-4" style="color:var(--llm-text-muted)">
+            Gemma uses this file to remember your preferences and context. You
+            can manually edit it below.
+          </p>
+          <textarea
+            id="memory-editor"
+            class="w-full h-96 p-4 rounded-xl font-mono text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none resize-none"
+            style="background:var(--llm-panel);border:1px solid var(--llm-panel-border);color:var(--llm-text)"
+          ></textarea>
+        </div>
+        <div
+          class="p-6 border-t flex justify-between items-center gap-3"
+          style="border-color:var(--llm-panel-border);background:var(--llm-panel)"
+        >
+          <div id="restart-container" class="flex items-center gap-3">
+            <button
+              id="restart-backend-btn"
+              class="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all hover:border-red-400 hover:text-red-500"
+              style="border-color:var(--llm-panel-border);color:var(--llm-text-muted)"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              Restart Backend
+            </button>
+            <span
+              id="restart-status"
+              class="text-xs opacity-0 transition-opacity"
+            ></span>
+          </div>
+          <div id="save-container" class="flex items-center gap-3">
+            <span
+              id="save-status"
+              class="text-xs text-green-500 flex items-center opacity-0 transition-opacity"
+              >Saved!</span
+            >
+            <button
+              id="save-memory-btn"
+              class="px-6 py-2 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg"
+              style="background:var(--llm-text);color:var(--llm-bg)"
+            >
+              Save Memory
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Mobile sidebar overlay -->
+    <div
+      id="sidebar-overlay"
+      class="fixed inset-0 z-40 hidden md:hidden"
+      style="background:rgba(0,0,0,0.5);"
+    ></div>
+
+    <!-- Context Menu -->
+    <div id="context-menu">
+      <div class="context-menu-item" onclick="handleContextAction('star')">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          id="context-star-icon"
+        >
+          <polygon
+            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+          />
+        </svg>
+        <span id="context-star-text">Star</span>
+      </div>
+      <div class="context-menu-item" onclick="handleContextAction('rename')">
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+        </svg>
+        Rename
+      </div>
+      <div style="height:1px;background:var(--llm-panel-border);margin:4px 0;"></div>
+      <div
+        class="context-menu-item danger"
+        onclick="handleContextAction('delete')"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="14"
+          height="14"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M3 6h18" />
+          <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+        </svg>
+        Delete
+      </div>
+    </div>
+
+    <!-- All Chats Modal -->
+    <div
+      id="all-chats-modal"
+      class="fixed inset-0 z-[60] flex items-center justify-center modal-overlay hidden-modal"
+    >
+      <div
+        class="modal-content w-full max-w-4xl max-h-[85vh] m-4 shadow-2xl flex flex-col overflow-hidden"
+      >
+        <div
+          class="p-6 border-b flex items-center justify-between sticky top-0 z-10"
+          style="border-color:var(--llm-panel-border);background:var(--llm-surface)"
+        >
+          <div class="flex items-center gap-4 flex-1">
+            <h2 class="text-xl font-bold" style="color:var(--llm-text)">All Chats</h2>
+            <div class="relative flex-1 max-w-md">
+              <input
+                type="text"
+                id="chat-search"
+                placeholder="Search chats..."
+                class="w-full pl-9 pr-4 py-2 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500"
+                style="background:var(--llm-panel);color:var(--llm-text)"
+              />
+              <svg
+                class="absolute left-3 top-2.5"
+                style="color:var(--llm-text-muted)"
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="11" cy="11" r="8" />
+                <path d="m21 21-4.3-4.3" />
+              </svg>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              id="bulk-delete-btn"
+              onclick="bulkDelete()"
+              class="hidden px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-semibold rounded-xl hover:bg-red-100 transition-colors flex items-center gap-2"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M3 6h18" />
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+              </svg>
+              Delete Selected (<span id="selected-count">0</span>)
+            </button>
+            <button
+              onclick="closeAllChats()"
+              class="p-2 rounded-full transition-colors"
+              style="color:var(--llm-text-muted)"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M18 6 6 18" />
+                <path d="m6 6 12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1 overflow-y-auto min-h-0" id="all-chats-list">
+          <!-- All chats will be rendered here -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Lightbox -->
+    <div class="lightbox-overlay" id="lightbox-overlay">
+      <div class="lightbox-inner" id="lightbox-inner">
+        <div class="lightbox-img-wrap">
+          <img id="lightbox-img" src="" alt="Generated image" />
+        </div>
+        <div class="lightbox-sidebar">
+          <div class="lb-title">Generated Image</div>
+          <div class="lb-prompt-text" id="lb-prompt-text"></div>
+          <div class="lb-meta-text" id="lb-meta-text"></div>
+          <div style="display: flex; flex-direction: column; margin-top: 8px">
+            <button
+              class="lb-btn lb-btn-primary"
+              id="lb-save-btn"
+              type="button"
+            >
+              ⬇ Save to disk
+            </button>
+            <button
+              class="lb-btn lb-btn-secondary"
+              id="lb-regen-btn"
+              type="button"
+            >
+              🔄 Regenerate
+            </button>
+            <button
+              class="lb-btn lb-btn-secondary"
+              id="lb-edit-btn"
+              type="button"
+            >
+              ✏ Edit prompt
+            </button>
+          </div>
+          <button class="lb-close-btn" id="lb-close-btn" type="button">
+            ✕ Close
+          </button>
+        </div>
+      </div>
+    </div>
