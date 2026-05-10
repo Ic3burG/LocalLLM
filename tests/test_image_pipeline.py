@@ -1,5 +1,5 @@
 import pytest
-from image_pipeline import _apply_style, _parse_size
+from image_pipeline import _apply_style, _parse_size, _should_swap
 
 
 def test_apply_style_default():
@@ -28,9 +28,6 @@ def test_parse_size_square():
 def test_parse_size_portrait():
     w, h = _parse_size("512x768")
     assert w == 512 and h == 768
-
-
-from image_pipeline import _should_swap
 
 
 def test_fast_mode_skips_swap():
