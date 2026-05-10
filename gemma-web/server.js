@@ -238,8 +238,9 @@ app.get("/api/backend/status", async (req, res) => {
 });
 
 app.get("/api/backend/check", (req, res) => {
+  const pythonPath = path.join(__dirname, "..", ".venv", "bin", "python3");
   const scriptPath = path.join(__dirname, "..", "scripts", "smoke_test.py");
-  execFile("python3", [scriptPath, "--json"], (error, stdout, stderr) => {
+  execFile(pythonPath, [scriptPath, "--json"], (error, stdout, stderr) => {
     // We don't return 500 on error because the script exits with 1 on test failure,
     // which execFile considers an error. We want to parse the JSON stdout regardless.
     try {
