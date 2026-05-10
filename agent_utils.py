@@ -8,10 +8,12 @@ import subprocess
 import sys
 import time
 import traceback
+import threading
 from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from collections import deque
 
 # Security: The audit log is stored outside the sandbox so the agent cannot delete it.
 AUDIT_LOG_PATH = "/Users/ojdavis/Claude Code/Gemma4/audit.log"
@@ -26,6 +28,73 @@ def log_audit(action: str):
         print(f"CRITICAL: Failed to write to audit log: {e}", file=sys.stderr)
 
 logger = logging.getLogger(__name__)
+
+class TelemetryManager:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(TelemetryManager, cls).__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        self.reset()
+        self._initialized = True
+
+    def reset(self):
+        """Reset all stats. Useful for testing."""
+        with self._lock:
+            self.total_tasks = 0
+            self.success_count = 0
+            self.error_count = 0
+            self.tool_counts = {}
+            self.recent_tasks = deque(maxlen=5)
+            self.task_start_times = {}
+
+    def record_start(self, task_id: str):
+        with self._lock:
+            self.total_tasks += 1
+            self.task_start_times[task_id] = time.monotonic()
+
+    def record_tool_use(self, tool_name: str):
+        with self._lock:
+            self.tool_counts[tool_name] = self.tool_counts.get(tool_name, 0) + 1
+
+    def record_complete(self, task_id: str, status: str):
+        """status should be 'success' or 'error'"""
+        with self._lock:
+            duration_ms = 0
+            if task_id in self.task_start_times:
+                duration_ms = int((time.monotonic() - self.task_start_times.pop(task_id)) * 1000)
+
+            if status == "success":
+                self.success_count += 1
+            elif status == "error":
+                self.error_count += 1
+
+            self.recent_tasks.appendleft({
+                "id": task_id,
+                "status": status,
+                "duration_ms": duration_ms,
+                "timestamp": datetime.now().isoformat()
+            })
+
+    def get_stats(self) -> dict:
+        with self._lock:
+            completed_tasks = self.success_count + self.error_count
+            return {
+                "total_tasks": self.total_tasks,
+                "success_count": self.success_count,
+                "error_count": self.error_count,
+                "tool_counts": self.tool_counts.copy(),
+                "recent_tasks": list(self.recent_tasks),
+                "success_rate": self.success_count / completed_tasks if completed_tasks > 0 else 0
+            }
 
 @dataclass
 class Tool:
