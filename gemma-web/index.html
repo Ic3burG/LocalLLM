@@ -746,3 +746,79 @@
       </div>
 
     </main>
+
+    <!-- Input area — id="chat-form", id="user-input", id="send-btn", id="attach-btn" preserved -->
+    <footer class="llm-input-area">
+
+      <!-- Typing indicator — id="typing" preserved -->
+      <div id="typing" class="hidden typing-indicator" style="font-size:12px;color:var(--llm-accent-solid);font-weight:500;margin-bottom:6px;padding:0 4px;">
+        Thinking...
+      </div>
+
+      <!-- Attachment preview — id="attachment-preview" preserved -->
+      <div id="attachment-preview" class="hidden" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;padding:0 4px;"></div>
+
+      <!-- Warmup banner — id="warmup-banner" preserved -->
+      <div class="warmup-banner" id="warmup-banner">
+        <div class="warmup-dot"></div>
+        <span>Image model warming up · ~16s</span>
+        <button type="button" id="warmup-close-btn" style="margin-left:auto;background:none;border:none;cursor:pointer;color:var(--llm-text-muted);font-size:13px;">✕</button>
+      </div>
+
+      <form id="chat-form">
+        <input type="file" id="file-input" class="hidden" multiple />
+
+        <div class="llm-input-shell">
+          <div class="llm-input-row">
+            <button type="button" class="llm-attach-btn" id="attach-btn" title="Attach file">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            </button>
+
+            <textarea
+              id="user-input"
+              placeholder="Message LocalLLM…"
+              rows="1"
+              class="llm-textarea"
+            ></textarea>
+
+            <button type="submit" class="llm-send-btn" id="send-btn">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+            </button>
+          </div>
+
+          <!-- Image controls — id="image-controls-row" and children preserved -->
+          <div class="image-controls-row" id="image-controls-row">
+            <div class="img-ctrl">
+              <label for="img-size">Size</label>
+              <select id="img-size">
+                <option value="512x512">512×512</option>
+                <option value="768x768">768×768</option>
+                <option value="512x768">512×768</option>
+              </select>
+            </div>
+            <div class="img-ctrl">
+              <label for="img-steps">Steps</label>
+              <input type="range" id="img-steps" min="1" max="12" value="4" />
+              <span class="steps-val" id="img-steps-val">4</span>
+            </div>
+            <div class="img-ctrl">
+              <label for="img-style">Style</label>
+              <select id="img-style">
+                <option value="default">Default</option>
+                <option value="photorealistic">Photorealistic</option>
+                <option value="anime">Anime</option>
+                <option value="sketch">Sketch</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="llm-input-footer">
+            <span>⌘↵ to send</span>
+            <span style="margin-left:auto;">Local · Private · Fast</span>
+          </div>
+        </div>
+      </form>
+
+    </footer>
+
+  </div><!-- /.llm-main -->
