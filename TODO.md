@@ -21,3 +21,20 @@ Tools to add to the agent in a future session.
 
 - [x] `sqlite_query(db_path, sql)` — risky — run read-only SQL against a local SQLite database.
 - [x] `diff_files(path_a, path_b)` — safe — unified diff of two files; useful when the model is comparing or rewriting content.
+
+---
+
+# Image Generation Backlog
+
+Future iterations for the MLX Stable Diffusion feature (spec: `docs/superpowers/specs/2026-05-10-mlx-sd-design.md`).
+
+## Next Up
+
+- [ ] **Negative prompts** — `negative_prompt` param slot already reserved in `generate_image()`. Add to UI controls row as a collapsible "Advanced" section.
+- [ ] **SDXL / FLUX.1-schnell** — add as model options in the Size/Style controls. SDXL needs ~6 GB; FLUX.1-schnell is lighter. Both available via mlx-community.
+
+## Later
+
+- [ ] **Persistent gallery panel** — collapsible right-side panel that accumulates all generated images across a session. Grid thumbnails, click to open lightbox.
+- [ ] **Prompt history / favorites** — dropdown in the image mode input to recall and star past prompts.
+- [ ] **Image-to-image / inpainting** — upload a source image to guide generation. Requires mlx-stable-diffusion img2img pipeline support.
