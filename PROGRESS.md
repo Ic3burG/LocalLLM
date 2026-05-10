@@ -594,6 +594,17 @@ Created a project-level **`GEMINI.md`** file that establishes absolute mandates 
 
 ---
 
+## 🔧 Stability & Integrity Fixes — May 10, 2026 (Session 5)
+
+### Smoke Test Dependency Fix
+Resolved a `ModuleNotFoundError: requests` that occurred when running the System Integrity check from the Vitals dashboard.
+
+- **Root Cause**: The Node.js server (`server.js`) was hardcoded to use the system `python3` for the `/api/backend/check` endpoint, which lacked the necessary dependencies installed in the project's virtual environment.
+- **Fix**: Updated `gemma-web/server.js` to dynamically resolve the Python interpreter path using the project's `.venv` directory.
+- **Verification**: Confirmed that the smoke test now executes successfully when triggered via the UI and through manual CLI runs using the venv.
+
+---
+
 ## 📈 Current Status (as of May 10, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
