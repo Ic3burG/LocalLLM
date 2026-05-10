@@ -684,6 +684,42 @@ async def _diff_files(path_a: str, path_b: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) -> str:
+    log_audit(f"GENERATE_IMAGE: prompt={prompt!r} size={size} steps={steps}")
+    try:
+        import requests as _requests
+        loop = asyncio.get_running_loop()
+        payload = {"prompt": prompt, "size": size, "steps": int(steps)}
+
+        def _sync_post():
+            return _requests.post(
+                "http://localhost:9379/v1/image/generate",
+                json=payload,
+                timeout=125,
+            )
+
+        resp = await loop.run_in_executor(None, _sync_post)
+        data = resp.json()
+
+        if resp.status_code != 200 or "error" in data:
+            error = data.get("error", "generation_failed")
+            return f"ERROR: Image generation failed — {error}"
+
+        return json.dumps({
+            "__image__": True,
+            "image_b64": data["image_b64"],
+            "width": data["width"],
+            "height": data["height"],
+            "steps": data["steps"],
+            "elapsed_ms": data["elapsed_ms"],
+            "prompt": prompt,
+            "size": size,
+        })
+    except Exception as e:
+        logger.error("_generate_image failed: %s", e)
+        return f"ERROR: {e}"
+
+
 def _parse_cli_output(stdout: str, stderr: str) -> str:
     """Return pretty-printed JSON if stdout is valid JSON, otherwise raw combined output."""
     try:
@@ -801,6 +837,7 @@ register_tool("notify", "safe", "Send a macOS system notification", _notify)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool("sqlite_query", "risky", "Run a SELECT query against a local SQLite database", _sqlite_query)
 register_tool("diff_files", "safe", "Show a unified diff of two files", _diff_files)
+register_tool("generate_image", "safe", "Generate an image on-device using FLUX.1-schnell via mflux", _generate_image)
 register_tool("gh_run", "risky", "Run a GitHub CLI command (gh)", _gh_run)
 register_tool("aws_run", "risky", "Run an AWS CLI command (aws)", _aws_run)
 register_tool("hf_run", "risky", "Run a Hugging Face CLI command (huggingface-cli)", _hf_run)
@@ -842,6 +879,7 @@ TOOLS AVAILABLE:
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files
+  generate_image(prompt, size, steps)            — generate an image on-device; size: "512x512"|"768x768"|"512x768"; steps 1-12 (default 4)
   gh_run(args)                                   — run a GitHub CLI command, e.g. "pr list --limit 10"
   aws_run(args)                                  — run an AWS CLI command, e.g. "s3 ls s3://my-bucket"
   hf_run(args)                                   — run a Hugging Face CLI command, e.g. "download org/model"

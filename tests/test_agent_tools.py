@@ -1,6 +1,7 @@
+import json
 import pytest
 from unittest.mock import patch, MagicMock
-from agent_utils import _google_search, _web_fetch
+from agent_utils import _google_search, _web_fetch, _generate_image
 
 @pytest.mark.asyncio
 async def test_google_search():
@@ -69,3 +70,39 @@ async def test_web_fetch_error():
         result = await _web_fetch(url)
         
         assert "ERROR: Connection error" in result
+
+
+@pytest.mark.asyncio
+async def test_generate_image_tool_returns_image_marker():
+    fake_result = {
+        "image_b64": "iVBORw0KGgo=",
+        "width": 512,
+        "height": 512,
+        "steps": 4,
+        "elapsed_ms": 3000,
+    }
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = fake_result
+
+    with patch("requests.post", return_value=mock_response):
+        result = await _generate_image("a sunset", "512x512", 4)
+
+    parsed = json.loads(result)
+    assert parsed["__image__"] is True
+    assert parsed["image_b64"] == "iVBORw0KGgo="
+    assert parsed["width"] == 512
+    assert parsed["prompt"] == "a sunset"
+
+
+@pytest.mark.asyncio
+async def test_generate_image_tool_handles_error():
+    mock_response = MagicMock()
+    mock_response.status_code = 503
+    mock_response.json.return_value = {"error": "model_not_found"}
+
+    with patch("requests.post", return_value=mock_response):
+        result = await _generate_image("a cat")
+
+    assert "model_not_found" in result
+    assert result.startswith("ERROR:")
