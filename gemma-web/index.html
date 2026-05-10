@@ -633,3 +633,53 @@
   <button class="rail-theme-toggle" id="theme-toggle" title="Toggle theme"></button>
   <div class="rail-avatar" title="You">O</div>
 </div>
+
+<!-- ── Sidebar Overlay Panel ── id="sidebar" preserved for JS compat -->
+<div class="sidebar-panel" id="sidebar">
+
+  <!-- New chat button — id="new-chat-btn" preserved -->
+  <button class="sidebar-new-btn" id="new-chat-btn">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+    New Chat
+  </button>
+
+  <!-- Starred chats — id="starred-section" and id="starred-list" preserved -->
+  <div id="starred-section" class="hidden">
+    <div class="sidebar-section-label" style="color:#f59e0b;">★ Starred</div>
+    <div id="starred-list"></div>
+  </div>
+
+  <!-- Chat history — id="history-list" preserved -->
+  <div class="sidebar-section-label">Recents</div>
+  <div id="history-list" style="flex:1;overflow-y:auto;overflow-x:hidden;min-height:0;"></div>
+
+  <!-- Scheduled tasks — ids preserved -->
+  <div class="sidebar-section">
+    <div class="sidebar-section-header" onclick="toggleScheduledPanel()">
+      <span>📅 Scheduled Tasks</span>
+      <span id="scheduled-chevron">▼</span>
+    </div>
+    <div id="scheduled-tasks-body" style="display:none;">
+      <div style="margin:8px 0;">
+        <div style="font-size:11px;font-weight:600;color:var(--llm-accent-solid);margin-bottom:6px;">🤖 In-App Tasks</div>
+        <div id="in-app-tasks-list"></div>
+        <button class="add-task-btn" onclick="showAddTaskForm()">+ Add Task</button>
+        <div id="add-task-form" style="display:none;">
+          <input id="new-task-name" type="text" placeholder="Task name" class="task-input" />
+          <input id="new-task-schedule" type="text" placeholder="Cron (e.g. 0 9 * * *)" class="task-input" />
+          <textarea id="new-task-prompt" placeholder="Prompt" class="task-input" rows="2" style="resize:vertical;"></textarea>
+          <div style="display:flex;gap:6px;margin-top:4px;">
+            <button class="btn-save-task" onclick="submitAddTask()">Save</button>
+            <button class="btn-cancel-task" onclick="showAddTaskForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- All Chats button -->
+  <div class="all-chats-link" onclick="showAllChats()">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 7v10"/><path d="M8 11h8"/></svg>
+    All Chats
+  </div>
+</div>
