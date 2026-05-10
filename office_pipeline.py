@@ -329,7 +329,7 @@ def ingest_office(file_bytes: bytes, filename: str) -> dict | None:
         return None
 
     texts = [c["text"] for c in chunks]
-    embeddings = embed_texts(texts)
+    embeddings, emb_latency_ms = embed_texts(texts)
 
     doc_id = uuid.uuid4().hex[:8]
     page_count = pages[-1][0] if pages else 0
@@ -339,6 +339,7 @@ def ingest_office(file_bytes: bytes, filename: str) -> dict | None:
         "page_count": page_count,
         "chunks": chunks,
         "embeddings": embeddings,
+        "embedding_latency_ms": emb_latency_ms
     }
 
 

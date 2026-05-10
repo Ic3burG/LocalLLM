@@ -52,18 +52,22 @@ class TelemetryManager:
             self.total_tasks = 0
             self.success_count = 0
             self.error_count = 0
-            self.tool_counts = {}
-            self.recent_tasks = deque(maxlen=5)
+            self.top_tools = {}
+            self.recent = deque(maxlen=5)
             self.task_start_times = {}
 
     def record_start(self, task_id: str):
         with self._lock:
             self.total_tasks += 1
             self.task_start_times[task_id] = time.monotonic()
+            # Cleanup stale tasks to prevent memory leakage (max 100 tracked start times)
+            if len(self.task_start_times) > 100:
+                oldest_task_id = next(iter(self.task_start_times))
+                self.task_start_times.pop(oldest_task_id)
 
     def record_tool_use(self, tool_name: str):
         with self._lock:
-            self.tool_counts[tool_name] = self.tool_counts.get(tool_name, 0) + 1
+            self.top_tools[tool_name] = self.top_tools.get(tool_name, 0) + 1
 
     def record_complete(self, task_id: str, status: str):
         """status should be 'success' or 'error'"""
@@ -77,7 +81,7 @@ class TelemetryManager:
             elif status == "error":
                 self.error_count += 1
 
-            self.recent_tasks.appendleft({
+            self.recent.appendleft({
                 "id": task_id,
                 "status": status,
                 "duration_ms": duration_ms,
@@ -91,8 +95,8 @@ class TelemetryManager:
                 "total_tasks": self.total_tasks,
                 "success_count": self.success_count,
                 "error_count": self.error_count,
-                "tool_counts": self.tool_counts.copy(),
-                "recent_tasks": list(self.recent_tasks),
+                "top_tools": self.top_tools.copy(),
+                "recent": list(self.recent),
                 "success_rate": self.success_count / completed_tasks if completed_tasks > 0 else 0
             }
 

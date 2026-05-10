@@ -301,7 +301,7 @@
                 </div>
 
                 <div id="vitals-subpane-system">
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
                             <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Process RAM</div>
                             <div id="vital-ram" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
@@ -313,6 +313,17 @@
                         <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
                             <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Latency</div>
                             <div id="vital-latency" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">CPU Usage</div>
+                            <div id="vital-cpu" class="text-xl font-mono font-bold text-orange-600 dark:text-orange-400">--</div>
+                        </div>
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Thermal Pressure</div>
+                            <div id="vital-thermal" class="text-xl font-mono font-bold text-red-600 dark:text-red-400">--</div>
                         </div>
                     </div>
 
@@ -341,20 +352,71 @@
                 </div>
 
                 <div id="vitals-subpane-agent" class="hidden">
-                    <div class="p-8 text-center">
-                        <div class="text-gray-400 dark:text-gray-600 mb-2">
-                            <svg class="mx-auto" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Success Rate</div>
+                            <div id="agent-success-rate" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
+                            <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2">
+                                <div id="agent-success-bar" class="bg-green-500 h-1.5 rounded-full" style="width: 0%"></div>
+                            </div>
                         </div>
-                        <h4 class="text-sm font-medium text-gray-500 italic">Agent health metrics coming soon...</h4>
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Tasks</div>
+                            <div id="agent-total-tasks" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-6">
+                        <h3 class="text-sm font-semibold mb-3">Top Tools</h3>
+                        <div id="agent-top-tools" class="grid grid-cols-2 gap-2 text-xs font-mono">
+                            <div class="text-gray-500 italic">No tool usage recorded</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h3 class="text-sm font-semibold mb-3">Recent Activity</h3>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-[10px] font-mono">
+                                <thead>
+                                    <tr class="text-gray-500 border-b border-gray-100 dark:border-[#3c3d40]">
+                                        <th class="pb-2 font-medium">Status</th>
+                                        <th class="pb-2 font-medium">Duration</th>
+                                        <th class="pb-2 font-medium">Task ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="agent-recent-tasks" class="divide-y divide-gray-50 dark:divide-[#3c3d40]">
+                                    <tr>
+                                        <td colspan="3" class="py-4 text-center text-gray-500 italic">No recent tasks</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
                 <div id="vitals-subpane-pipeline" class="hidden">
-                    <div class="p-8 text-center">
-                        <div class="text-gray-400 dark:text-gray-600 mb-2">
-                            <svg class="mx-auto" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 12-4-4-4 4"/><path d="M2 12h16"/><path d="m5 11 4 4-4 4"/><path d="M22 15H9"/></svg>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Documents</div>
+                            <div id="pipeline-doc-count" class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400">--</div>
                         </div>
-                        <h4 class="text-sm font-medium text-gray-500 italic">Processing pipeline status coming soon...</h4>
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Chunks</div>
+                            <div id="pipeline-chunk-count" class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400">--</div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Avg Ingestion</div>
+                            <div id="pipeline-ingestion-avg" class="text-2xl font-mono font-bold text-green-600 dark:text-green-400">--</div>
+                            <div class="text-[10px] text-gray-500">seconds / page</div>
+                        </div>
+                        <div class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl">
+                            <div class="text-xs text-gray-500 uppercase tracking-wider mb-1">Embedding Latency</div>
+                            <div id="pipeline-embed-latency" class="text-2xl font-mono font-bold text-orange-600 dark:text-orange-400">--</div>
+                            <div class="text-[10px] text-gray-500">ms / chunk</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -576,18 +638,97 @@
                     return;
                 }
 
-                vitalRam.textContent = typeof data.ram_usage_mb === 'number' ? `${data.ram_usage_mb.toFixed(0)} MB` : '--';
-                vitalVram.textContent = typeof data.vram_usage_mb === 'number' ? `${(data.vram_usage_mb / 1024).toFixed(1)} GB` : '--';
+                // --- 1. System Sub-tab ---
+                const sys = data.system || {};
+                vitalRam.textContent = typeof sys.ram_mb === 'number' ? `${sys.ram_mb.toFixed(0)} MB` : '--';
+                vitalVram.textContent = typeof sys.vram_gb === 'number' ? `${sys.vram_gb.toFixed(1)} GB` : '--';
                 
-                if (data.status && data.status.is_busy) {
-                    vitalLatency.innerHTML = `<span class="flex items-center gap-2 text-yellow-500"><svg class="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Loading ${data.status.current_model || ''}</span>`;
+                if (sys.status && sys.status.is_busy) {
+                    vitalLatency.innerHTML = `<span class="flex items-center gap-2 text-yellow-500"><svg class="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Loading ${sys.status.current_model || ''}</span>`;
                 } else {
-                    vitalLatency.textContent = (typeof data.avg_latency_ms === 'number' && data.avg_latency_ms > 0) ? `${data.avg_latency_ms.toFixed(0)}ms` : '--';
+                    vitalLatency.textContent = (typeof sys.latency_ms === 'number' && sys.latency_ms > 0) ? `${sys.latency_ms.toFixed(0)}ms` : '--';
+                }
+
+                const cpuEl = document.getElementById('vital-cpu');
+                if (cpuEl) {
+                    cpuEl.textContent = typeof sys.cpu_percent === 'number' ? `${sys.cpu_percent.toFixed(1)}%` : '--';
+                }
+
+                const thermalEl = document.getElementById('vital-thermal');
+                if (thermalEl) {
+                    const thermal = sys.thermal_pressure || 'nominal';
+                    thermalEl.textContent = thermal.toUpperCase();
+                    const colors = {
+                        'nominal': 'text-green-600 dark:text-green-400',
+                        'fair': 'text-yellow-600 dark:text-yellow-400',
+                        'serious': 'text-orange-600 dark:text-orange-400',
+                        'critical': 'text-red-600 dark:text-red-400'
+                    };
+                    thermalEl.className = `text-xl font-mono font-bold ${colors[thermal] || 'text-gray-500'}`;
                 }
                 
-                vitalModels.innerHTML = (Array.isArray(data.model_cache) && data.model_cache.length > 0)
-                    ? data.model_cache.map(m => `<span class="px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-md border border-blue-100 dark:border-blue-800/50">${m}</span>`).join('')
+                vitalModels.innerHTML = (Array.isArray(sys.models) && sys.models.length > 0)
+                    ? sys.models.map(m => `<span class="px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-md border border-blue-100 dark:border-blue-800/50">${m}</span>`).join('')
                     : '<span class="text-gray-500 italic">None currently loaded</span>';
+
+                // --- 2. Agent Sub-tab ---
+                const agent = data.agent || {};
+                const successRate = typeof agent.success_rate === 'number' ? agent.success_rate : 0;
+                
+                const rateEl = document.getElementById('agent-success-rate');
+                if (rateEl) rateEl.textContent = `${(successRate * 100).toFixed(1)}%`;
+                
+                const barEl = document.getElementById('agent-success-bar');
+                if (barEl) barEl.style.width = `${(successRate * 100)}%`;
+                
+                const totalTasksEl = document.getElementById('agent-total-tasks');
+                if (totalTasksEl) totalTasksEl.textContent = agent.total_tasks || 0;
+
+                const toolsEl = document.getElementById('agent-top-tools');
+                if (toolsEl) {
+                    const tools = agent.top_tools || {};
+                    const sortedTools = Object.entries(tools).sort((a, b) => b[1] - a[1]).slice(0, 4);
+                    toolsEl.innerHTML = sortedTools.length > 0
+                        ? sortedTools.map(([name, count]) => `
+                            <div class="flex justify-between p-2 bg-gray-100 dark:bg-gray-800 rounded-lg">
+                                <span>${name}</span>
+                                <span class="font-bold text-blue-500">${count}</span>
+                            </div>`).join('')
+                        : '<div class="text-gray-500 italic col-span-2">No tool usage recorded</div>';
+                }
+
+                const recentTasksEl = document.getElementById('agent-recent-tasks');
+                if (recentTasksEl) {
+                    const recent = agent.recent || [];
+                    recentTasksEl.innerHTML = recent.length > 0
+                        ? recent.map(t => `
+                            <tr>
+                                <td class="py-2">
+                                    <span class="px-1.5 py-0.5 rounded text-[9px] uppercase font-bold ${t.status === 'success' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'}">
+                                        ${t.status}
+                                    </span>
+                                </td>
+                                <td class="py-2 text-gray-500">${t.duration_ms}ms</td>
+                                <td class="py-2 text-gray-400 truncate max-w-[80px]">${t.id}</td>
+                            </tr>
+                        `).join('')
+                        : '<tr><td colspan="3" class="py-4 text-center text-gray-500 italic">No recent tasks</td></tr>';
+                }
+
+                // --- 3. Pipeline Sub-tab ---
+                const pipe = data.pipeline || {};
+                const docCountEl = document.getElementById('pipeline-doc-count');
+                if (docCountEl) docCountEl.textContent = pipe.doc_count || 0;
+                
+                const chunkCountEl = document.getElementById('pipeline-chunk-count');
+                if (chunkCountEl) chunkCountEl.textContent = pipe.chunk_count || 0;
+                
+                const ingestionEl = document.getElementById('pipeline-ingestion-avg');
+                if (ingestionEl) ingestionEl.textContent = typeof pipe.ingestion_avg_s === 'number' ? pipe.ingestion_avg_s.toFixed(2) : '--';
+                
+                const embedEl = document.getElementById('pipeline-embed-latency');
+                if (embedEl) embedEl.textContent = typeof pipe.embedding_latency_ms === 'number' ? pipe.embedding_latency_ms.toFixed(1) : '--';
+
             } catch (e) {
                 console.error("Failed to fetch vitals", e);
                 vitalRam.textContent = '--';

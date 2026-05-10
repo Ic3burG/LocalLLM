@@ -256,6 +256,7 @@ def test_ingest_office_word_shape():
     assert "page_count" in doc
     assert "chunks" in doc
     assert "embeddings" in doc
+    assert "embedding_latency_ms" in doc
     assert doc["filename"] == "test.docx"
     assert len(doc["chunks"]) >= 1
     assert doc["embeddings"].shape[0] == len(doc["chunks"])
