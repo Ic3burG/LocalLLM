@@ -232,6 +232,14 @@
         </div>
         
         <div class="flex-1 overflow-y-auto flex flex-col">
+            <div id="starred-section" class="p-2 border-b border-gray-100 dark:border-gray-800 hidden">
+                <div class="text-[10px] text-yellow-600 dark:text-yellow-500 font-mono uppercase tracking-wider mb-2 px-2 flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                    Starred
+                </div>
+                <div id="starred-list" class="space-y-1"></div>
+            </div>
+
             <div class="flex-1 overflow-y-auto p-2">
                 <div class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2 px-2">Recents</div>
                 <div id="history-list" class="space-y-1"></div>
@@ -1196,9 +1204,28 @@
         }
 
         function renderHistory() {
-            // Only show top 10 in the sidebar
-            const recentChats = chats.slice(0, 10);
-            historyList.innerHTML = recentChats.map(chat => `
+            const starredChats = chats.filter(c => c.starred);
+            const starredList = document.getElementById('starred-list');
+            const starredSection = document.getElementById('starred-section');
+
+            if (starredChats.length > 0) {
+                starredSection.classList.remove('hidden');
+                starredList.innerHTML = starredChats.map(chat => renderChatItem(chat)).join('');
+            } else {
+                starredSection.classList.add('hidden');
+            }
+
+            // Recents shows top 10 non-starred chats
+            const recentChats = chats.filter(c => !c.starred).slice(0, 10);
+            historyList.innerHTML = recentChats.map(chat => renderChatItem(chat)).join('');
+            
+            if (allChatsModal && !allChatsModal.classList.contains('hidden-modal')) {
+                renderAllChats();
+            }
+        }
+
+        function renderChatItem(chat) {
+            return `
                 <div onclick="loadChat('${chat.id}')" 
                      oncontextmenu="showContextMenu(event, '${chat.id}')"
                      class="group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all ${currentChatId === chat.id ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}">
@@ -1215,11 +1242,7 @@
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
                     </button>
                 </div>
-            `).join('');
-            
-            if (allChatsModal && !allChatsModal.classList.contains('hidden-modal')) {
-                renderAllChats();
-            }
+            `;
         }
 
         newChatBtn.addEventListener('click', createNewChat);
