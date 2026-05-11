@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 # Security: The audit log is stored outside the sandbox so the agent cannot delete it.
-AUDIT_LOG_PATH = "/Users/ojdavis/Claude Code/Gemma4/audit.log"
+AUDIT_LOG_PATH = os.environ.get(
+    "AUDIT_LOG_PATH", str(Path(__file__).parent / "audit.log")
+)
 
 
 def log_audit(action: str):
@@ -292,7 +294,9 @@ async def _google_search(query: str) -> str:
         results = await loop.run_in_executor(
             None, lambda: DDGS().text(query, max_results=5)
         )
-        lines = [f"{r['title']}\n{r['href']}\n{r.get('body', '')}" for r in results]
+        lines = [
+            f"{r['title']}\n{r['href']}\n{r.get('body', '')}".rstrip() for r in results
+        ]
         return "\n\n".join(lines) if lines else "No results found."
     except Exception as e:
         logger.error("google_search failed: %s", e, extra={"query": query})

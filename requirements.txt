@@ -2,8 +2,11 @@ pdfplumber
 sentence-transformers
 numpy
 python-multipart
+fastapi
+uvicorn
+httpx
 apscheduler
-mlx-vlm
+mlx-vlm; sys_platform == "darwin"
 Pillow
 ddgs
 requests
@@ -15,4 +18,4 @@ python-docx
 openpyxl
 oletools
 olefile
-mflux
+mflux; sys_platform == "darwin"

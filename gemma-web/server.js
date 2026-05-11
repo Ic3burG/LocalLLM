@@ -303,12 +303,23 @@ app.get("/api/backend/check", (req, res) => {
 
 app.post("/api/backend/restart", (req, res) => {
   const plist = `${process.env.HOME}/Library/LaunchAgents/com.gemini.litert.plist`;
-  // Use launchctl unload/load so launchd stays in sync — pkill alone causes
-  // the KeepAlive agent to fight the manually-spawned process for the port.
+  // 1. Unload/Load the Python bridge via launchctl
   execFile("launchctl", ["unload", plist], () => {
     setTimeout(() => {
-      execFile("launchctl", ["load", plist], () => {
-        res.json({ ok: true });
+      execFile("launchctl", ["load", plist], (err) => {
+        if (err) log("ERROR", "python restart failed", { error: err.message });
+
+        // 2. Restart the Node server itself
+        // Since it's managed by launchd with KeepAlive=true, exiting will cause it to restart.
+        res.json({
+          ok: true,
+          message: "Python restarted. Node server rebooting...",
+        });
+
+        setTimeout(() => {
+          log("INFO", "server rebooting per user request");
+          process.exit(0);
+        }, 500);
       });
     }, 1000);
   });

@@ -1,12 +1,21 @@
 import importlib
+import importlib.machinery
 import json
 import subprocess
+import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # FAKE_RESPONSE for reuse
 FAKE_RESPONSE = {"choices": [{"message": {"content": "hello"}}]}
+
+
+def _make_module(name: str) -> types.ModuleType:
+    """Return a ModuleType with a valid __spec__ so find_spec() doesn't raise."""
+    mod = types.ModuleType(name)
+    mod.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
+    return mod
 
 
 @pytest.fixture
@@ -20,6 +29,8 @@ def mock_deps():
         "fastapi.middleware": MagicMock(),
         "fastapi.middleware.cors": MagicMock(),
         "litert_lm": MagicMock(),
+        "mlx": _make_module("mlx"),
+        "mlx.core": _make_module("mlx.core"),
         "mlx_vlm": MagicMock(),
         "uvicorn": MagicMock(),
         "pdf_pipeline": MagicMock(),
@@ -41,15 +52,25 @@ def mock_deps():
         return_value=FAKE_RESPONSE
     )
 
-    with patch.dict("sys.modules", stubs):
-        # Import/Reload modules that depend on these stubs
-        import gemma_bridge
+    import agent as _ag
+    import gemma_bridge as _gb
 
-        importlib.reload(gemma_bridge)
-        import agent
+    # Snapshot module state before reload so other test files see consistent state
+    _gb_snapshot = dict(_gb.__dict__)
+    _ag_snapshot = dict(_ag.__dict__)
 
-        importlib.reload(agent)
-        yield gemma_bridge, agent
+    try:
+        with patch.dict("sys.modules", stubs):
+            importlib.reload(_gb)
+            importlib.reload(_ag)
+            yield _gb, _ag
+    finally:
+        # Restore module-level state so module-level imports in other files
+        # (sse_queues, psutil, etc.) remain valid after this fixture exits.
+        _gb.__dict__.clear()
+        _gb.__dict__.update(_gb_snapshot)
+        _ag.__dict__.clear()
+        _ag.__dict__.update(_ag_snapshot)
 
 
 @pytest.mark.asyncio
@@ -291,12 +312,10 @@ async def test_react_loop_internal_records_telemetry(mock_deps):
     _, agent = mock_deps
     responses = iter(["TOOL: list_crons()", "DONE: all done"])
 
-    # Mock telemetry manager methods
-    agent.telemetry.record_start = MagicMock()
-    agent.telemetry.record_tool_use = MagicMock()
-    agent.telemetry.record_complete = MagicMock()
-
     with (
+        patch.object(agent.telemetry, "record_start") as mock_start,
+        patch.object(agent.telemetry, "record_tool_use") as mock_tool_use,
+        patch.object(agent.telemetry, "record_complete") as mock_complete,
         patch.object(
             agent,
             "run_inference",
@@ -311,11 +330,11 @@ async def test_react_loop_internal_records_telemetry(mock_deps):
     ):
         await agent._react_loop_internal([{"role": "user", "content": "do something"}])
 
-    agent.telemetry.record_start.assert_called_once()
-    agent.telemetry.record_tool_use.assert_called_with("list_crons")
     from unittest.mock import ANY
 
-    agent.telemetry.record_complete.assert_called_with(ANY, "success")
+    mock_start.assert_called_once()
+    mock_tool_use.assert_called_with("list_crons")
+    mock_complete.assert_called_with(ANY, "success")
 
 
 @pytest.mark.asyncio

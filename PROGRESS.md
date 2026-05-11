@@ -661,20 +661,141 @@ Implemented local enforcement of code quality standards to ensure zero-regressio
 
 ### Files Changed
 
-| File                                           | Change                                                       |
-| ---------------------------------------------- | ------------------------------------------------------------ |
-| `.git/hooks/pre-commit`                        | **New** — Automated local Prettier verification.             |
-| `.git/hooks/pre-push`                          | **New** — Remote push safety gate.                           |
-| `pyproject.toml`                               | Refined Ruff linting rules for CI compliance.                |
-| `agent_utils.py`, `inference_engine.py`, etc. | Applied project-wide linting and formatting corrections.     |
+| File                                          | Change                                                   |
+| --------------------------------------------- | -------------------------------------------------------- |
+| `.git/hooks/pre-commit`                       | **New** — Automated local Prettier verification.         |
+| `.git/hooks/pre-push`                         | **New** — Remote push safety gate.                       |
+| `pyproject.toml`                              | Refined Ruff linting rules for CI compliance.            |
+| `agent_utils.py`, `inference_engine.py`, etc. | Applied project-wide linting and formatting corrections. |
+
+---
+
+## 🎨 Frontend Redesign: LocalLLM Glass UI — May 10, 2026 (Session 7)
+
+Complete visual rewrite of `gemma-web/index.html`. Rebranded the app from "Gemma 4" to **LocalLLM** and replaced the old Tailwind-heavy theme with a modern glass-and-gradient aesthetic. All existing features and JavaScript behavior are preserved exactly — this is a visual-only change.
+
+### Design System
+
+Replaced the old `--color-*` token set with a new `--llm-*` CSS custom property system. Light values in `:root`, dark values in `html.dark {}`. All colors come from tokens — never hardcoded in CSS classes (status colors `#22c55e`, `#ef4444`, `#f59e0b`, `#7c3aed` are the only allowed exceptions).
+
+| Token                | Light                    | Dark                     | Use for                                  |
+| -------------------- | ------------------------ | ------------------------ | ---------------------------------------- |
+| `--llm-bg`           | lavender gradient        | deep purple gradient     | `body` background                        |
+| `--llm-panel`        | `rgba(255,255,255,0.65)` | `rgba(255,255,255,0.06)` | All glass panels, modals, input shell    |
+| `--llm-panel-border` | `rgba(139,92,246,0.13)`  | `rgba(255,255,255,0.10)` | All borders and dividers                 |
+| `--llm-blur`         | `blur(12px)`             | `blur(12px)`             | `backdrop-filter` on glass panels        |
+| `--llm-text`         | `#1e1b4b`                | `#f0eeff`                | Primary text                             |
+| `--llm-text-muted`   | `#6d6a8a`                | `#9d9abf`                | Timestamps, labels, placeholders         |
+| `--llm-accent`       | cyan→sky gradient        | cyan→sky gradient        | Gradient backgrounds (send btn, logo)    |
+| `--llm-accent-solid` | `#06b6d4`                | `#06b6d4`                | Solid accent: borders, text, focus rings |
+
+### Layout Changes
+
+- **Icon Rail**: New permanent 56px vertical strip on the left edge. Contains the "L" logo mark, chat history toggle, image mode button, scheduled tasks button, settings gear, theme toggle pill, and user avatar. Replaces the old hamburger menu.
+- **Sidebar Overlay Panel**: Chat history panel is now a 240px floating overlay (`position: absolute; left: 56px`) that slides in/out when the chat rail button is clicked. Does not push the chat area — it floats over it. Uses `panel-hidden` class (replaces old `closed` class) for JS-controlled open/close state.
+- **Topbar**: Glass strip at top of main area with conversation title, model selector pill, Chat/Image mode pill, Deep Think toggle, and server status.
+- **Message Bubbles**: User messages — cyan gradient (`#06b6d4` → `#0ea5e9`), right-aligned, `border-radius: 16px 16px 3px 16px`. AI messages — frosted glass panel, left-aligned, `border-radius: 16px 16px 16px 3px`.
+- **Input Shell**: Glass container with cyan focus ring on `:focus-within`. Send button uses cyan gradient with glow shadow. Attach button is icon-only.
+- **Welcome Screen**: Shown when no chat is active. Centered logo mark (56×56), time-based greeting ("Good morning/afternoon/evening, Omar"), subtitle, and 4 prompt suggestion chips.
+
+### JavaScript Changes (minimal — behavior preserved)
+
+1. `sidebar.classList.add("closed")` → `.add("panel-hidden")` (4 occurrences)
+2. UI strings "Gemma 4" → "LocalLLM" (display only; `"gemma_chats"` localStorage key unchanged)
+3. `var(--color-accent)` → `var(--llm-accent-solid)` in agent trace
+4. Removed `sendBtn.style.background = ""` reset lines from `setMode` (CSS handles the gradient now)
+5. `updateThemeUI` simplified to only swap the highlight.js stylesheet href (removed `themeIconContainer` / `theme-text` DOM references that no longer exist)
+6. `renderChatItem` rewritten to use new `.chat-history-item` / `.item-title` / `.item-meta` CSS classes
+7. `statusDot.className` Tailwind assignments → `statusDot.style.background` direct style
+8. New rail toggle IIFE appended: `openSidebar()`, `closeSidebar()`, `toggleSidebar()`, outside-click-to-close, rail image button wires to `setMode("image")`
+9. Time-based welcome greeting IIFE sets `#welcome-greeting` text on page load
+
+### Bugs Fixed During Review
+
+- `.modal-content` border-radius corrected to 16px (plan had a typo: 18px)
+- `.all-chats-link` duplicate `margin-top` removed (both `auto` and `8px` were set; `auto` won but was dead)
+- `.lb-prompt-text`, `.lb-meta-text`, `.lb-close-btn` replaced hardcoded gray hex values with `var(--llm-text-muted)` so lightbox text responds to theme changes
+- 10 lingering `dark:text-*` / `dark:bg-*` Tailwind variants removed from modal HTML (inert in the new CSS-variable system)
+- `--llm-surface` undefined token reference in All Chats modal header replaced with `--llm-panel`
+- Duplicate `showAllChats()` / `closeAllChats()` function declarations removed (one copy was left over from the modal port)
+
+### Files Changed
+
+| File                                                            | Change                                       |
+| --------------------------------------------------------------- | -------------------------------------------- |
+| `gemma-web/index.html`                                          | Full rewrite — 3,649 lines                   |
+| `gemma-web/index.html.bak`                                      | Backup of original file                      |
+| `gemma-web/THEME.md`                                            | Rewritten to document `--llm-*` token system |
+| `docs/superpowers/specs/2026-05-10-localllm-redesign-design.md` | Design spec (new)                            |
+| `docs/superpowers/plans/2026-05-10-localllm-redesign.md`        | Implementation plan (new)                    |
+
+---
+
+## 🔧 UI Bug Fixes & UX Overhaul — May 10, 2026 (Session 8)
+
+Addressed a full audit of post-redesign regressions and UX pain points. All changes are frontend-only (`gemma-web/index.html`).
+
+### Branding & Icons
+
+- **Rail logo**: Replaced the letter "L" with a sparkle/AI SVG icon (same icon in the welcome screen).
+- **Avatar**: Replaced the letter "O" with a user/person SVG icon; tooltip updated to "Omar".
+
+### Sidebar & Navigation
+
+- **Sidebar persistence**: Removed the global outside-click auto-close handler. The sidebar now stays open until the user explicitly toggles it via the rail chat button.
+- **One-click new chat**: `createNewChat()` no longer closes the sidebar after creating a chat.
+- **New Chat rail button**: Added a compose/pencil icon button directly on the rail for one-click chat creation from anywhere.
+- **All Chats rail button**: Added a list-icon button to the rail that opens the All Chats modal directly.
+- **Sidebar history cap**: `renderHistory()` now shows only the 5 most recent chats. If there are more, a "N more in All Chats →" link is appended using safe DOM methods.
+
+### Bottom Controls (moved from topbar)
+
+Relocated the **mode pill** (💬 Chat / 🎨 Image), **model selector**, and **Deep Think toggle** from the topbar into the input footer. All controls now live near the keyboard. The topbar is simplified to just the conversation title and server status indicator.
+
+- `llm-input-footer` updated with `flex-wrap: wrap` and extra top padding.
+- All elements still use `getElementById` so no JS references broke.
+
+### Model List
+
+Updated the `#model-select` options to match the actual installed model suite:
+
+| Display     | API value        |
+| ----------- | ---------------- |
+| Gemma3 E4B  | `gemma4-e4b`     |
+| Gemma3 E26  | `gemma4-26b-mlx` |
+| Gemma3 E31  | `gemma4-31b-mlx` |
+| Qwen 3.5    | `qwen3.5`        |
+| DeepSeek V4 | `deepseek-v4`    |
+
+Removed the stale Llama 3.2, Gemma3 27B, and Gemma3 12B entries.
+
+### Settings Modal
+
+- **Blur reduced**: `.modal-content` `backdrop-filter` overridden from `blur(12px)` down to `blur(4px)`.
+- **Light mode**: Added `html:not(.dark) .modal-content { background: rgba(255,255,255,0.97) }` to force a near-opaque white panel, eliminating the lavender gradient bleed-through that caused "yellow on white" contrast problems.
+- **Save Memory button**: Fixed an invisible-text bug — `color: var(--llm-bg)` was using a `linear-gradient()` as a CSS color value (invalid; browsers silently drop it, leaving text invisible on dark backgrounds). Changed to `background: var(--llm-accent-solid); color: white`.
+
+### Image Gallery
+
+- **Rail image button** repurposed from redundant mode-switch to **Image Gallery**: opens an in-page full-screen modal (`showImageGallery()`) showing all images generated in the current session. Gallery built entirely with DOM methods for safety.
+
+### Server Status
+
+- Removed Tailwind `class="hidden"` from `#server-status` — Tailwind's `!important` was permanently overriding the element's inline `style="display:flex"`, keeping the indicator invisible.
+
+### Files Changed
+
+| File                   | Change                                       |
+| ---------------------- | -------------------------------------------- |
+| `gemma-web/index.html` | All changes above — no backend modifications |
 
 ---
 
 ## 📈 Current Status (as of May 10, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
-- **Models:** E4B, 26B MoE, 31B Dense, Phi-4 Mini (all vision-capable); DeepSeek-V4-Mini (reasoning); FLUX.1-schnell (image generation).
+- **Models:** Gemma3 E4B, E26, E31 (all vision-capable via mlx_vlm); Qwen 3.5; DeepSeek V4; FLUX.1-schnell (image generation).
 - **Tools:** 37 registered tools.
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
-- **UI:** Universal drag-and-drop; sub-tabbed "Command Center" Vitals; **Deep Thinking** (Council of Three); **Fixed Sidebar** (Starred/Recents/All Chats); **Implicit Agent Mode**.
+- **UI:** Glass/gradient aesthetic; persistent icon rail with New Chat + All Chats buttons; mode/model/deep-think controls at bottom of input area; `--llm-*` CSS token system; **LocalLLM** branding; Welcome screen; all prior features preserved (Deep Thinking, Starred/Recents/All Chats, Image Gallery, Scheduled Tasks, Agent Trace, Tool Approval, Vitals Dashboard).
 - **Integrity:** 115 tests passing; local **Git Hooks** (pre-commit/pre-push) enforced; strict feature integrity mandates established in `GEMINI.md`.

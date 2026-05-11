@@ -36,15 +36,18 @@ async def test_run_deep_thinking_pipeline():
         # Verify calls
         assert mock_inf.call_count == 3
 
-        # Verify SSE events
+        # Verify SSE events — pipeline emits status + thinking content per stage
         events = []
         while not q.empty():
             events.append(json.loads(await q.get()))
 
-        assert len(events) == 3
-        assert events[0]["message"] == "Deep Thinking: Exploring 3 reasoning paths…"
-        assert events[1]["message"] == "Deep Thinking: Critiquing strategies…"
-        assert events[2]["message"] == "Deep Thinking: Synthesizing final plan…"
+        status_events = [e for e in events if "message" in e]
+        assert len(status_events) == 3
+        assert (
+            status_events[0]["message"] == "Deep Thinking: Exploring 3 reasoning paths…"
+        )
+        assert status_events[1]["message"] == "Deep Thinking: Critiquing strategies…"
+        assert status_events[2]["message"] == "Deep Thinking: Synthesizing final plan…"
 
         # Verify prompts
         # Stage 1 prompt

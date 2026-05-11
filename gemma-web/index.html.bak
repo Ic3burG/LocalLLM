@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LocalLLM</title>
+    <title>Gemma 4 Local Chat</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <link
@@ -13,270 +13,374 @@
     />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
     <script>
       if (window.tailwind) {
         tailwind.config = {
           darkMode: "class",
-          theme: { extend: {} },
+          theme: {
+            extend: {
+              colors: {
+                darkBg: "#0e0e11",
+                darkSurface: "#1e1f20",
+                lightBg: "#f8f9fa",
+                lightSurface: "#ffffff",
+              },
+            },
+          },
         };
       }
     </script>
     <style>
-      :root {
-        --llm-bg: linear-gradient(
-          160deg,
-          #ede9fe 0%,
-          #e0e7ff 50%,
-          #f0f4ff 100%
-        );
-        --llm-panel: rgba(255, 255, 255, 0.65);
-        --llm-panel-border: rgba(139, 92, 246, 0.13);
-        --llm-blur: blur(12px);
-        --llm-text: #1e1b4b;
-        --llm-text-muted: #6d6a8a;
-        --llm-shadow: 0 4px 24px rgba(139, 92, 246, 0.1);
-        --llm-accent: linear-gradient(135deg, #06b6d4, #0ea5e9);
-        --llm-accent-solid: #06b6d4;
-        --llm-accent-glow: rgba(6, 182, 212, 0.35);
-      }
-      html.dark {
-        --llm-bg: linear-gradient(
-          160deg,
-          #0f0c29 0%,
-          #1a1040 45%,
-          #1e1535 100%
-        );
-        --llm-panel: rgba(255, 255, 255, 0.06);
-        --llm-panel-border: rgba(255, 255, 255, 0.1);
-        --llm-text: #f0eeff;
-        --llm-text-muted: #9d9abf;
-        --llm-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
-      }
-
       body {
         font-family: "Inter", sans-serif;
-        background: var(--llm-bg);
-        color: var(--llm-text);
-        height: 100vh;
-        display: flex;
-        overflow: hidden;
-        min-height: 0;
         transition:
-          background 0.3s,
+          background-color 0.3s,
           color 0.3s;
       }
-
-      /* ── Icon Rail ── */
-      .rail {
-        width: 56px;
-        flex-shrink: 0;
-        background: var(--llm-panel);
-        border-right: 1px solid var(--llm-panel-border);
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 14px 0;
-        gap: 4px;
-        z-index: 20;
-        position: relative;
+      .chat-container {
+        height: calc(100vh - 220px);
       }
-      .rail-logo {
-        width: 32px;
-        height: 32px;
-        background: linear-gradient(135deg, #06b6d4, #0ea5e9);
-        border-radius: 9px;
-        box-shadow: 0 2px 10px rgba(6, 182, 212, 0.45);
-        margin-bottom: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        font-weight: 800;
-        color: white;
-        letter-spacing: -0.5px;
-        flex-shrink: 0;
+      .message-user {
+        align-self: flex-end;
       }
-      .rail-divider {
-        width: 28px;
-        height: 1px;
-        background: var(--llm-panel-border);
-        margin: 6px 0;
+      .message-gemma {
+        align-self: flex-start;
       }
-      .rail-btn {
-        width: 36px;
-        height: 36px;
-        border-radius: 9px;
-        border: none;
+      .typing-indicator {
+        animation: pulse 1.5s infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.4;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+      ::-webkit-scrollbar-track {
         background: transparent;
-        color: var(--llm-text-muted);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 16px;
-        transition: all 0.15s;
       }
-      .rail-btn:hover {
-        background: var(--llm-panel);
-        color: var(--llm-text);
-      }
-      .rail-btn.active {
-        background: rgba(6, 182, 212, 0.15);
-        color: var(--llm-accent-solid);
-        box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3);
-      }
-      .rail-spacer {
-        flex: 1;
-      }
-      .rail-avatar {
-        width: 32px;
-        height: 32px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #8b5cf6, #6366f1);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 12px;
-        font-weight: 700;
-        color: white;
-        cursor: default;
-      }
-      .rail-theme-toggle {
-        width: 36px;
-        height: 20px;
-        background: rgba(6, 182, 212, 0.15);
-        border: 1px solid rgba(6, 182, 212, 0.35);
+      ::-webkit-scrollbar-thumb {
+        background: var(--color-border);
         border-radius: 10px;
-        cursor: pointer;
-        position: relative;
-        margin-bottom: 6px;
-      }
-      .rail-theme-toggle::after {
-        content: "";
-        position: absolute;
-        left: 3px;
-        top: 3px;
-        width: 12px;
-        height: 12px;
-        background: var(--llm-accent-solid);
-        border-radius: 50%;
-        transition: left 0.2s;
-      }
-      html.dark .rail-theme-toggle::after {
-        left: 19px;
       }
 
-      /* ── Sidebar overlay panel ── */
-      .sidebar-panel {
-        position: absolute;
-        left: 56px;
-        top: 0;
-        bottom: 0;
-        width: 240px;
-        background: var(--llm-panel);
-        border-right: 1px solid var(--llm-panel-border);
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-        box-shadow: var(--llm-shadow);
-        display: flex;
-        flex-direction: column;
-        padding: 12px 10px;
-        z-index: 15;
-        transition:
-          transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-          opacity 0.22s;
+      /* Markdown Styling */
+      .prose pre {
+        background-color: var(--color-surface);
+        border-radius: 0.75rem;
+        padding: 1rem;
+        margin-top: 0.5rem;
+        overflow-x: auto;
       }
-      .sidebar-panel.panel-hidden {
-        transform: translateX(-8px);
+      .prose code {
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        font-size: 0.875em;
+        color: var(--color-accent);
+      }
+      .prose p {
+        margin-bottom: 0.75rem;
+      }
+      .prose p:last-child {
+        margin-bottom: 0;
+      }
+      .prose strong {
+        color: inherit;
+        font-weight: 600;
+      }
+      .prose ul {
+        list-style-type: disc;
+        padding-left: 1.25rem;
+        margin-bottom: 0.75rem;
+      }
+      .prose ol {
+        list-style-type: decimal;
+        padding-left: 1.25rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .drop-zone {
+        border: 2px dashed transparent;
+        transition: all 0.2s;
+        border-radius: 1rem;
+      }
+      .drop-zone.active {
+        border-color: #3b82f6;
+        background-color: rgba(59, 130, 246, 0.1);
+      }
+
+      .sidebar {
+        transition: transform 0.3s ease;
+      }
+      @media (max-width: 768px) {
+        .sidebar {
+          position: fixed;
+          z-index: 50;
+          height: 100%;
+        }
+        .sidebar.closed {
+          transform: translateX(-100%);
+        }
+      }
+
+      .modal-overlay {
+        background: rgba(0, 0, 0, 0.5);
+        backdrop-blur: 4px;
+        transition: opacity 0.3s ease;
+      }
+      .modal-content {
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .hidden-modal {
         opacity: 0;
         pointer-events: none;
       }
-      .sidebar-new-btn {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        background: rgba(6, 182, 212, 0.1);
-        border: 1px solid rgba(6, 182, 212, 0.28);
-        border-radius: 9px;
-        padding: 8px 12px;
-        font-size: 13px;
-        font-weight: 600;
-        color: var(--llm-accent-solid);
-        cursor: pointer;
-        width: 100%;
-        margin-bottom: 12px;
-        transition: background 0.15s;
-      }
-      .sidebar-new-btn:hover {
-        background: rgba(6, 182, 212, 0.18);
-      }
-      .sidebar-section-label {
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 1px;
-        text-transform: uppercase;
-        color: var(--llm-text-muted);
-        padding: 0 4px;
-        margin-bottom: 4px;
-        margin-top: 8px;
-      }
-      .chat-history-item {
-        border-radius: 8px;
-        padding: 7px 10px;
-        cursor: pointer;
-        margin-bottom: 2px;
-        transition: background 0.12s;
-        position: relative;
-      }
-      .chat-history-item:hover {
-        background: var(--llm-panel);
-      }
-      .chat-history-item.active {
-        background: rgba(6, 182, 212, 0.1);
-        border-left: 2px solid var(--llm-accent-solid);
-        padding-left: 8px;
-      }
-      .chat-history-item .item-title {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--llm-text);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .chat-history-item .item-meta {
-        font-size: 10px;
-        color: var(--llm-text-muted);
-        margin-top: 1px;
-      }
-      .all-chats-link {
-        margin-top: auto;
-        border-top: 1px solid var(--llm-panel-border);
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 10px;
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--llm-text-muted);
-        cursor: pointer;
-        border-radius: 8px;
-        transition: all 0.12s;
-        border: 1px dashed var(--llm-panel-border);
-      }
-      .all-chats-link:hover {
-        color: var(--llm-accent-solid);
-        border-color: rgba(6, 182, 212, 0.35);
+      .hidden-modal .modal-content {
+        transform: scale(0.9) translateY(20px);
       }
 
-      /* ── Scheduled tasks ── */
+      /* Reasoning/Thinking Styles */
+      .thought-block {
+        background: rgba(59, 130, 246, 0.07);
+        border-left: 3px solid #3b82f6;
+        padding: 10px 15px;
+        margin-bottom: 15px;
+        border-radius: 0 8px 8px 0;
+        font-style: italic;
+        font-size: 0.85em;
+        color: var(--color-text-muted);
+      }
+
+      .reasoning-block {
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        margin-bottom: 8px;
+        overflow: hidden;
+      }
+      .reasoning-block summary {
+        cursor: pointer;
+        padding: 6px 12px;
+        font-size: 0.75em;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        background: var(--color-surface);
+        user-select: none;
+        list-style: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .reasoning-block summary::before {
+        content: "▶";
+        font-size: 0.65em;
+        transition: transform 0.15s;
+      }
+      .reasoning-block[open] summary::before {
+        transform: rotate(90deg);
+      }
+      .reasoning-block .reasoning-body {
+        padding: 10px 14px;
+        font-size: 0.82em;
+        color: var(--color-text-muted);
+        border-top: 1px solid var(--color-border);
+      }
+
+      /* CSS variables for agent UI — light is default, html.dark overrides */
+      :root {
+        --color-bg: #f8f9fa;
+        --color-surface: #ffffff;
+        --color-border: #e5e7eb;
+        --color-text: #111827;
+        --color-text-muted: #6b7280;
+        --color-accent: #3b82f6;
+      }
+      html.dark {
+        --color-bg: #0e0e11;
+        --color-surface: #1e1f20;
+        --color-border: #3c3d40;
+        --color-text: #f3f4f6;
+        --color-text-muted: #9ca3af;
+      }
+
+      /* Trace */
+      .agent-trace {
+        margin: 8px 0;
+        font-size: 12px;
+      }
+      .trace-summary {
+        background: var(--color-surface);
+        padding: 6px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--color-text-muted);
+        user-select: none;
+      }
+      .trace-steps {
+        padding-left: 8px;
+        border-left: 2px solid var(--color-border);
+        margin-top: 4px;
+      }
+      .trace-step {
+        margin: 4px 0;
+      }
+      .trace-call {
+        font-family: monospace;
+        color: #22c55e;
+        font-size: 11px;
+      }
+      .trace-result {
+        font-family: monospace;
+        color: var(--color-text-muted);
+        font-size: 10px;
+        padding-left: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 60px;
+        overflow: hidden;
+      }
+
+      /* Confirm card */
+      .confirm-card {
+        border: 1px solid #f59e0b;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 8px 0;
+        background: var(--color-bg);
+      }
+      .confirm-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+        font-weight: 600;
+      }
+      .confirm-args {
+        background: var(--color-surface);
+        padding: 8px;
+        border-radius: 6px;
+        font-family: monospace;
+        font-size: 10px;
+        margin: 8px 0;
+        white-space: pre-wrap;
+      }
+      .confirm-desc {
+        color: var(--color-text-muted);
+        font-size: 11px;
+        margin-bottom: 10px;
+      }
+      .confirm-buttons {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-allow {
+        background: #22c55e;
+        color: white;
+        border: none;
+        padding: 5px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .btn-deny {
+        background: #ef444422;
+        color: #ef4444;
+        border: 1px solid #ef4444;
+        padding: 5px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+      .btn-always {
+        background: transparent;
+        color: var(--color-text-muted);
+        border: 1px solid var(--color-border);
+        padding: 5px 14px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 11px;
+      }
+
+      /* Agent messages */
+      .agent-done-message {
+        padding: 8px 12px;
+        color: #22c55e;
+        font-size: 13px;
+      }
+      .agent-error-message {
+        padding: 8px 12px;
+        color: #ef4444;
+        font-size: 13px;
+      }
+
+      /* Context Menu & All Chats Styles */
+      #context-menu {
+        position: fixed;
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        box-shadow:
+          0 10px 15px -3px rgba(0, 0, 0, 0.1),
+          0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        padding: 4px;
+        z-index: 1000;
+        min-width: 160px;
+        display: none;
+        backdrop-filter: blur(8px);
+      }
+      .context-menu-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        border-radius: 6px;
+        color: var(--color-text);
+        transition: all 0.2s;
+      }
+      .context-menu-item:hover {
+        background: var(--color-bg);
+      }
+      .context-menu-item.danger:hover {
+        background: #fef2f2;
+        color: #ef4444;
+      }
+      html.dark .context-menu-item.danger:hover {
+        background: #7f1d1d33;
+      }
+
+      .all-chats-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--color-border);
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+      .all-chats-item:hover {
+        background: var(--color-bg);
+      }
+      .all-chats-item.selected {
+        background: rgba(59, 130, 246, 0.08);
+      }
+      .all-chats-checkbox {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        border: 2px solid var(--color-border);
+        cursor: pointer;
+      }
+
+      /* Scheduled tasks panel */
       .sidebar-section {
-        border-top: 1px solid var(--llm-panel-border);
+        border-top: 1px solid var(--color-border);
         padding-top: 8px;
         margin-top: 8px;
       }
@@ -285,20 +389,28 @@
         justify-content: space-between;
         align-items: center;
         cursor: pointer;
-        padding: 4px 0;
-        font-size: 12px;
+        padding: 6px 0;
+        font-size: 13px;
         font-weight: 600;
-        color: var(--llm-text-muted);
+        color: var(--color-text-muted);
         user-select: none;
       }
       .sidebar-section-header:hover {
-        color: var(--llm-text);
+        color: var(--color-text);
+      }
+      .tasks-subsection {
+        margin: 8px 0;
+      }
+      .tasks-subsection-header {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--color-accent);
+        margin-bottom: 6px;
       }
       .task-card {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
+        background: var(--color-surface);
         padding: 8px;
-        border-radius: 8px;
+        border-radius: 6px;
         margin-bottom: 6px;
         font-size: 11px;
       }
@@ -325,25 +437,25 @@
       }
       .task-schedule {
         font-family: monospace;
-        color: var(--llm-text-muted);
+        color: var(--color-text-muted);
         font-size: 10px;
         margin-bottom: 2px;
       }
       .task-prompt {
-        color: var(--llm-text-muted);
+        color: var(--color-text-muted);
         font-size: 10px;
         font-style: italic;
       }
       .tasks-empty {
-        color: var(--llm-text-muted);
+        color: var(--color-text-muted);
         font-size: 11px;
         font-style: italic;
         padding: 4px 0;
       }
       .add-task-btn {
         background: none;
-        border: 1px dashed var(--llm-panel-border);
-        color: var(--llm-text-muted);
+        border: 1px dashed var(--color-border);
+        color: var(--color-text-muted);
         padding: 4px 10px;
         border-radius: 6px;
         cursor: pointer;
@@ -352,14 +464,14 @@
         width: 100%;
       }
       .add-task-btn:hover {
-        border-color: var(--llm-accent-solid);
-        color: var(--llm-accent-solid);
+        border-color: var(--color-accent);
+        color: var(--color-accent);
       }
       .task-input {
         width: 100%;
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        color: var(--llm-text);
+        background: var(--color-surface);
+        border: 1px solid var(--color-border);
+        color: var(--color-text);
         padding: 4px 8px;
         border-radius: 4px;
         font-size: 11px;
@@ -367,7 +479,7 @@
         box-sizing: border-box;
       }
       .btn-save-task {
-        background: var(--llm-accent-solid);
+        background: var(--color-accent);
         color: white;
         border: none;
         padding: 4px 12px;
@@ -376,424 +488,63 @@
         font-size: 11px;
       }
       .btn-cancel-task {
-        background: var(--llm-panel);
-        color: var(--llm-text-muted);
-        border: 1px solid var(--llm-panel-border);
+        background: var(--color-surface);
+        color: var(--color-text-muted);
+        border: 1px solid var(--color-border);
         padding: 4px 12px;
         border-radius: 4px;
         cursor: pointer;
         font-size: 11px;
       }
 
-      /* ── Main area & topbar ── */
-      .llm-main {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-        position: relative;
-      }
-      .llm-topbar {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 10px 20px;
-        border-bottom: 1px solid var(--llm-panel-border);
-        background: var(--llm-panel);
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-        flex-shrink: 0;
-      }
-      .topbar-title {
-        font-size: 14px;
-        font-weight: 600;
-        color: var(--llm-text);
-        flex: 1;
-        min-width: 0;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-      .model-pill {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 20px;
-        padding: 4px 10px 4px 8px;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--llm-text-muted);
-        cursor: pointer;
-        transition: all 0.15s;
-      }
-      .model-pill:hover {
-        border-color: rgba(6, 182, 212, 0.4);
-        color: var(--llm-text);
-      }
-      .model-status-dot {
-        width: 7px;
-        height: 7px;
-        background: #22c55e;
-        border-radius: 50%;
-        box-shadow: 0 0 6px rgba(34, 197, 94, 0.6);
-      }
+      /* Image mode */
       .mode-pill {
         display: flex;
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
+        background: #f3f4f6;
         border-radius: 20px;
         padding: 3px;
         gap: 2px;
+        flex-shrink: 0;
+      }
+      .dark .mode-pill {
+        background: #2a2a35;
       }
       .mode-btn {
         padding: 4px 12px;
-        border-radius: 14px;
+        border-radius: 16px;
         font-size: 11px;
         font-weight: 600;
         border: none;
         cursor: pointer;
-        color: var(--llm-text-muted);
-        background: transparent;
         transition: all 0.15s;
+        background: none;
+        color: #9ca3af;
       }
       .mode-btn.active-chat {
-        background: rgba(255, 255, 255, 0.7);
-        color: var(--llm-text);
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+        background: white;
+        color: #111827;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
       }
-      html.dark .mode-btn.active-chat {
-        background: rgba(255, 255, 255, 0.12);
+      .dark .mode-btn.active-chat {
+        background: #3c3d40;
+        color: white;
       }
       .mode-btn.active-image {
-        background: linear-gradient(135deg, #7c3aed, #6366f1);
+        background: #7c3aed;
         color: white;
-        box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
+        box-shadow: 0 1px 3px rgba(124, 58, 237, 0.3);
       }
-
-      /* ── Messages ── */
-      .llm-messages {
-        flex: 1;
-        overflow-y: auto;
-        padding: 24px 20px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-        min-height: 0;
-      }
-      .llm-messages::-webkit-scrollbar {
-        width: 5px;
-      }
-      .llm-messages::-webkit-scrollbar-thumb {
-        background: var(--llm-panel-border);
-        border-radius: 10px;
-      }
-      .message-user {
-        align-self: flex-end;
-        max-width: 80%;
-        background: linear-gradient(135deg, #06b6d4, #0ea5e9);
-        border-radius: 16px 16px 3px 16px;
-        padding: 11px 16px;
-        color: white;
-        box-shadow: 0 3px 14px rgba(6, 182, 212, 0.3);
-        font-size: 14px;
-        line-height: 1.6;
-      }
-      .message-gemma {
-        align-self: flex-start;
-        max-width: 85%;
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 16px 16px 16px 3px;
-        padding: 11px 16px;
-        color: var(--llm-text);
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-        box-shadow: 0 2px 12px rgba(139, 92, 246, 0.07);
-        font-size: 14px;
-        line-height: 1.6;
-      }
-      .msg-meta {
-        font-size: 11px;
-        color: var(--llm-text-muted);
-        margin-top: 4px;
-        padding: 0 4px;
-      }
-
-      /* ── Welcome screen ── */
-      .welcome-screen {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        flex: 1;
-        gap: 14px;
-        padding: 40px;
-        text-align: center;
-      }
-      .welcome-logo {
-        width: 56px;
-        height: 56px;
-        background: linear-gradient(135deg, #06b6d4, #0ea5e9);
-        border-radius: 16px;
-        box-shadow: 0 4px 20px rgba(6, 182, 212, 0.4);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;
-        font-weight: 800;
-        color: white;
-      }
-      .welcome-title {
-        font-size: 22px;
-        font-weight: 700;
-        color: var(--llm-text);
-      }
-      .welcome-sub {
-        font-size: 14px;
-        color: var(--llm-text-muted);
-        max-width: 340px;
-        line-height: 1.6;
-      }
-      .welcome-chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        justify-content: center;
-        margin-top: 4px;
-      }
-      .welcome-chip {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 20px;
-        padding: 7px 14px;
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--llm-text-muted);
-        cursor: pointer;
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-        transition: all 0.15s;
-      }
-      .welcome-chip:hover {
-        border-color: rgba(6, 182, 212, 0.4);
-        color: var(--llm-accent-solid);
-      }
-
-      /* ── Prose / markdown ── */
-      .prose pre {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 10px;
-        padding: 1rem;
-        margin-top: 0.5rem;
-        overflow-x: auto;
-      }
-      .prose code {
-        font-family:
-          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-        font-size: 0.875em;
-        background: rgba(139, 92, 246, 0.1);
-        padding: 1px 5px;
-        border-radius: 4px;
-        color: var(--llm-accent-solid);
-      }
-      .prose pre code {
-        background: none;
-        padding: 0;
-        color: inherit;
-      }
-      .prose p {
-        margin-bottom: 0.75rem;
-      }
-      .prose p:last-child {
-        margin-bottom: 0;
-      }
-      .prose strong {
-        font-weight: 600;
-      }
-      .prose ul {
-        list-style-type: disc;
-        padding-left: 1.25rem;
-        margin-bottom: 0.75rem;
-      }
-      .prose ol {
-        list-style-type: decimal;
-        padding-left: 1.25rem;
-        margin-bottom: 0.75rem;
-      }
-
-      /* ── Thinking / reasoning ── */
-      .thought-block {
-        background: rgba(139, 92, 246, 0.06);
-        border: 1px solid rgba(139, 92, 246, 0.15);
-        border-radius: 10px;
-        padding: 10px 14px;
-        margin-bottom: 10px;
-        font-style: italic;
-        font-size: 0.85em;
-        color: var(--llm-text-muted);
-      }
-      .reasoning-block {
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 10px;
-        margin-bottom: 8px;
-        overflow: hidden;
-      }
-      .reasoning-block summary {
-        cursor: pointer;
-        padding: 6px 12px;
-        font-size: 0.75em;
-        font-weight: 600;
-        color: var(--llm-text-muted);
-        background: var(--llm-panel);
-        user-select: none;
-        list-style: none;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .reasoning-block summary::before {
-        content: "▶";
-        font-size: 0.65em;
-        transition: transform 0.15s;
-      }
-      .reasoning-block[open] summary::before {
-        transform: rotate(90deg);
-      }
-      .reasoning-block .reasoning-body {
-        padding: 10px 14px;
-        font-size: 0.82em;
-        color: var(--llm-text-muted);
-        border-top: 1px solid var(--llm-panel-border);
-      }
-
-      /* ── Typing indicator ── */
-      .typing-indicator {
-        animation: llm-pulse 1.5s infinite;
-      }
-      @keyframes llm-pulse {
-        0%,
-        100% {
-          opacity: 0.4;
-        }
-        50% {
-          opacity: 1;
-        }
-      }
-
-      /* ── Input area ── */
-      .llm-input-area {
-        padding: 14px 20px 20px;
-        flex-shrink: 0;
-      }
-      .llm-input-shell {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 16px;
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-        box-shadow: var(--llm-shadow);
-        overflow: hidden;
-        transition:
-          border-color 0.15s,
-          box-shadow 0.15s;
-      }
-      .llm-input-shell:focus-within {
-        border-color: rgba(6, 182, 212, 0.5);
-        box-shadow:
-          0 0 0 3px rgba(6, 182, 212, 0.08),
-          var(--llm-shadow);
-      }
-      .llm-input-row {
-        display: flex;
-        align-items: flex-end;
-        gap: 8px;
-        padding: 10px 12px;
-      }
-      .llm-attach-btn {
-        width: 34px;
-        height: 34px;
-        border-radius: 9px;
-        border: none;
-        background: transparent;
-        color: var(--llm-text-muted);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 18px;
-        flex-shrink: 0;
-        transition: all 0.15s;
-      }
-      .llm-attach-btn:hover {
-        color: var(--llm-text);
-        background: var(--llm-panel);
-      }
-      .llm-send-btn {
-        width: 34px;
-        height: 34px;
-        border-radius: 9px;
-        border: none;
-        background: linear-gradient(135deg, #06b6d4, #0ea5e9);
-        color: white;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-        transition: all 0.15s;
-        box-shadow: 0 2px 8px rgba(6, 182, 212, 0.4);
-      }
-      .llm-send-btn:hover {
-        box-shadow: 0 4px 14px rgba(6, 182, 212, 0.5);
-        transform: translateY(-1px);
-      }
-      .llm-send-btn:disabled {
-        opacity: 0.5;
-        transform: none;
-      }
-      .llm-textarea {
-        flex: 1;
-        background: transparent;
-        border: none;
-        outline: none;
-        font-family: "Inter", sans-serif;
-        font-size: 14px;
-        color: var(--llm-text);
-        resize: none;
-        max-height: 160px;
-        line-height: 1.5;
-      }
-      .llm-textarea::placeholder {
-        color: var(--llm-text-muted);
-      }
-      .llm-input-footer {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 6px 12px 8px;
-        font-size: 11px;
-        color: var(--llm-text-muted);
-        flex-wrap: wrap;
-        row-gap: 6px;
-      }
-      .drop-zone {
-        transition: box-shadow 0.2s;
-      }
-      .drop-zone.active {
-        box-shadow: 0 0 0 2px var(--llm-accent-solid) inset;
-      }
-
-      /* ── Image mode controls ── */
       .image-controls-row {
         display: none;
-        padding: 8px 12px 4px;
-        border-top: 1px solid var(--llm-panel-border);
+        padding-top: 8px;
+        border-top: 1px solid #f3f4f6;
+        margin-top: 6px;
         gap: 8px;
         flex-wrap: wrap;
         align-items: center;
+      }
+      .dark .image-controls-row {
+        border-top-color: #3c3d40;
       }
       .image-controls-row.visible {
         display: flex;
@@ -802,21 +553,23 @@
         display: flex;
         align-items: center;
         gap: 5px;
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
+        background: #f9fafb;
         border-radius: 8px;
         padding: 4px 10px;
         font-size: 11px;
       }
+      .dark .img-ctrl {
+        background: #2a2a35;
+      }
       .img-ctrl label {
-        color: var(--llm-text-muted);
+        color: #9ca3af;
         font-weight: 600;
       }
       .img-ctrl select {
         border: none;
         background: transparent;
         font-size: 11px;
-        color: var(--llm-text);
+        color: #111827;
         font-weight: 600;
         cursor: pointer;
         outline: none;
@@ -828,22 +581,28 @@
         background: transparent;
         cursor: pointer;
       }
+      .dark .img-ctrl select {
+        color: white;
+      }
       .img-ctrl .steps-val {
-        color: var(--llm-text);
+        color: #111827;
         font-weight: 700;
         min-width: 20px;
       }
+      .dark .img-ctrl .steps-val {
+        color: white;
+      }
       .warmup-banner {
         display: none;
-        background: rgba(124, 58, 237, 0.1);
-        border: 1px solid rgba(124, 58, 237, 0.25);
+        background: #f5f0ff;
+        border: 1px solid #d8b4fe;
         border-radius: 10px;
         padding: 7px 12px;
         font-size: 11px;
-        color: #7c3aed;
+        color: #6d28d9;
         align-items: center;
         gap: 8px;
-        margin: 0 12px 6px;
+        margin-bottom: 6px;
       }
       .warmup-banner.visible {
         display: flex;
@@ -864,21 +623,25 @@
         }
       }
 
-      /* ── Image card ── */
+      /* Image card */
       .img-card {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 16px;
+        background: #f9fafb;
+        border: 1px solid #e5e7eb;
+        border-radius: 14px 14px 14px 3px;
         overflow: hidden;
         max-width: 420px;
+      }
+      .dark .img-card {
+        background: #1e1e28;
+        border-color: #3c3d40;
       }
       .img-card-shimmer {
         height: 220px;
         background: linear-gradient(
           90deg,
-          var(--llm-panel) 25%,
-          var(--llm-panel-border) 50%,
-          var(--llm-panel) 75%
+          #f0f0f0 25%,
+          #e0e0e0 50%,
+          #f0f0f0 75%
         );
         background-size: 200% 100%;
         animation: shimmer 1.4s infinite;
@@ -887,6 +650,14 @@
         align-items: center;
         justify-content: center;
         gap: 10px;
+      }
+      .dark .img-card-shimmer {
+        background: linear-gradient(
+          90deg,
+          #2a2a35 25%,
+          #3c3d40 50%,
+          #2a2a35 75%
+        );
       }
       @keyframes shimmer {
         0% {
@@ -899,19 +670,18 @@
       .img-spinner {
         width: 24px;
         height: 24px;
-        border: 2px solid var(--llm-panel-border);
+        border: 2px solid #d1d5db;
         border-top-color: #7c3aed;
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
       }
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
+      .dark .img-spinner {
+        border-color: #3c3d40;
+        border-top-color: #7c3aed;
       }
       .img-gen-label {
         font-size: 11px;
-        color: var(--llm-text-muted);
+        color: #9ca3af;
         font-weight: 600;
       }
       .img-thumb-wrap {
@@ -933,6 +703,8 @@
         font-weight: 600;
         opacity: 0;
         transition: opacity 0.18s;
+        pointer-events: none;
+        border-radius: 0;
       }
       .img-thumb {
         width: 100%;
@@ -941,8 +713,11 @@
       .img-meta {
         padding: 6px 12px;
         font-size: 11px;
-        color: var(--llm-text-muted);
-        border-bottom: 1px solid var(--llm-panel-border);
+        color: #9ca3af;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      .dark .img-meta {
+        border-color: #3c3d40;
       }
       .img-actions {
         display: flex;
@@ -952,233 +727,32 @@
         padding: 7px 0;
         font-size: 11px;
         font-weight: 600;
-        color: var(--llm-text-muted);
+        color: #6b7280;
         background: none;
         border: none;
-        border-right: 1px solid var(--llm-panel-border);
+        border-right: 1px solid #e5e7eb;
         cursor: pointer;
         transition:
           background 0.12s,
           color 0.12s;
       }
+      .dark .img-action-btn {
+        color: #9ca3af;
+        border-right-color: #3c3d40;
+      }
       .img-action-btn:last-child {
         border-right: none;
       }
       .img-action-btn:hover {
-        background: rgba(6, 182, 212, 0.08);
-        color: var(--llm-accent-solid);
+        background: #eff6ff;
+        color: #3b5bdb;
+      }
+      .dark .img-action-btn:hover {
+        background: #1a1a2e;
+        color: #818cf8;
       }
 
-      /* ── Agent trace ── */
-      .agent-trace {
-        margin: 8px 0;
-        font-size: 12px;
-      }
-      .trace-summary {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        padding: 6px 10px;
-        border-radius: 8px;
-        cursor: pointer;
-        color: var(--llm-text-muted);
-        user-select: none;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .trace-steps {
-        padding-left: 8px;
-        border-left: 2px solid var(--llm-panel-border);
-        margin-top: 4px;
-      }
-      .trace-step {
-        margin: 4px 0;
-      }
-      .trace-call {
-        font-family: monospace;
-        color: #22c55e;
-        font-size: 11px;
-      }
-      .trace-result {
-        font-family: monospace;
-        color: var(--llm-text-muted);
-        font-size: 10px;
-        padding-left: 12px;
-        white-space: pre-wrap;
-        word-break: break-word;
-        max-height: 60px;
-        overflow: hidden;
-      }
-      .agent-done-message {
-        padding: 8px 12px;
-        color: #22c55e;
-        font-size: 13px;
-      }
-      .agent-error-message {
-        padding: 8px 12px;
-        color: #ef4444;
-        font-size: 13px;
-      }
-
-      /* ── Tool confirm card ── */
-      .confirm-card {
-        background: var(--llm-panel);
-        border: 1px solid rgba(245, 158, 11, 0.4);
-        border-radius: 12px;
-        padding: 14px;
-        margin: 8px 0;
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-        max-width: 440px;
-      }
-      .confirm-header {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        margin-bottom: 8px;
-        font-weight: 600;
-        color: #f59e0b;
-        font-size: 13px;
-      }
-      .confirm-args {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        padding: 8px;
-        border-radius: 8px;
-        font-family: monospace;
-        font-size: 10px;
-        margin: 8px 0;
-        white-space: pre-wrap;
-        color: var(--llm-text-muted);
-      }
-      .confirm-desc {
-        color: var(--llm-text-muted);
-        font-size: 11px;
-        margin-bottom: 10px;
-      }
-      .confirm-buttons {
-        display: flex;
-        gap: 8px;
-      }
-      .btn-allow {
-        background: #22c55e;
-        color: white;
-        border: none;
-        padding: 6px 16px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-      }
-      .btn-deny {
-        background: rgba(239, 68, 68, 0.12);
-        color: #ef4444;
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        padding: 6px 16px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 12px;
-        font-weight: 600;
-      }
-      .btn-always {
-        background: transparent;
-        color: var(--llm-text-muted);
-        border: 1px solid var(--llm-panel-border);
-        padding: 6px 14px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 11px;
-      }
-
-      /* ── Context menu ── */
-      #context-menu {
-        position: fixed;
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 10px;
-        box-shadow: var(--llm-shadow);
-        padding: 4px;
-        z-index: 1000;
-        min-width: 160px;
-        display: none;
-        backdrop-filter: var(--llm-blur);
-        -webkit-backdrop-filter: var(--llm-blur);
-      }
-      .context-menu-item {
-        padding: 8px 12px;
-        cursor: pointer;
-        font-size: 13px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        border-radius: 6px;
-        color: var(--llm-text);
-        transition: background 0.12s;
-      }
-      .context-menu-item:hover {
-        background: var(--llm-panel);
-      }
-      .context-menu-item.danger {
-        color: #ef4444;
-      }
-      .context-menu-item.danger:hover {
-        background: rgba(239, 68, 68, 0.08);
-      }
-
-      /* ── All-chats modal items ── */
-      .all-chats-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--llm-panel-border);
-        cursor: pointer;
-        transition: background 0.12s;
-      }
-      .all-chats-item:hover {
-        background: var(--llm-panel);
-      }
-      .all-chats-item.selected {
-        background: rgba(6, 182, 212, 0.08);
-      }
-      .all-chats-checkbox {
-        width: 16px;
-        height: 16px;
-        border-radius: 4px;
-        border: 2px solid var(--llm-panel-border);
-        cursor: pointer;
-        accent-color: var(--llm-accent-solid);
-      }
-
-      /* ── Modals ── */
-      .modal-overlay {
-        background: rgba(0, 0, 0, 0.5);
-        backdrop-filter: blur(4px);
-        -webkit-backdrop-filter: blur(4px);
-        transition: opacity 0.3s;
-      }
-      .modal-content {
-        background: var(--llm-panel);
-        border: 1px solid var(--llm-panel-border);
-        border-radius: 16px;
-        backdrop-filter: blur(4px);
-        -webkit-backdrop-filter: blur(4px);
-        box-shadow: var(--llm-shadow);
-        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-      }
-      html:not(.dark) .modal-content {
-        background: rgba(255, 255, 255, 0.97);
-        border-color: rgba(139, 92, 246, 0.18);
-      }
-      .hidden-modal {
-        opacity: 0;
-        pointer-events: none;
-      }
-      .hidden-modal .modal-content {
-        transform: scale(0.95) translateY(16px);
-      }
-
-      /* ── Lightbox ── */
+      /* Lightbox */
       .lightbox-overlay {
         position: fixed;
         inset: 0;
@@ -1205,7 +779,7 @@
       }
       .lightbox-img-wrap img {
         width: 100%;
-        border-radius: 12px;
+        border-radius: 10px;
         display: block;
       }
       .lightbox-sidebar {
@@ -1222,13 +796,13 @@
         font-weight: 700;
       }
       .lb-prompt-text {
-        color: var(--llm-text-muted);
+        color: #9ca3af;
         font-size: 12px;
         line-height: 1.5;
         word-break: break-word;
       }
       .lb-meta-text {
-        color: var(--llm-text-muted);
+        color: #6b7280;
         font-size: 11px;
       }
       .lb-btn {
@@ -1257,7 +831,7 @@
         background: rgba(255, 255, 255, 0.18);
       }
       .lb-close-btn {
-        color: var(--llm-text-muted);
+        color: #6b7280;
         font-size: 12px;
         text-align: center;
         cursor: pointer;
@@ -1269,317 +843,43 @@
       .lb-close-btn:hover {
         color: white;
       }
-
-      /* ── Mobile ── */
-      @media (max-width: 768px) {
-        .sidebar-panel {
-          position: fixed;
-          left: 56px;
-          height: 100%;
-        }
-        .sidebar-panel.panel-hidden {
-          display: none;
-        }
-      }
     </style>
   </head>
-  <body>
-    <!-- ── Icon Rail ── -->
-    <div class="rail" id="rail">
-      <div class="rail-logo">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="white"
-          stroke-width="2.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
-          />
-          <path d="M20 3v4" />
-          <path d="M22 5h-4" />
-          <path d="M4 17v2" />
-          <path d="M5 18H3" />
-        </svg>
-      </div>
-
-      <button
-        class="rail-btn"
-        id="rail-new-chat-btn"
-        title="New Chat"
-        style="color: var(--llm-accent-solid)"
-      >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"
-          />
-          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-        </svg>
-      </button>
-
-      <div class="rail-divider"></div>
-
-      <button class="rail-btn active" id="rail-chat-btn" title="Chat history">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-          />
-        </svg>
-      </button>
-
-      <button class="rail-btn" id="rail-allchats-btn" title="All Chats">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <line x1="8" x2="21" y1="6" y2="6" />
-          <line x1="8" x2="21" y1="12" y2="12" />
-          <line x1="8" x2="21" y1="18" y2="18" />
-          <line x1="3" x2="3.01" y1="6" y2="6" />
-          <line x1="3" x2="3.01" y1="12" y2="12" />
-          <line x1="3" x2="3.01" y1="18" y2="18" />
-        </svg>
-      </button>
-
-      <button class="rail-btn" id="rail-image-btn" title="Image Gallery">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-          <circle cx="9" cy="9" r="2" />
-          <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-        </svg>
-      </button>
-
-      <button class="rail-btn" id="rail-tasks-btn" title="Scheduled tasks">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <rect width="18" height="18" x="3" y="4" rx="2" ry="2" />
-          <line x1="16" x2="16" y1="2" y2="6" />
-          <line x1="8" x2="8" y1="2" y2="6" />
-          <line x1="3" x2="21" y1="10" y2="10" />
-        </svg>
-      </button>
-
-      <div class="rail-divider"></div>
-
-      <button class="rail-btn" id="open-settings-btn" title="Settings">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 1 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
-          />
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      </button>
-
-      <div class="rail-spacer"></div>
-
-      <button
-        class="rail-theme-toggle"
-        id="theme-toggle"
-        title="Toggle theme"
-      ></button>
-      <div class="rail-avatar" title="Omar">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="white"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-      </div>
-    </div>
-
-    <!-- ── Sidebar Overlay Panel ── id="sidebar" preserved for JS compat -->
-    <div class="sidebar-panel" id="sidebar">
-      <!-- New chat button — id="new-chat-btn" preserved -->
-      <button class="sidebar-new-btn" id="new-chat-btn">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path d="M5 12h14" />
-          <path d="M12 5v14" />
-        </svg>
-        New Chat
-      </button>
-
-      <!-- Starred chats — id="starred-section" and id="starred-list" preserved -->
-      <div id="starred-section" class="hidden">
-        <div class="sidebar-section-label" style="color: #f59e0b">
-          ★ Starred
-        </div>
-        <div id="starred-list"></div>
-      </div>
-
-      <!-- Chat history — id="history-list" preserved -->
-      <div class="sidebar-section-label">Recents</div>
+  <body
+    class="bg-lightBg text-gray-900 dark:bg-darkBg dark:text-gray-200 flex h-screen overflow-hidden"
+  >
+    <!-- Sidebar for History -->
+    <aside
+      id="sidebar"
+      class="sidebar w-64 flex-shrink-0 bg-white dark:bg-darkSurface border-r border-gray-200 dark:border-[#3c3d40] flex flex-col"
+    >
       <div
-        id="history-list"
-        style="flex: 1; overflow-y: auto; overflow-x: hidden; min-height: 0"
-      ></div>
-
-      <!-- Scheduled tasks — ids preserved -->
-      <div class="sidebar-section">
-        <div class="sidebar-section-header" onclick="toggleScheduledPanel()">
-          <span>📅 Scheduled Tasks</span>
-          <span id="scheduled-chevron">▼</span>
-        </div>
-        <div id="scheduled-tasks-body" style="display: none">
-          <div style="margin: 8px 0">
-            <div
-              style="
-                font-size: 11px;
-                font-weight: 600;
-                color: var(--llm-accent-solid);
-                margin-bottom: 6px;
-              "
-            >
-              🤖 In-App Tasks
-            </div>
-            <div id="in-app-tasks-list"></div>
-            <button class="add-task-btn" onclick="showAddTaskForm()">
-              + Add Task
-            </button>
-            <div id="add-task-form" style="display: none">
-              <input
-                id="new-task-name"
-                type="text"
-                placeholder="Task name"
-                class="task-input"
-              />
-              <input
-                id="new-task-schedule"
-                type="text"
-                placeholder="Cron (e.g. 0 9 * * *)"
-                class="task-input"
-              />
-              <textarea
-                id="new-task-prompt"
-                placeholder="Prompt"
-                class="task-input"
-                rows="2"
-                style="resize: vertical"
-              ></textarea>
-              <div style="display: flex; gap: 6px; margin-top: 4px">
-                <button class="btn-save-task" onclick="submitAddTask()">
-                  Save
-                </button>
-                <button class="btn-cancel-task" onclick="showAddTaskForm()">
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- All Chats button -->
-      <div class="all-chats-link" onclick="showAllChats()">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-          />
-          <path d="M12 7v10" />
-          <path d="M8 11h8" />
-        </svg>
-        All Chats
-      </div>
-    </div>
-
-    <!-- ── Main Area ── -->
-    <div class="llm-main">
-      <!-- Topbar -->
-      <header class="llm-topbar">
-        <!-- Mobile menu button — id="mobile-menu-btn" preserved for JS -->
+        class="p-4 border-b border-gray-200 dark:border-[#3c3d40] flex gap-2"
+      >
         <button
-          id="mobile-menu-btn"
-          class="rail-btn md:hidden"
-          style="margin-right: 4px"
-          title="Menu"
+          id="new-chat-btn"
+          class="flex-1 flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors justify-center shadow-sm"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M5 12h14" />
+            <path d="M12 5v14" />
+          </svg>
+          New Chat
+        </button>
+        <button
+          id="open-settings-btn"
+          class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-500"
+          title="Settings"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -1592,153 +892,253 @@
             stroke-linecap="round"
             stroke-linejoin="round"
           >
-            <line x1="4" x2="20" y1="12" y2="12" />
-            <line x1="4" x2="20" y1="6" y2="6" />
-            <line x1="4" x2="20" y1="18" y2="18" />
+            <path
+              d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+            />
+            <circle cx="12" cy="12" r="3" />
           </svg>
         </button>
+      </div>
 
-        <!-- Chat title — id="chat-title" preserved -->
-        <div class="topbar-title" id="chat-title">LocalLLM</div>
-
-        <!-- Server status — id="server-status", id="status-dot", id="status-label" preserved -->
+      <div class="flex-1 flex flex-col min-h-0">
         <div
-          id="server-status"
-          style="
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 10px;
-            font-family: monospace;
-            cursor: default;
-            flex-shrink: 0;
-          "
+          id="starred-section"
+          class="p-2 border-b border-gray-100 dark:border-gray-800 hidden"
         >
-          <span
-            id="status-dot"
-            style="
-              width: 8px;
-              height: 8px;
-              border-radius: 50%;
-              background: #9ca3af;
-              flex-shrink: 0;
-            "
-          ></span>
-          <span id="status-label" style="color: var(--llm-text-muted)"
-            >checking…</span
+          <div
+            class="text-[10px] text-yellow-600 dark:text-yellow-500 font-mono uppercase tracking-wider mb-2 px-2 flex items-center gap-1"
           >
-        </div>
-      </header>
-
-      <!-- Messages area — id="chat-box" preserved -->
-      <main id="chat-box" class="llm-messages drop-zone">
-        <!-- Welcome message — id="welcome-message" preserved -->
-        <div id="welcome-message" class="welcome-screen">
-          <div class="welcome-logo">
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="28"
-              height="28"
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+            >
+              <polygon
+                points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
+              />
+            </svg>
+            Starred
+          </div>
+          <div id="starred-list" class="space-y-1"></div>
+        </div>
+
+        <div class="flex-1 overflow-hidden p-2 flex flex-col">
+          <div
+            class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2 px-2 flex-shrink-0"
+          >
+            Recents
+          </div>
+          <div id="history-list" class="space-y-1 flex-1 overflow-hidden"></div>
+        </div>
+
+        <div class="p-2 border-t border-gray-100 dark:border-gray-800">
+          <button
+            onclick="showAllChats()"
+            class="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-gray-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors group border border-dashed border-gray-200 dark:border-gray-700"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="14"
+              height="14"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="white"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              class="group-hover:translate-x-0.5 transition-transform"
+            >
+              <path
+                d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
+              />
+              <path d="M12 7v10" />
+              <path d="M8 11h8" />
+            </svg>
+            All Chats
+          </button>
+        </div>
+      </div>
+
+      <div class="p-4 border-t border-gray-200 dark:border-[#3c3d40]">
+        <div
+          class="text-[10px] text-gray-500 font-mono uppercase tracking-wider mb-2"
+        >
+          Settings
+        </div>
+        <button
+          id="theme-toggle"
+          class="flex items-center gap-3 w-full p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-sm"
+        >
+          <span id="theme-icon-container"></span>
+          <span id="theme-text">Toggle Theme</span>
+        </button>
+
+        <div id="scheduled-tasks-panel" class="sidebar-section">
+          <div class="sidebar-section-header" onclick="toggleScheduledPanel()">
+            <span>📅 Scheduled Tasks</span>
+            <span id="scheduled-chevron">▼</span>
+          </div>
+          <div id="scheduled-tasks-body" style="display: none">
+            <div class="tasks-subsection">
+              <div class="tasks-subsection-header">🤖 In-App Tasks</div>
+              <div id="in-app-tasks-list"></div>
+              <button class="add-task-btn" onclick="showAddTaskForm()">
+                + Add Task
+              </button>
+              <div id="add-task-form" style="display: none">
+                <input
+                  id="new-task-name"
+                  type="text"
+                  placeholder="Task name"
+                  class="task-input"
+                />
+                <input
+                  id="new-task-schedule"
+                  type="text"
+                  placeholder="Cron schedule (e.g. 0 9 * * *)"
+                  class="task-input"
+                />
+                <textarea
+                  id="new-task-prompt"
+                  placeholder="Agent prompt..."
+                  class="task-input"
+                  rows="2"
+                ></textarea>
+                <div style="display: flex; gap: 6px; margin-top: 4px">
+                  <button onclick="submitAddTask()" class="btn-save-task">
+                    Save
+                  </button>
+                  <button onclick="showAddTaskForm()" class="btn-cancel-task">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div class="tasks-subsection">
+              <div class="tasks-subsection-header">⚙ System Cron Jobs</div>
+              <div id="system-cron-list">
+                <div class="tasks-empty">
+                  Run agent with "list my cron jobs" to see system crontab.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Chat Area -->
+    <div class="flex-1 flex flex-col min-w-0 relative">
+      <header
+        class="flex items-center justify-between p-4 border-b border-gray-200 dark:border-[#3c3d40] bg-lightBg/80 dark:bg-darkBg/80 backdrop-blur-md z-10"
+      >
+        <div class="flex items-center gap-3 flex-1 min-w-0">
+          <button
+            id="mobile-menu-btn"
+            class="md:hidden p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-800 flex-shrink-0"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
               stroke-width="2"
               stroke-linecap="round"
               stroke-linejoin="round"
             >
-              <path
-                d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"
-              />
-              <path d="M20 3v4" />
-              <path d="M22 5h-4" />
-              <path d="M4 17v2" />
-              <path d="M5 18H3" />
+              <line x1="4" x2="20" y1="12" y2="12" />
+              <line x1="4" x2="20" y1="6" y2="6" />
+              <line x1="4" x2="20" y1="18" y2="18" />
             </svg>
+          </button>
+          <div
+            class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-purple-500 flex items-center justify-center shadow-md flex-shrink-0"
+          >
+            <span class="font-bold text-white text-xs">G4</span>
           </div>
-          <div class="welcome-title" id="welcome-greeting">
-            Good morning, Omar
+          <div class="flex flex-col min-w-0">
+            <h1 id="chat-title" class="text-sm font-semibold truncate">
+              Gemma 4 Local
+            </h1>
+            <div class="flex items-center gap-2">
+              <select
+                id="model-select"
+                class="bg-transparent border-none text-[10px] text-gray-500 focus:ring-0 p-0 cursor-pointer hover:text-blue-500 transition-colors"
+              >
+                <option value="gemma4-e4b">Gemma 4 E4B (Fast)</option>
+                <option value="deepseek-v4-mini">
+                  DeepSeek V4 Mini (7B Reasoning)
+                </option>
+                <option value="phi4-mini">Phi-4 Mini (Alternative)</option>
+                <option value="gemma4-26b-mlx">
+                  Gemma 4 26B A4B (Powerful)
+                </option>
+                <option value="gemma4-31b-mlx">
+                  Gemma 4 31B Dense (Elite)
+                </option>
+              </select>
+              <label class="inline-flex items-center cursor-pointer ml-4">
+                <input
+                  type="checkbox"
+                  id="deep-think-toggle"
+                  class="sr-only peer"
+                />
+                <div
+                  class="relative w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"
+                ></div>
+                <span class="ms-2 text-[10px] font-medium text-gray-500"
+                  >Deep Think</span
+                >
+              </label>
+            </div>
           </div>
-          <div class="welcome-sub">
-            LocalLLM is ready. Your models run privately on this machine — no
-            data leaves.
-          </div>
-          <div class="welcome-chips">
-            <div
-              class="welcome-chip"
-              onclick="
-                document.getElementById('user-input').value =
-                  'Help me write something';
-                document.getElementById('user-input').focus();
-              "
-            >
-              ✍️ Help me write
-            </div>
-            <div
-              class="welcome-chip"
-              onclick="
-                document.getElementById('user-input').value =
-                  'Debug this code: ';
-                document.getElementById('user-input').focus();
-              "
-            >
-              🐍 Debug code
-            </div>
-            <div
-              class="welcome-chip"
-              onclick="
-                setMode('image');
-                document.getElementById('user-input').focus();
-              "
-            >
-              🎨 Generate image
-            </div>
-            <div
-              class="welcome-chip"
-              onclick="
-                document.getElementById('user-input').value = 'Summarize: ';
-                document.getElementById('user-input').focus();
-              "
-            >
-              📄 Summarize
-            </div>
+        </div>
+        <div
+          id="server-status"
+          class="hidden lg:flex items-center gap-1.5 text-[10px] font-mono cursor-default select-none"
+          title="Backend status"
+        >
+          <span
+            id="status-dot"
+            class="w-2 h-2 rounded-full bg-gray-400 flex-shrink-0"
+          ></span>
+          <span id="status-label" class="text-gray-500">checking…</span>
+        </div>
+      </header>
+
+      <main
+        id="chat-box"
+        class="chat-container drop-zone flex flex-col gap-8 overflow-y-auto p-4 md:p-8 flex-1"
+      >
+        <div id="welcome-message" class="message-gemma p-2 max-w-[90%]">
+          <div
+            class="prose dark:prose-invert max-w-none text-gray-700 dark:text-gray-300 leading-relaxed"
+          >
+            Hello! I'm <strong>Gemma 4</strong>. Your local AI is now optimized
+            for performance and privacy.
           </div>
         </div>
       </main>
 
-      <!-- Input area — id="chat-form", id="user-input", id="send-btn", id="attach-btn" preserved -->
-      <footer class="llm-input-area">
-        <!-- Typing indicator — id="typing" preserved -->
+      <footer class="p-4 md:p-8 pt-0 relative max-w-4xl mx-auto w-full">
         <div
           id="typing"
-          class="hidden typing-indicator"
-          style="
-            font-size: 12px;
-            color: var(--llm-accent-solid);
-            font-weight: 500;
-            margin-bottom: 6px;
-            padding: 0 4px;
-          "
+          class="hidden absolute -top-6 left-8 text-xs text-blue-500 dark:text-blue-400 font-medium typing-indicator"
         >
           Thinking...
         </div>
-
-        <!-- Attachment preview — id="attachment-preview" preserved -->
         <div
           id="attachment-preview"
-          class="hidden"
-          style="
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 10px;
-            padding: 0 4px;
-          "
+          class="hidden flex flex-wrap gap-2 mb-3 px-2"
         ></div>
 
-        <!-- Warmup banner — id="warmup-banner" preserved -->
         <div class="warmup-banner" id="warmup-banner">
           <div class="warmup-dot"></div>
-          <span>Image model warming up · ~16s</span>
+          <span>Image model ready · text model will reload on switch back</span>
           <button
             type="button"
             id="warmup-close-btn"
@@ -1747,7 +1147,7 @@
               background: none;
               border: none;
               cursor: pointer;
-              color: var(--llm-text-muted);
+              color: #9ca3af;
               font-size: 13px;
             "
           >
@@ -1755,158 +1155,100 @@
           </button>
         </div>
 
-        <form id="chat-form">
+        <form
+          id="chat-form"
+          class="flex flex-wrap items-end gap-3 bg-white dark:bg-darkSurface p-3 rounded-2xl border border-gray-200 dark:border-[#3c3d40] transition-all shadow-xl"
+        >
           <input type="file" id="file-input" class="hidden" multiple />
-
-          <div class="llm-input-shell">
-            <div class="llm-input-row">
-              <button
-                type="button"
-                class="llm-attach-btn"
-                id="attach-btn"
-                title="Attach file"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path
-                    d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"
-                  />
-                </svg>
-              </button>
-
-              <textarea
-                id="user-input"
-                placeholder="Message LocalLLM…"
-                rows="1"
-                class="llm-textarea"
-              ></textarea>
-
-              <button type="submit" class="llm-send-btn" id="send-btn">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2.5"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="m5 12 7-7 7 7" />
-                  <path d="M12 19V5" />
-                </svg>
-              </button>
+          <div class="mode-pill" id="mode-pill">
+            <button
+              type="button"
+              class="mode-btn active-chat"
+              id="mode-chat-btn"
+            >
+              💬 Chat
+            </button>
+            <button type="button" class="mode-btn" id="mode-image-btn">
+              🎨 Image
+            </button>
+          </div>
+          <button
+            type="button"
+            id="attach-btn"
+            class="text-gray-400 hover:text-blue-500 p-2 rounded-xl transition-colors flex-shrink-0"
+            title="Attach file"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M5 12h14" />
+              <path d="M12 5v14" />
+            </svg>
+          </button>
+          <textarea
+            id="user-input"
+            placeholder="Ask anything..."
+            rows="1"
+            class="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 resize-none py-2 px-1 max-h-48"
+          ></textarea>
+          <button
+            type="submit"
+            class="bg-gray-900 text-white dark:bg-white dark:text-black p-2 rounded-xl hover:opacity-90 transition-colors disabled:opacity-50 flex-shrink-0"
+            id="send-btn"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="m5 12 7-7 7 7" />
+              <path d="M12 19V5" />
+            </svg>
+          </button>
+          <div class="image-controls-row w-full" id="image-controls-row">
+            <div class="img-ctrl">
+              <label for="img-size">Size</label>
+              <select id="img-size">
+                <option value="512x512">512×512</option>
+                <option value="768x768">768×768</option>
+                <option value="512x768">512×768</option>
+              </select>
             </div>
-
-            <!-- Image controls — id="image-controls-row" and children preserved -->
-            <div class="image-controls-row" id="image-controls-row">
-              <div class="img-ctrl">
-                <label for="img-size">Size</label>
-                <select id="img-size">
-                  <option value="512x512">512×512</option>
-                  <option value="768x768">768×768</option>
-                  <option value="512x768">512×768</option>
-                </select>
-              </div>
-              <div class="img-ctrl">
-                <label for="img-steps">Steps</label>
-                <input type="range" id="img-steps" min="1" max="12" value="4" />
-                <span class="steps-val" id="img-steps-val">4</span>
-              </div>
-              <div class="img-ctrl">
-                <label for="img-style">Style</label>
-                <select id="img-style">
-                  <option value="default">Default</option>
-                  <option value="photorealistic">Photorealistic</option>
-                  <option value="anime">Anime</option>
-                  <option value="sketch">Sketch</option>
-                </select>
-              </div>
+            <div class="img-ctrl">
+              <label for="img-steps">Steps</label>
+              <input type="range" id="img-steps" min="1" max="12" value="4" />
+              <span class="steps-val" id="img-steps-val">4</span>
             </div>
-
-            <div class="llm-input-footer">
-              <!-- Mode pill — id="mode-pill", id="mode-chat-btn", id="mode-image-btn" preserved -->
-              <div class="mode-pill" id="mode-pill" style="flex-shrink: 0">
-                <button
-                  type="button"
-                  class="mode-btn active-chat"
-                  id="mode-chat-btn"
-                >
-                  💬 Chat
-                </button>
-                <button type="button" class="mode-btn" id="mode-image-btn">
-                  🎨 Image
-                </button>
-              </div>
-              <!-- Model selector — id="model-select" preserved -->
-              <div class="model-pill" style="flex-shrink: 0">
-                <div class="model-status-dot"></div>
-                <select
-                  id="model-select"
-                  style="
-                    border: none;
-                    background: transparent;
-                    font-size: 12px;
-                    font-weight: 600;
-                    color: var(--llm-text-muted);
-                    cursor: pointer;
-                    outline: none;
-                    max-width: 110px;
-                  "
-                >
-                  <option value="gemma4-e4b">Gemma3 E4B</option>
-                  <option value="gemma4-26b-mlx">Gemma3 E26</option>
-                  <option value="gemma4-31b-mlx">Gemma3 E31</option>
-                  <option value="qwen3.5">Qwen 3.5</option>
-                  <option value="deepseek-v4">DeepSeek V4</option>
-                </select>
-              </div>
-              <!-- Deep think toggle — id="deep-think-toggle" preserved -->
-              <label
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 5px;
-                  font-size: 11px;
-                  font-weight: 600;
-                  color: var(--llm-text-muted);
-                  cursor: pointer;
-                  flex-shrink: 0;
-                "
-                title="Enable extended reasoning"
-              >
-                <input
-                  type="checkbox"
-                  id="deep-think-toggle"
-                  style="accent-color: var(--llm-accent-solid)"
-                />
-                Deep Think
-              </label>
-              <span
-                style="
-                  margin-left: auto;
-                  font-size: 10px;
-                  color: var(--llm-text-muted);
-                  flex-shrink: 0;
-                "
-                >⌘↵ send</span
-              >
+            <div class="img-ctrl">
+              <label for="img-style">Style</label>
+              <select id="img-style">
+                <option value="default">Default</option>
+                <option value="photorealistic">Photorealistic</option>
+                <option value="anime">Anime</option>
+                <option value="sketch">Sketch</option>
+              </select>
             </div>
           </div>
         </form>
+        <p class="text-center text-[10px] text-gray-500 mt-4">
+          Local AI Interface • Intelligent Memory Active
+        </p>
       </footer>
     </div>
-    <!-- /.llm-main -->
 
     <!-- Settings Modal -->
     <div
@@ -1914,11 +1256,10 @@
       class="fixed inset-0 z-[60] flex items-center justify-center modal-overlay hidden-modal"
     >
       <div
-        class="modal-content w-full max-w-2xl max-h-[80vh] m-4 shadow-2xl flex flex-col overflow-hidden"
+        class="modal-content bg-white dark:bg-darkSurface w-full max-w-2xl max-h-[80vh] m-4 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       >
         <div
-          class="p-6 border-b flex justify-between items-center"
-          style="border-color: var(--llm-panel-border)"
+          class="p-6 border-b border-gray-100 dark:border-[#3c3d40] flex justify-between items-center"
         >
           <div class="flex items-center gap-6">
             <button
@@ -1929,23 +1270,20 @@
             </button>
             <button
               id="tab-prompt"
-              class="text-lg font-bold pb-1 transition-all"
-              style="color: var(--llm-text-muted)"
+              class="text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all"
             >
               Prompt
             </button>
             <button
               id="tab-memory"
-              class="text-lg font-bold pb-1 transition-all"
-              style="color: var(--llm-text-muted)"
+              class="text-lg font-bold text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 pb-1 transition-all"
             >
               Memory
             </button>
           </div>
           <button
             id="close-settings-btn"
-            class="transition-colors"
-            style="color: var(--llm-text-muted)"
+            class="text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -1966,30 +1304,23 @@
 
         <div id="vitals-pane" class="p-6 flex-1 overflow-y-auto">
           <div
-            class="flex gap-2 mb-6 border-b pb-3"
-            style="border-color: var(--llm-panel-border)"
+            class="flex gap-2 mb-6 border-b border-gray-100 dark:border-[#3c3d40] pb-3"
           >
             <button
               id="vitals-subtab-system"
-              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
-              style="
-                background: var(--llm-panel);
-                color: var(--llm-accent-solid);
-              "
+              class="px-3 py-1 text-xs font-medium rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 transition-colors"
             >
               System
             </button>
             <button
               id="vitals-subtab-agent"
-              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
-              style="color: var(--llm-text-muted)"
+              class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             >
               Agent
             </button>
             <button
               id="vitals-subtab-pipeline"
-              class="px-3 py-1 text-xs font-medium rounded-md transition-colors"
-              style="color: var(--llm-text-muted)"
+              class="px-3 py-1 text-xs font-medium rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
             >
               Pipeline
             </button>
@@ -1997,45 +1328,47 @@
 
           <div id="vitals-subpane-system">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Process RAM
                 </div>
                 <div
                   id="vital-ram"
-                  class="text-2xl font-mono font-bold"
-                  style="color: var(--llm-accent-solid)"
+                  class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400"
                 >
                   --
                 </div>
               </div>
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   GPU VRAM
                 </div>
                 <div
                   id="vital-vram"
-                  class="text-2xl font-mono font-bold text-purple-600"
+                  class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400"
                 >
                   --
                 </div>
               </div>
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Avg Latency
                 </div>
                 <div
                   id="vital-latency"
-                  class="text-2xl font-mono font-bold text-green-600"
+                  class="text-2xl font-mono font-bold text-green-600 dark:text-green-400"
                 >
                   --
                 </div>
@@ -2043,30 +1376,32 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   CPU Usage
                 </div>
                 <div
                   id="vital-cpu"
-                  class="text-xl font-mono font-bold text-orange-600"
+                  class="text-xl font-mono font-bold text-orange-600 dark:text-orange-400"
                 >
                   --
                 </div>
               </div>
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Thermal Pressure
                 </div>
                 <div
                   id="vital-thermal"
-                  class="text-xl font-mono font-bold text-red-600"
+                  class="text-xl font-mono font-bold text-red-600 dark:text-red-400"
                 >
                   --
                 </div>
@@ -2099,17 +1434,14 @@
                 id="vital-models"
                 class="flex flex-wrap gap-2 text-xs font-mono"
               >
-                <span style="color: var(--llm-text-muted)" class="italic"
-                  >None currently loaded</span
-                >
+                <span class="text-gray-500 italic">None currently loaded</span>
               </div>
             </div>
 
             <div>
               <div class="flex justify-between items-center mb-3">
                 <h3
-                  class="text-sm font-semibold flex items-center gap-2"
-                  style="color: var(--llm-text)"
+                  class="text-sm font-semibold flex items-center gap-2 text-gray-700 dark:text-gray-200"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -2144,20 +1476,23 @@
 
           <div id="vitals-subpane-agent" class="hidden">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Success Rate
                 </div>
                 <div
                   id="agent-success-rate"
-                  class="text-2xl font-mono font-bold text-green-600"
+                  class="text-2xl font-mono font-bold text-green-600 dark:text-green-400"
                 >
                   --
                 </div>
-                <div class="w-full bg-gray-200 rounded-full h-1.5 mt-2">
+                <div
+                  class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5 mt-2"
+                >
                   <div
                     id="agent-success-bar"
                     class="bg-green-500 h-1.5 rounded-full"
@@ -2165,17 +1500,17 @@
                   ></div>
                 </div>
               </div>
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Total Tasks
                 </div>
                 <div
                   id="agent-total-tasks"
-                  class="text-2xl font-mono font-bold"
-                  style="color: var(--llm-accent-solid)"
+                  class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400"
                 >
                   --
                 </div>
@@ -2188,9 +1523,7 @@
                 id="agent-top-tools"
                 class="grid grid-cols-2 gap-2 text-xs font-mono"
               >
-                <div style="color: var(--llm-text-muted)" class="italic">
-                  No tool usage recorded
-                </div>
+                <div class="text-gray-500 italic">No tool usage recorded</div>
               </div>
             </div>
 
@@ -2200,11 +1533,7 @@
                 <table class="w-full text-left text-[10px] font-mono">
                   <thead>
                     <tr
-                      class="border-b"
-                      style="
-                        color: var(--llm-text-muted);
-                        border-color: var(--llm-panel-border);
-                      "
+                      class="text-gray-500 border-b border-gray-100 dark:border-[#3c3d40]"
                     >
                       <th class="pb-2 font-medium">Status</th>
                       <th class="pb-2 font-medium">Duration</th>
@@ -2213,14 +1542,12 @@
                   </thead>
                   <tbody
                     id="agent-recent-tasks"
-                    class="divide-y"
-                    style="border-color: var(--llm-panel-border)"
+                    class="divide-y divide-gray-50 dark:divide-[#3c3d40]"
                   >
                     <tr>
                       <td
                         colspan="3"
-                        class="py-4 text-center italic"
-                        style="color: var(--llm-text-muted)"
+                        class="py-4 text-center text-gray-500 italic"
                       >
                         No recent tasks
                       </td>
@@ -2233,31 +1560,32 @@
 
           <div id="vitals-subpane-pipeline" class="hidden">
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Total Documents
                 </div>
                 <div
                   id="pipeline-doc-count"
-                  class="text-2xl font-mono font-bold"
-                  style="color: var(--llm-accent-solid)"
+                  class="text-2xl font-mono font-bold text-blue-600 dark:text-blue-400"
                 >
                   --
                 </div>
               </div>
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Total Chunks
                 </div>
                 <div
                   id="pipeline-chunk-count"
-                  class="text-2xl font-mono font-bold text-purple-600"
+                  class="text-2xl font-mono font-bold text-purple-600 dark:text-purple-400"
                 >
                   --
                 </div>
@@ -2265,91 +1593,71 @@
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Avg Ingestion
                 </div>
                 <div
                   id="pipeline-ingestion-avg"
-                  class="text-2xl font-mono font-bold text-green-600"
+                  class="text-2xl font-mono font-bold text-green-600 dark:text-green-400"
                 >
                   --
                 </div>
-                <div class="text-[10px]" style="color: var(--llm-text-muted)">
-                  seconds / page
-                </div>
+                <div class="text-[10px] text-gray-500">seconds / page</div>
               </div>
-              <div class="p-4 rounded-2xl" style="background: var(--llm-panel)">
+              <div
+                class="p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-2xl"
+              >
                 <div
-                  class="text-xs uppercase tracking-wider mb-1"
-                  style="color: var(--llm-text-muted)"
+                  class="text-xs text-gray-500 uppercase tracking-wider mb-1"
                 >
                   Embedding Latency
                 </div>
                 <div
                   id="pipeline-embed-latency"
-                  class="text-2xl font-mono font-bold text-orange-600"
+                  class="text-2xl font-mono font-bold text-orange-600 dark:text-orange-400"
                 >
                   --
                 </div>
-                <div class="text-[10px]" style="color: var(--llm-text-muted)">
-                  ms / chunk
-                </div>
+                <div class="text-[10px] text-gray-500">ms / chunk</div>
               </div>
             </div>
           </div>
         </div>
 
         <div id="system-prompt-pane" class="p-6 flex-1 overflow-y-auto hidden">
-          <p class="text-sm mb-4" style="color: var(--llm-text-muted)">
+          <p class="text-sm text-gray-500 mb-4">
             This is the core instruction set (System Prompt) that guides Gemma's
             behavior and tool usage.
           </p>
           <textarea
             id="system-prompt-display"
             readonly
-            class="w-full h-96 p-4 rounded-xl font-mono text-sm focus:outline-none resize-none"
-            style="
-              background: var(--llm-panel);
-              border: 1px solid var(--llm-panel-border);
-              color: var(--llm-text-muted);
-            "
+            class="w-full h-96 p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-xl font-mono text-sm text-gray-600 dark:text-gray-400 focus:outline-none resize-none"
           ></textarea>
         </div>
 
         <div id="memory-pane" class="p-6 flex-1 overflow-y-auto hidden">
-          <p class="text-sm mb-4" style="color: var(--llm-text-muted)">
+          <p class="text-sm text-gray-500 mb-4">
             Gemma uses this file to remember your preferences and context. You
             can manually edit it below.
           </p>
           <textarea
             id="memory-editor"
-            class="w-full h-96 p-4 rounded-xl font-mono text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none resize-none"
-            style="
-              background: var(--llm-panel);
-              border: 1px solid var(--llm-panel-border);
-              color: var(--llm-text);
-            "
+            class="w-full h-96 p-4 bg-gray-50 dark:bg-[#0e0e11] border border-gray-200 dark:border-[#3c3d40] rounded-xl font-mono text-sm focus:ring-1 focus:ring-blue-500 focus:outline-none text-gray-800 dark:text-gray-200 resize-none"
           ></textarea>
         </div>
         <div
-          class="p-6 border-t flex justify-between items-center gap-3"
-          style="
-            border-color: var(--llm-panel-border);
-            background: var(--llm-panel);
-          "
+          class="p-6 border-t border-gray-100 dark:border-[#3c3d40] flex justify-between items-center gap-3 bg-gray-50/50 dark:bg-[#0e0e11]/30"
         >
           <div id="restart-container" class="flex items-center gap-3">
             <button
               id="restart-backend-btn"
-              class="flex items-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all hover:border-red-400 hover:text-red-500"
-              style="
-                border-color: var(--llm-panel-border);
-                color: var(--llm-text-muted);
-              "
+              class="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 dark:border-[#3c3d40] text-sm font-medium text-gray-600 dark:text-gray-300 hover:border-red-400 hover:text-red-500 dark:hover:text-red-400 transition-all"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -2380,8 +1688,7 @@
             >
             <button
               id="save-memory-btn"
-              class="px-6 py-2 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg"
-              style="background: var(--llm-accent-solid); color: white"
+              class="bg-gray-900 dark:bg-white text-white dark:text-black px-6 py-2 rounded-xl font-semibold hover:opacity-90 transition-all shadow-lg"
             >
               Save Memory
             </button>
@@ -2390,11 +1697,9 @@
       </div>
     </div>
 
-    <!-- Mobile sidebar overlay -->
     <div
       id="sidebar-overlay"
-      class="fixed inset-0 z-40 hidden md:hidden"
-      style="background: rgba(0, 0, 0, 0.5)"
+      class="fixed inset-0 bg-black/50 z-40 hidden md:hidden"
     ></div>
 
     <!-- Context Menu -->
@@ -2434,9 +1739,7 @@
         </svg>
         Rename
       </div>
-      <div
-        style="height: 1px; background: var(--llm-panel-border); margin: 4px 0"
-      ></div>
+      <div class="h-[1px] bg-gray-100 dark:bg-gray-800 my-1"></div>
       <div
         class="context-menu-item danger"
         onclick="handleContextAction('delete')"
@@ -2466,30 +1769,22 @@
       class="fixed inset-0 z-[60] flex items-center justify-center modal-overlay hidden-modal"
     >
       <div
-        class="modal-content w-full max-w-4xl max-h-[85vh] m-4 shadow-2xl flex flex-col overflow-hidden"
+        class="modal-content bg-white dark:bg-darkSurface w-full max-w-4xl max-h-[85vh] m-4 rounded-2xl shadow-2xl flex flex-col overflow-hidden"
       >
         <div
-          class="p-6 border-b flex items-center justify-between sticky top-0 z-10"
-          style="
-            border-color: var(--llm-panel-border);
-            background: var(--llm-panel);
-          "
+          class="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-white dark:bg-darkSurface sticky top-0 z-10"
         >
           <div class="flex items-center gap-4 flex-1">
-            <h2 class="text-xl font-bold" style="color: var(--llm-text)">
-              All Chats
-            </h2>
+            <h2 class="text-xl font-bold dark:text-white">All Chats</h2>
             <div class="relative flex-1 max-w-md">
               <input
                 type="text"
                 id="chat-search"
                 placeholder="Search chats..."
-                class="w-full pl-9 pr-4 py-2 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500"
-                style="background: var(--llm-panel); color: var(--llm-text)"
+                class="w-full pl-9 pr-4 py-2 bg-gray-50 dark:bg-gray-800 border-none rounded-xl text-sm focus:ring-2 focus:ring-blue-500 dark:text-white"
               />
               <svg
-                class="absolute left-3 top-2.5"
-                style="color: var(--llm-text-muted)"
+                class="absolute left-3 top-2.5 text-gray-400"
                 xmlns="http://www.w3.org/2000/svg"
                 width="16"
                 height="16"
@@ -2509,7 +1804,7 @@
             <button
               id="bulk-delete-btn"
               onclick="bulkDelete()"
-              class="hidden px-4 py-2 bg-red-50 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-100 transition-colors flex items-center gap-2"
+              class="hidden px-4 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm font-semibold rounded-xl hover:bg-red-100 transition-colors flex items-center gap-2"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -2530,8 +1825,7 @@
             </button>
             <button
               onclick="closeAllChats()"
-              class="p-2 rounded-full transition-colors"
-              style="color: var(--llm-text-muted)"
+              class="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors dark:text-gray-400"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -2557,7 +1851,6 @@
       </div>
     </div>
 
-    <!-- Lightbox -->
     <div class="lightbox-overlay" id="lightbox-overlay">
       <div class="lightbox-inner" id="lightbox-inner">
         <div class="lightbox-img-wrap">
@@ -2596,6 +1889,7 @@
         </div>
       </div>
     </div>
+
     <script>
       const chatBox = document.getElementById("chat-box");
       const chatForm = document.getElementById("chat-form");
@@ -2603,6 +1897,9 @@
       const typingIndicator = document.getElementById("typing");
       const sendBtn = document.getElementById("send-btn");
       const themeToggle = document.getElementById("theme-toggle");
+      const themeIconContainer = document.getElementById(
+        "theme-icon-container"
+      );
       const fileInput = document.getElementById("file-input");
       const attachBtn = document.getElementById("attach-btn");
       const attachmentPreview = document.getElementById("attachment-preview");
@@ -2646,6 +1943,8 @@
           imageBtn.className = "mode-btn";
           controls.classList.remove("visible");
           userInput.placeholder = "Ask anything...";
+          sendBtn.style.background = "";
+          sendBtn.style.color = "";
           document.getElementById("warmup-banner").classList.remove("visible");
         }
       }
@@ -2839,15 +2138,18 @@
             signal: AbortSignal.timeout(4000),
           });
           const { online } = await r.json();
-          statusDot.style.background = online ? "#22c55e" : "#ef4444";
+          statusDot.className = `w-2 h-2 rounded-full flex-shrink-0 ${online ? "bg-green-500" : "bg-red-500"}`;
           statusLabel.textContent = online
             ? "backend online"
             : "backend offline";
-          statusLabel.style.color = online ? "#22c55e" : "#ef4444";
+          statusLabel.className = online
+            ? "text-green-600 dark:text-green-400"
+            : "text-red-500";
         } catch {
-          statusDot.style.background = "#eab308";
+          statusDot.className =
+            "w-2 h-2 rounded-full flex-shrink-0 bg-yellow-400";
           statusLabel.textContent = "proxy unreachable";
-          statusLabel.style.color = "#eab308";
+          statusLabel.className = "text-yellow-500";
         }
       }
       updateServerStatus();
@@ -2934,73 +2236,6 @@
         hideContextMenu();
       }
 
-      // --- Image Gallery ---
-      function showImageGallery() {
-        const entries = Array.from(_imageStore.entries());
-        let modal = document.getElementById("image-gallery-modal");
-        if (!modal) {
-          modal = document.createElement("div");
-          modal.id = "image-gallery-modal";
-          modal.style.cssText =
-            "position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.88);display:flex;flex-direction:column;overflow:hidden;";
-          document.body.appendChild(modal);
-        }
-        modal.style.display = "flex";
-
-        const header = document.createElement("div");
-        header.style.cssText =
-          "display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.10);flex-shrink:0;";
-        const title = document.createElement("h2");
-        title.textContent =
-          entries.length === 0
-            ? "Image Gallery — No images yet"
-            : `Image Gallery — ${entries.length} image${entries.length === 1 ? "" : "s"}`;
-        title.style.cssText =
-          "margin:0;font-size:16px;font-weight:700;color:#f0eeff;";
-        const closeBtn = document.createElement("button");
-        closeBtn.textContent = "✕ Close";
-        closeBtn.style.cssText =
-          "background:none;border:1px solid rgba(255,255,255,0.2);color:#9d9abf;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;";
-        closeBtn.addEventListener("click", () => {
-          modal.style.display = "none";
-        });
-        header.appendChild(title);
-        header.appendChild(closeBtn);
-
-        const grid = document.createElement("div");
-        grid.style.cssText =
-          "flex:1;overflow-y:auto;padding:16px 24px;display:flex;flex-wrap:wrap;gap:16px;align-content:flex-start;";
-
-        if (entries.length === 0) {
-          const empty = document.createElement("p");
-          empty.textContent =
-            "No images generated this session. Use Image mode to generate some.";
-          empty.style.cssText = "color:#9d9abf;font-size:14px;padding:20px 0;";
-          grid.appendChild(empty);
-        } else {
-          entries.forEach(([, data]) => {
-            const card = document.createElement("div");
-            card.style.cssText =
-              "background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:12px;overflow:hidden;width:220px;flex-shrink:0;";
-            const img = document.createElement("img");
-            img.src = "data:image/png;base64," + data.image_b64;
-            img.style.cssText = "width:100%;display:block;";
-            img.alt = "Generated image";
-            const caption = document.createElement("div");
-            caption.style.cssText =
-              "padding:8px 10px;font-size:11px;color:#9d9abf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-            caption.textContent = data.prompt || "No prompt";
-            card.appendChild(img);
-            card.appendChild(caption);
-            grid.appendChild(card);
-          });
-        }
-
-        modal.innerHTML = "";
-        modal.appendChild(header);
-        modal.appendChild(grid);
-      }
-
       // --- All Chats Modal Logic ---
       const allChatsModal = document.getElementById("all-chats-modal");
       const allChatsList = document.getElementById("all-chats-list");
@@ -3056,7 +2291,7 @@
                             ${chat.starred ? '<svg class="text-yellow-400 fill-current" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>' : ""}
                         </div>
                         <div class="text-xs text-gray-500 flex items-center gap-3">
-                            <span>${chat.model || "LocalLLM"}</span>
+                            <span>${chat.model || "Gemma 4"}</span>
                             <span>•</span>
                             <span>${formatTimeAgo(chat.timestamp)}</span>
                         </div>
@@ -3120,7 +2355,7 @@
           currentChatId = null;
           chatBox.innerHTML = "";
           chatBox.appendChild(welcomeMessage);
-          chatTitle.textContent = "LocalLLM";
+          chatTitle.textContent = "Gemma 4 Local";
         }
         selectedChatIds.clear();
         saveChats();
@@ -3167,6 +2402,8 @@
         chats.unshift(newChat);
         saveChats();
         loadChat(currentChatId);
+        sidebar.classList.add("closed");
+        sidebarOverlay.classList.add("hidden");
       }
 
       function loadChat(id) {
@@ -3196,7 +2433,7 @@
           currentChatId = null;
           chatBox.innerHTML = "";
           chatBox.appendChild(welcomeMessage);
-          chatTitle.textContent = "LocalLLM";
+          chatTitle.textContent = "Gemma 4 Local";
         }
         saveChats();
       }
@@ -3215,32 +2452,44 @@
           starredSection.classList.add("hidden");
         }
 
-        // Show only the 5 most recent chats; use All Chats for the full list
-        const MAX_SIDEBAR = 5;
-        const visibleChats = chats.slice(0, MAX_SIDEBAR);
-        historyList.innerHTML = visibleChats
+        // Show all other chats in Recents
+        historyList.innerHTML = chats
           .map((chat) => renderChatItem(chat))
           .join("");
-        if (chats.length > MAX_SIDEBAR) {
-          const moreLink = document.createElement("div");
-          moreLink.className = "all-chats-link";
-          moreLink.style.cssText =
-            "margin-top:8px;border:none;padding:6px 10px;";
-          moreLink.textContent = `${chats.length - MAX_SIDEBAR} more in All Chats →`;
-          moreLink.addEventListener("click", showAllChats);
-          historyList.appendChild(moreLink);
-        }
       }
 
       function renderChatItem(chat) {
         return `
-    <div onclick="loadChat('${chat.id}')"
-         oncontextmenu="showContextMenu(event,'${chat.id}')"
-         class="chat-history-item ${currentChatId === chat.id ? "active" : ""}">
-      <div class="item-title">${chat.title}</div>
-      <div class="item-meta">${formatTimeAgo(chat.timestamp)}</div>
-    </div>
-  `;
+                <div onclick="loadChat('${chat.id}')" 
+                     oncontextmenu="showContextMenu(event, '${chat.id}')"
+                     class="group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all ${currentChatId === chat.id ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400" : "hover:bg-gray-100 dark:hover:bg-gray-800"}">
+                    <div class="flex items-center gap-2 overflow-hidden flex-1">
+                        <div class="flex-shrink-0">
+                            ${
+                              chat.starred
+                                ? `<svg class="text-yellow-400 fill-current" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`
+                                : `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>`
+                            }
+                        </div>
+                        <span class="text-xs truncate font-medium">${chat.title}</span>
+                    </div>
+                    <button onclick="showContextMenu(event, '${chat.id}')" class="opacity-0 group-hover:opacity-100 p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-gray-400 hover:text-blue-500"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+                    </button>
+                </div>
+            `;
+      }
+
+      // --- All Chats Modal Logic ---
+      function showAllChats() {
+        allChatsModal.classList.remove("hidden-modal");
+        renderAllChats();
+        selectedChatIds.clear();
+        updateBulkDeleteUI();
+      }
+
+      function closeAllChats() {
+        allChatsModal.classList.add("hidden-modal");
       }
 
       // Theme Icons
@@ -3249,6 +2498,10 @@
 
       function updateThemeUI() {
         const isDark = document.documentElement.classList.contains("dark");
+        themeIconContainer.innerHTML = isDark ? sunIcon : moonIcon;
+        document.getElementById("theme-text").textContent = isDark
+          ? "Switch to Light"
+          : "Switch to Dark";
         const hljsTheme = isDark ? "github-dark" : "github";
         document.getElementById("hljs-theme").href =
           `https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/${hljsTheme}.min.css`;
@@ -3685,12 +2938,12 @@
         });
 
       mobileMenuBtn.addEventListener("click", () => {
-        sidebar.classList.remove("panel-hidden");
+        sidebar.classList.remove("closed");
         sidebarOverlay.classList.remove("hidden");
       });
 
       sidebarOverlay.addEventListener("click", () => {
-        sidebar.classList.add("panel-hidden");
+        sidebar.classList.add("closed");
         sidebarOverlay.classList.add("hidden");
       });
 
@@ -3773,7 +3026,7 @@
           displayContent += `<div class="text-gray-900 dark:text-white whitespace-pre-wrap">${textVal}</div>`;
         } else {
           const renderedContent = marked.parse(textVal);
-          displayContent = `<p class="text-[10px] text-blue-600 dark:text-blue-400 font-bold mb-2 uppercase tracking-widest">LocalLLM</p><div class="prose dark:prose-invert max-w-none text-gray-800 dark:text-gray-200 leading-relaxed">${renderedContent}</div>`;
+          displayContent = `<p class="text-[10px] text-blue-600 dark:text-blue-400 font-bold mb-2 uppercase tracking-widest">Gemma</p><div class="prose dark:prose-invert max-w-none text-gray-800 dark:text-gray-200 leading-relaxed">${renderedContent}</div>`;
         }
         container.innerHTML = displayContent;
 
@@ -4248,7 +3501,7 @@
 
       renderHistory();
       if (chats.length > 0) loadChat(chats[0].id);
-      else sidebar.classList.add("panel-hidden");
+      else sidebar.classList.add("closed");
 
       // ── Agent UI Helpers ────────────────────────────────────────────────
 
@@ -4304,7 +3557,7 @@
         icon.textContent = `⚙ ${stepCount} steps · ${elapsed}`;
         const chevron = document.createElement("span");
         chevron.textContent = expanded ? " ▲ collapse" : " ▼ expand";
-        chevron.style.color = "var(--llm-accent-solid)";
+        chevron.style.color = "var(--color-accent)";
         summary.appendChild(icon);
         summary.appendChild(chevron);
       }
@@ -4757,67 +4010,6 @@
           userInput.focus();
         });
       // ── end image mode wiring ─────────────────────────────────────────
-
-      // ── Rail sidebar toggle ──────────────────────────────────────────────
-      (function () {
-        const railChatBtn = document.getElementById("rail-chat-btn");
-        const sidebarPanel = document.getElementById("sidebar");
-
-        function openSidebar() {
-          sidebarPanel.classList.remove("panel-hidden");
-          railChatBtn.classList.add("active");
-        }
-        function closeSidebar() {
-          sidebarPanel.classList.add("panel-hidden");
-          railChatBtn.classList.remove("active");
-        }
-        function toggleSidebar() {
-          if (sidebarPanel.classList.contains("panel-hidden")) openSidebar();
-          else closeSidebar();
-        }
-        railChatBtn.addEventListener("click", toggleSidebar);
-
-        // New Chat rail button
-        const railNewChatBtn = document.getElementById("rail-new-chat-btn");
-        if (railNewChatBtn) {
-          railNewChatBtn.addEventListener("click", () => {
-            if (typeof createNewChat === "function") createNewChat();
-          });
-        }
-
-        // All Chats rail button
-        const railAllChatsBtn = document.getElementById("rail-allchats-btn");
-        if (railAllChatsBtn) {
-          railAllChatsBtn.addEventListener("click", () => {
-            if (typeof showAllChats === "function") showAllChats();
-          });
-        }
-
-        // Rail image button opens image gallery
-        const railImageBtn = document.getElementById("rail-image-btn");
-        if (railImageBtn) {
-          railImageBtn.addEventListener("click", () => {
-            if (typeof showImageGallery === "function") showImageGallery();
-          });
-        }
-
-        // Rail tasks button toggles scheduled tasks panel
-        const railTasksBtn = document.getElementById("rail-tasks-btn");
-        if (railTasksBtn) {
-          railTasksBtn.addEventListener("click", () => {
-            openSidebar();
-            if (typeof toggleScheduledPanel === "function")
-              toggleScheduledPanel();
-          });
-        }
-
-        // Time-based welcome greeting
-        const hour = new Date().getHours();
-        const period =
-          hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
-        const greetEl = document.getElementById("welcome-greeting");
-        if (greetEl) greetEl.textContent = `Good ${period}, Omar`;
-      })();
     </script>
   </body>
 </html>
