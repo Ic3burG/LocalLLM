@@ -41,15 +41,25 @@ def mock_deps():
         return_value=FAKE_RESPONSE
     )
 
-    with patch.dict("sys.modules", stubs):
-        # Import/Reload modules that depend on these stubs
-        import gemma_bridge
+    import gemma_bridge as _gb
+    import agent as _ag
 
-        importlib.reload(gemma_bridge)
-        import agent
+    # Snapshot module state before reload so other test files see consistent state
+    _gb_snapshot = dict(_gb.__dict__)
+    _ag_snapshot = dict(_ag.__dict__)
 
-        importlib.reload(agent)
-        yield gemma_bridge, agent
+    try:
+        with patch.dict("sys.modules", stubs):
+            importlib.reload(_gb)
+            importlib.reload(_ag)
+            yield _gb, _ag
+    finally:
+        # Restore module-level state so module-level imports in other files
+        # (sse_queues, psutil, etc.) remain valid after this fixture exits.
+        _gb.__dict__.clear()
+        _gb.__dict__.update(_gb_snapshot)
+        _ag.__dict__.clear()
+        _ag.__dict__.update(_ag_snapshot)
 
 
 @pytest.mark.asyncio

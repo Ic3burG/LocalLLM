@@ -2,6 +2,9 @@ pdfplumber
 sentence-transformers
 numpy
 python-multipart
+fastapi
+uvicorn
+httpx
 apscheduler
 mlx-vlm; sys_platform == "darwin"
 Pillow
