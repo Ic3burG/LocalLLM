@@ -291,12 +291,10 @@ async def test_react_loop_internal_records_telemetry(mock_deps):
     _, agent = mock_deps
     responses = iter(["TOOL: list_crons()", "DONE: all done"])
 
-    # Mock telemetry manager methods
-    agent.telemetry.record_start = MagicMock()
-    agent.telemetry.record_tool_use = MagicMock()
-    agent.telemetry.record_complete = MagicMock()
-
     with (
+        patch.object(agent.telemetry, "record_start") as mock_start,
+        patch.object(agent.telemetry, "record_tool_use") as mock_tool_use,
+        patch.object(agent.telemetry, "record_complete") as mock_complete,
         patch.object(
             agent,
             "run_inference",
@@ -311,11 +309,11 @@ async def test_react_loop_internal_records_telemetry(mock_deps):
     ):
         await agent._react_loop_internal([{"role": "user", "content": "do something"}])
 
-    agent.telemetry.record_start.assert_called_once()
-    agent.telemetry.record_tool_use.assert_called_with("list_crons")
     from unittest.mock import ANY
 
-    agent.telemetry.record_complete.assert_called_with(ANY, "success")
+    mock_start.assert_called_once()
+    mock_tool_use.assert_called_with("list_crons")
+    mock_complete.assert_called_with(ANY, "success")
 
 
 @pytest.mark.asyncio
