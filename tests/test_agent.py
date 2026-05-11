@@ -20,6 +20,8 @@ def mock_deps():
         "fastapi.middleware": MagicMock(),
         "fastapi.middleware.cors": MagicMock(),
         "litert_lm": MagicMock(),
+        "mlx": MagicMock(),
+        "mlx.core": MagicMock(),
         "mlx_vlm": MagicMock(),
         "uvicorn": MagicMock(),
         "pdf_pipeline": MagicMock(),
@@ -41,8 +43,8 @@ def mock_deps():
         return_value=FAKE_RESPONSE
     )
 
-    import gemma_bridge as _gb
     import agent as _ag
+    import gemma_bridge as _gb
 
     # Snapshot module state before reload so other test files see consistent state
     _gb_snapshot = dict(_gb.__dict__)

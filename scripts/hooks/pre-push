@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Mirrors the CI pipeline exactly — if this passes locally, CI will pass.
+set -e
+
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$REPO_ROOT"
+
+VENV_PYTHON=".venv/bin/python"
+
+echo "▶ ruff check..."
+ruff check .
+
+echo "▶ ruff format --check..."
+ruff format --check .
+
+echo "▶ prettier --check..."
+npx prettier --check .
+
+echo "▶ pytest..."
+"$VENV_PYTHON" -m pytest -q -m "not needs_gpu" --ignore=tests/contracts/test_mlx_contract.py
+
+echo "✅ All checks passed."
