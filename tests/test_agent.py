@@ -1,5 +1,5 @@
 import importlib
-import importlib.util
+import importlib.machinery
 import json
 import subprocess
 import types
@@ -14,7 +14,7 @@ FAKE_RESPONSE = {"choices": [{"message": {"content": "hello"}}]}
 def _make_module(name: str) -> types.ModuleType:
     """Return a ModuleType with a valid __spec__ so find_spec() doesn't raise."""
     mod = types.ModuleType(name)
-    mod.__spec__ = importlib.util.spec_from_loader(name, loader=None)
+    mod.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
     return mod
 
 

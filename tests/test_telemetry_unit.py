@@ -1,12 +1,21 @@
 import asyncio
+import importlib.machinery
 
 # Mocking parts of inference_engine that depend on MLX
 import sys
+import types
 import unittest
 from unittest.mock import MagicMock, patch
 
-sys.modules["mlx"] = MagicMock()
-sys.modules["mlx.core"] = MagicMock()
+
+def _make_module(name: str) -> types.ModuleType:
+    mod = types.ModuleType(name)
+    mod.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
+    return mod
+
+
+sys.modules["mlx"] = _make_module("mlx")
+sys.modules["mlx.core"] = _make_module("mlx.core")
 sys.modules["mlx_vlm"] = MagicMock()
 sys.modules["mlx_lm"] = MagicMock()
 
