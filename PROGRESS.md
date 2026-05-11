@@ -791,11 +791,87 @@ Removed the stale Llama 3.2, Gemma3 27B, and Gemma3 12B entries.
 
 ---
 
-## 📈 Current Status (as of May 10, 2026)
+---
+
+## ✅ First Green CI Run — May 11, 2026 (Session 9)
+
+Achieved the project's **first ever green CI run** on GitHub Actions by diagnosing and fixing a layered chain of failures across lint, formatting, and test jobs.
+
+### Root Causes Fixed
+
+**1. PROGRESS.md Prettier formatting**
+Markdown tables were compact (no column padding). Fixed with `npx prettier --write PROGRESS.md`.
+
+**2. MLX packages on Linux**
+`mlx-vlm` and `mflux` installed broken native extensions on Linux runners (they require Apple Silicon). Added `; sys_platform == "darwin"` markers. Also added `fastapi`, `uvicorn`, and `httpx` explicitly to `requirements.txt` — they were previously only transitive dependencies of `mlx-vlm` and disappeared when that package was gated.
+
+**3. Telemetry singleton contamination**
+`test_react_loop_internal_records_telemetry` wrote `MagicMock()` directly to `TelemetryManager` singleton attributes with no cleanup, so subsequent tests saw corrupt state. Fixed by switching to `patch.object()` context managers that restore original values on exit.
+
+**4. Module `__dict__` contamination (`mock_deps` fixture)**
+`importlib.reload(_gb)` and `importlib.reload(_ag)` inside `patch.dict` left `gemma_bridge.psutil` pointing to a `MagicMock` and replaced `agent.sse_queues` with a new dict, polluting tests that ran afterward. Fixed with a snapshot/restore pattern:
+
+```python
+_gb_snapshot = dict(_gb.__dict__)
+try:
+    with patch.dict("sys.modules", stubs):
+        importlib.reload(_gb); importlib.reload(_ag); yield _gb, _ag
+finally:
+    _gb.__dict__.clear(); _gb.__dict__.update(_gb_snapshot)
+    _ag.__dict__.clear(); _ag.__dict__.update(_ag_snapshot)
+```
+
+**5. `ValueError: mlx.__spec__ is not set` — session-wide `sys.modules` poisoning (root cause)**
+`test_telemetry_unit.py` set `sys.modules["mlx"] = MagicMock()` at **module level** (executed once at pytest collection time, never cleaned up). `MagicMock().__spec__` raises `AttributeError` rather than returning a value; Python's `importlib.util.find_spec()` catches this and re-raises as `ValueError: mlx.__spec__ is not set`. This poisoned every later test that imported `sentence_transformers` → `transformers` → `is_mlx_available()`.
+
+Fixed by replacing bare `MagicMock()` stubs for `mlx` and `mlx.core` with proper `types.ModuleType` objects carrying an `importlib.machinery.ModuleSpec`:
+
+```python
+def _make_module(name: str) -> types.ModuleType:
+    mod = types.ModuleType(name)
+    mod.__spec__ = importlib.machinery.ModuleSpec(name, loader=None)
+    return mod
+```
+
+Applied the same fix to `test_agent.py`'s `mock_deps` fixture for defense-in-depth.
+
+**6. Additional ruff/prettier issues**
+
+- Ruff `I001` (import order): `import gemma_bridge` before `import agent` — swapped.
+- `ruff format` trailing whitespace in `agent_utils.py` and `tests/test_deep_think_logic.py`.
+- `agent_utils.py`: hardcoded `AUDIT_LOG_PATH = "/Users/ojdavis/Claude Code/Gemma4/audit.log"` (wrong directory, always broken on CI) → replaced with `os.environ.get("AUDIT_LOG_PATH", str(Path(__file__).parent / "audit.log"))`.
+- `agent_utils.py`: `_google_search` trailing newline in results list.
+- `tests/test_deep_think_logic.py`: event count assertion too strict — now filters by `"message" in e` key.
+
+### Pre-Push Hook Setup
+
+Moved hook source into `scripts/hooks/pre-push` (committed to the repo as the source of truth) with `scripts/install-hooks.sh` to install it into `.git/hooks/`. The hook mirrors CI exactly: `ruff check`, `ruff format --check`, `prettier --check`, `pytest`.
+
+### Files Changed
+
+| File                             | Change                                                                           |
+| -------------------------------- | -------------------------------------------------------------------------------- |
+| `requirements.txt`               | Added `; sys_platform == "darwin"` to mlx-vlm/mflux; added fastapi/uvicorn/httpx |
+| `tests/test_agent.py`            | `_make_module()` stubs for mlx; `patch.object` telemetry; snapshot/restore       |
+| `tests/test_telemetry_unit.py`   | `_make_module()` stubs for mlx/mlx.core replacing bare `MagicMock()`             |
+| `tests/test_deep_think_logic.py` | Filter SSE events by key before asserting count                                  |
+| `agent_utils.py`                 | `AUDIT_LOG_PATH` env var fallback; `_google_search` trailing newline fix         |
+| `scripts/hooks/pre-push`         | **New** — committed hook source mirroring CI                                     |
+| `scripts/install-hooks.sh`       | **New** — installer script for git hooks                                         |
+
+### Outcome
+
+- **lint job**: ✅ green on first attempt after PROGRESS.md and ruff fixes
+- **test job**: ✅ green after all 6 root causes resolved
+- **PR #1** merged to `main` — project now has a fully passing CI baseline
+
+---
+
+## 📈 Current Status (as of May 11, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
 - **Models:** Gemma3 E4B, E26, E31 (all vision-capable via mlx_vlm); Qwen 3.5; DeepSeek V4; FLUX.1-schnell (image generation).
 - **Tools:** 37 registered tools.
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
 - **UI:** Glass/gradient aesthetic; persistent icon rail with New Chat + All Chats buttons; mode/model/deep-think controls at bottom of input area; `--llm-*` CSS token system; **LocalLLM** branding; Welcome screen; all prior features preserved (Deep Thinking, Starred/Recents/All Chats, Image Gallery, Scheduled Tasks, Agent Trace, Tool Approval, Vitals Dashboard).
-- **Integrity:** 115 tests passing; local **Git Hooks** (pre-commit/pre-push) enforced; strict feature integrity mandates established in `GEMINI.md`.
+- **Integrity:** 139 tests passing; local **Git Hooks** (pre-commit/pre-push) enforced; CI green on every merge to `main`.
