@@ -294,7 +294,9 @@ async def _google_search(query: str) -> str:
         results = await loop.run_in_executor(
             None, lambda: DDGS().text(query, max_results=5)
         )
-        lines = [f"{r['title']}\n{r['href']}\n{r.get('body', '')}".rstrip() for r in results]
+        lines = [
+            f"{r['title']}\n{r['href']}\n{r.get('body', '')}".rstrip() for r in results
+        ]
         return "\n\n".join(lines) if lines else "No results found."
     except Exception as e:
         logger.error("google_search failed: %s", e, extra={"query": query})

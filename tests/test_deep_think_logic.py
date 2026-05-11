@@ -43,7 +43,9 @@ async def test_run_deep_thinking_pipeline():
 
         status_events = [e for e in events if "message" in e]
         assert len(status_events) == 3
-        assert status_events[0]["message"] == "Deep Thinking: Exploring 3 reasoning paths…"
+        assert (
+            status_events[0]["message"] == "Deep Thinking: Exploring 3 reasoning paths…"
+        )
         assert status_events[1]["message"] == "Deep Thinking: Critiquing strategies…"
         assert status_events[2]["message"] == "Deep Thinking: Synthesizing final plan…"
 

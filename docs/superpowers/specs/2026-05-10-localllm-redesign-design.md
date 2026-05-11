@@ -11,19 +11,19 @@ Full rewrite of `gemma-web/index.html` with a modern glass-and-gradient aestheti
 
 ## Design Decisions
 
-| Decision | Choice |
-|---|---|
-| Aesthetic | Glass & gradient — frosted semi-transparent panels, backdrop blur |
-| Dark bg | `linear-gradient(160deg, #0f0c29, #1a1040, #1e1535)` — deep purple/indigo |
-| Light bg | `linear-gradient(160deg, #ede9fe, #e0e7ff, #f0f4ff)` — lavender/periwinkle |
-| Panels | `rgba(255,255,255,0.06)` dark / `rgba(255,255,255,0.65)` light + `backdrop-filter: blur(12px)` |
-| Sidebar | Icon rail (~56px, always visible) + overlay panel (240px) that opens on click |
-| Accent | Cyan→Sky `linear-gradient(135deg, #06b6d4, #0ea5e9)` |
-| Text (dark) | `#f0eeff` primary, `#9d9abf` muted |
-| Text (light) | `#1e1b4b` primary, `#6d6a8a` muted |
-| Status colors | `#22c55e` green, `#ef4444` red, `#f59e0b` amber — unchanged |
-| Image gen accent | `linear-gradient(135deg, #7c3aed, #6366f1)` — violet, unchanged |
-| Branding | "LocalLLM" everywhere; page `<title>` = "LocalLLM"; rail logo = "L" |
+| Decision         | Choice                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------- |
+| Aesthetic        | Glass & gradient — frosted semi-transparent panels, backdrop blur                              |
+| Dark bg          | `linear-gradient(160deg, #0f0c29, #1a1040, #1e1535)` — deep purple/indigo                      |
+| Light bg         | `linear-gradient(160deg, #ede9fe, #e0e7ff, #f0f4ff)` — lavender/periwinkle                     |
+| Panels           | `rgba(255,255,255,0.06)` dark / `rgba(255,255,255,0.65)` light + `backdrop-filter: blur(12px)` |
+| Sidebar          | Icon rail (~56px, always visible) + overlay panel (240px) that opens on click                  |
+| Accent           | Cyan→Sky `linear-gradient(135deg, #06b6d4, #0ea5e9)`                                           |
+| Text (dark)      | `#f0eeff` primary, `#9d9abf` muted                                                             |
+| Text (light)     | `#1e1b4b` primary, `#6d6a8a` muted                                                             |
+| Status colors    | `#22c55e` green, `#ef4444` red, `#f59e0b` amber — unchanged                                    |
+| Image gen accent | `linear-gradient(135deg, #7c3aed, #6366f1)` — violet, unchanged                                |
+| Branding         | "LocalLLM" everywhere; page `<title>` = "LocalLLM"; rail logo = "L"                            |
 
 ---
 
@@ -34,23 +34,23 @@ Replace the existing `--color-*` token set with a new set. Light values in `:roo
 ```css
 :root {
   --llm-bg: linear-gradient(160deg, #ede9fe 0%, #e0e7ff 50%, #f0f4ff 100%);
-  --llm-panel: rgba(255,255,255,0.65);
-  --llm-panel-border: rgba(139,92,246,0.13);
+  --llm-panel: rgba(255, 255, 255, 0.65);
+  --llm-panel-border: rgba(139, 92, 246, 0.13);
   --llm-blur: blur(12px);
   --llm-text: #1e1b4b;
   --llm-text-muted: #6d6a8a;
-  --llm-shadow: 0 4px 24px rgba(139,92,246,0.1);
+  --llm-shadow: 0 4px 24px rgba(139, 92, 246, 0.1);
   --llm-accent: linear-gradient(135deg, #06b6d4, #0ea5e9);
   --llm-accent-solid: #06b6d4;
-  --llm-accent-glow: rgba(6,182,212,0.35);
+  --llm-accent-glow: rgba(6, 182, 212, 0.35);
 }
 html.dark {
   --llm-bg: linear-gradient(160deg, #0f0c29 0%, #1a1040 45%, #1e1535 100%);
-  --llm-panel: rgba(255,255,255,0.06);
-  --llm-panel-border: rgba(255,255,255,0.1);
+  --llm-panel: rgba(255, 255, 255, 0.06);
+  --llm-panel-border: rgba(255, 255, 255, 0.1);
   --llm-text: #f0eeff;
   --llm-text-muted: #9d9abf;
-  --llm-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  --llm-shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
 }
 ```
 
@@ -85,16 +85,16 @@ The old `--color-bg`, `--color-surface`, `--color-border`, `--color-text`, `--co
 
 Always visible. Contains:
 
-| Slot | Element | Behavior |
-|---|---|---|
-| Top | Logo mark "L" | Cyan gradient box, 32×32, no action |
-| | Chat icon | Toggles sidebar panel open/closed; `.active` when panel open |
-| | Image gen icon | Switches to image mode (same as existing mode pill) |
-| | Scheduled tasks icon | Toggles scheduled tasks panel in sidebar |
-| | Divider | Visual separator |
-| | Settings icon | Opens settings modal |
-| Bottom | Theme toggle | Mini pill toggle, switches `html.dark` class |
-| | Avatar initials | Shows first letter of a future user profile; no action for now |
+| Slot   | Element              | Behavior                                                       |
+| ------ | -------------------- | -------------------------------------------------------------- |
+| Top    | Logo mark "L"        | Cyan gradient box, 32×32, no action                            |
+|        | Chat icon            | Toggles sidebar panel open/closed; `.active` when panel open   |
+|        | Image gen icon       | Switches to image mode (same as existing mode pill)            |
+|        | Scheduled tasks icon | Toggles scheduled tasks panel in sidebar                       |
+|        | Divider              | Visual separator                                               |
+|        | Settings icon        | Opens settings modal                                           |
+| Bottom | Theme toggle         | Mini pill toggle, switches `html.dark` class                   |
+|        | Avatar initials      | Shows first letter of a future user profile; no action for now |
 
 Active rail button style: `background: rgba(6,182,212,0.15); box-shadow: 0 0 0 1px rgba(6,182,212,0.3); color: #06b6d4`.
 
@@ -105,6 +105,7 @@ Active rail button style: `background: rgba(6,182,212,0.15); box-shadow: 0 0 0 1
 Opens when the chat rail icon is clicked. Overlays the chat area (does not push it). Closes when clicking outside or clicking the rail icon again.
 
 Contents (top to bottom):
+
 1. **New chat button** — cyan ghost button, full width
 2. **Chat history list** — grouped by Today / Yesterday / Older, same data as current sidebar
    - Active item: left border `2px solid #06b6d4`, `background: rgba(6,182,212,0.12)`
@@ -126,21 +127,22 @@ Glass strip at top of main area. Contains:
 
 ## Chat Messages
 
-| Element | Style |
-|---|---|
-| AI bubble | `background: var(--llm-panel)`, `border: 1px solid var(--llm-panel-border)`, `border-radius: 16px 16px 16px 3px`, backdrop blur |
-| User bubble | `background: var(--llm-accent)` gradient, `border-radius: 16px 16px 3px 16px`, cyan glow shadow |
-| Timestamp/model | Small muted text below bubble |
-| Thinking block | `background: rgba(139,92,246,0.06)`, `border: 1px solid rgba(139,92,246,0.15)`, italic, muted text |
-| Reasoning `<details>` | Same collapsible behavior, restyled with new tokens |
-| Code blocks | `background: var(--llm-panel)`, `border: 1px solid var(--llm-panel-border)`, monospace, highlight.js theme unchanged |
-| Inline code | `background: rgba(139,92,246,0.1)`, rounded, accent-colored text |
+| Element               | Style                                                                                                                           |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| AI bubble             | `background: var(--llm-panel)`, `border: 1px solid var(--llm-panel-border)`, `border-radius: 16px 16px 16px 3px`, backdrop blur |
+| User bubble           | `background: var(--llm-accent)` gradient, `border-radius: 16px 16px 3px 16px`, cyan glow shadow                                 |
+| Timestamp/model       | Small muted text below bubble                                                                                                   |
+| Thinking block        | `background: rgba(139,92,246,0.06)`, `border: 1px solid rgba(139,92,246,0.15)`, italic, muted text                              |
+| Reasoning `<details>` | Same collapsible behavior, restyled with new tokens                                                                             |
+| Code blocks           | `background: var(--llm-panel)`, `border: 1px solid var(--llm-panel-border)`, monospace, highlight.js theme unchanged            |
+| Inline code           | `background: rgba(139,92,246,0.1)`, rounded, accent-colored text                                                                |
 
 ---
 
 ## Tool Approval Card
 
 Preserved behavior. Restyled:
+
 - Container: `background: var(--llm-panel)`, `border: 1px solid rgba(245,158,11,0.4)`, `border-radius:12px`, backdrop blur
 - Header: amber `#f59e0b`, "⚡ Tool request" label
 - Args block: `background: var(--llm-panel)`, monospace, muted
@@ -151,6 +153,7 @@ Preserved behavior. Restyled:
 ## Agent Trace
 
 Preserved behavior. Restyled:
+
 - Summary row: muted text, `▶` chevron rotates on open
 - Steps: left border `2px solid var(--llm-panel-border)`, monospace
 - Tool call lines: `#22c55e` green
@@ -161,6 +164,7 @@ Preserved behavior. Restyled:
 ## Input Area
 
 Glass shell at bottom of main area:
+
 - Outer container: `background: var(--llm-panel)`, `border: 1px solid var(--llm-panel-border)`, `border-radius:16px`, backdrop blur
 - Focus state: `border-color: rgba(6,182,212,0.5)`, `box-shadow: 0 0 0 3px rgba(6,182,212,0.08)`
 - Attach button (📎): icon button, muted color, hover reveals panel bg
@@ -179,12 +183,14 @@ Image controls row (visible in image mode): same controls, restyled with new tok
 Mode activated by clicking Image tab in topbar or Image rail button.
 
 Preserved:
+
 - Image controls row (model, steps, size selectors)
 - Warmup banner
 - Image card with shimmer loading state + expand/download overlay
 - Violet (`#7c3aed`) accent for image-specific UI elements
 
 Restyled:
+
 - Controls row uses `var(--llm-panel)` background and `var(--llm-panel-border)` border
 - Warmup banner: `background: rgba(124,58,237,0.1)`, `border: 1px solid rgba(124,58,237,0.25)`
 - Image card: `border-radius:16px`, glass panel style
@@ -194,6 +200,7 @@ Restyled:
 ## Welcome Screen
 
 Shown when no active conversation. Centered in the main area:
+
 - Logo mark (56×56, cyan gradient, "L")
 - Greeting: "Good morning / afternoon / evening, [name]" (time-based, name = "Omar" for now)
 - Subtitle: "LocalLLM is ready. Your models run privately on this machine — no data leaves."
@@ -204,6 +211,7 @@ Shown when no active conversation. Centered in the main area:
 ## Modals
 
 All existing modals (settings, all-chats, image preview lightbox) preserved. Restyled:
+
 - Overlay: `background: rgba(0,0,0,0.5)`, `backdrop-filter: blur(4px)`
 - Modal content: `background: var(--llm-panel)`, `border: 1px solid var(--llm-panel-border)`, `border-radius:16px`, backdrop blur
 - Entry animation: `scale(0.95) translateY(16px)` → `scale(1) translateY(0)`
@@ -225,10 +233,10 @@ The server (`server.js`) and all backend Python files are out of scope.
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `gemma-web/index.html` | Full rewrite |
-| `gemma-web/THEME.md` | Update token reference table to new `--llm-*` names |
+| File                   | Change                                              |
+| ---------------------- | --------------------------------------------------- |
+| `gemma-web/index.html` | Full rewrite                                        |
+| `gemma-web/THEME.md`   | Update token reference table to new `--llm-*` names |
 
 ---
 

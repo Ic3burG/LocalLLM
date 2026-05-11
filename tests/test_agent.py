@@ -1,12 +1,21 @@
 import importlib
+import importlib.util
 import json
 import subprocess
+import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 # FAKE_RESPONSE for reuse
 FAKE_RESPONSE = {"choices": [{"message": {"content": "hello"}}]}
+
+
+def _make_module(name: str) -> types.ModuleType:
+    """Return a ModuleType with a valid __spec__ so find_spec() doesn't raise."""
+    mod = types.ModuleType(name)
+    mod.__spec__ = importlib.util.spec_from_loader(name, loader=None)
+    return mod
 
 
 @pytest.fixture
@@ -20,8 +29,8 @@ def mock_deps():
         "fastapi.middleware": MagicMock(),
         "fastapi.middleware.cors": MagicMock(),
         "litert_lm": MagicMock(),
-        "mlx": MagicMock(),
-        "mlx.core": MagicMock(),
+        "mlx": _make_module("mlx"),
+        "mlx.core": _make_module("mlx.core"),
         "mlx_vlm": MagicMock(),
         "uvicorn": MagicMock(),
         "pdf_pipeline": MagicMock(),

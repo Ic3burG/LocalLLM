@@ -4,18 +4,18 @@
 
 ## Token Reference
 
-| Token                    | Light                        | Dark                         | Use for                                    |
-|--------------------------|------------------------------|------------------------------|--------------------------------------------|
-| `--llm-bg`               | lavender gradient            | deep purple gradient         | `body` background only (gradient, not solid) |
-| `--llm-panel`            | `rgba(255,255,255,0.65)`     | `rgba(255,255,255,0.06)`     | All glass panels, input shells, modals     |
-| `--llm-panel-border`     | `rgba(139,92,246,0.13)`      | `rgba(255,255,255,0.10)`     | All borders and dividers                   |
-| `--llm-blur`             | `blur(12px)`                 | `blur(12px)`                 | `backdrop-filter` on glass panels          |
-| `--llm-text`             | `#1e1b4b`                    | `#f0eeff`                    | Primary text                               |
-| `--llm-text-muted`       | `#6d6a8a`                    | `#9d9abf`                    | Timestamps, labels, placeholders           |
-| `--llm-shadow`           | purple-tinted shadow         | dark shadow                  | Box shadows on panels                      |
-| `--llm-accent`           | cyan→sky gradient            | cyan→sky gradient            | Gradient backgrounds (send btn, logo)      |
-| `--llm-accent-solid`     | `#06b6d4`                    | `#06b6d4`                    | Solid accent: borders, text, focus rings   |
-| `--llm-accent-glow`      | `rgba(6,182,212,0.35)`       | `rgba(6,182,212,0.35)`       | Box shadows with glow                      |
+| Token                | Light                    | Dark                     | Use for                                      |
+| -------------------- | ------------------------ | ------------------------ | -------------------------------------------- |
+| `--llm-bg`           | lavender gradient        | deep purple gradient     | `body` background only (gradient, not solid) |
+| `--llm-panel`        | `rgba(255,255,255,0.65)` | `rgba(255,255,255,0.06)` | All glass panels, input shells, modals       |
+| `--llm-panel-border` | `rgba(139,92,246,0.13)`  | `rgba(255,255,255,0.10)` | All borders and dividers                     |
+| `--llm-blur`         | `blur(12px)`             | `blur(12px)`             | `backdrop-filter` on glass panels            |
+| `--llm-text`         | `#1e1b4b`                | `#f0eeff`                | Primary text                                 |
+| `--llm-text-muted`   | `#6d6a8a`                | `#9d9abf`                | Timestamps, labels, placeholders             |
+| `--llm-shadow`       | purple-tinted shadow     | dark shadow              | Box shadows on panels                        |
+| `--llm-accent`       | cyan→sky gradient        | cyan→sky gradient        | Gradient backgrounds (send btn, logo)        |
+| `--llm-accent-solid` | `#06b6d4`                | `#06b6d4`                | Solid accent: borders, text, focus rings     |
+| `--llm-accent-glow`  | `rgba(6,182,212,0.35)`   | `rgba(6,182,212,0.35)`   | Box shadows with glow                        |
 
 ## The Rules
 
