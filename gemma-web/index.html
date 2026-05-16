@@ -3171,8 +3171,14 @@
           timestamp: Date.now(),
         };
         chats.unshift(newChat);
-        saveChats();
-        loadChat(currentChatId);
+        currentChatId = newChat.id;
+        localStorage.setItem("gemma_chats", JSON.stringify(chats));
+        chatTitle.textContent = "New Chat";
+        modelSelect.value = newChat.model;
+        while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild);
+        chatBox.appendChild(welcomeMessage);
+        chatBox.scrollTop = 0;
+        renderHistory();
         userInput.focus();
       }
 
