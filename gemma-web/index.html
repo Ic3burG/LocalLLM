@@ -3954,6 +3954,7 @@
             `http://localhost:3001/api/chat/stream/${task_id}`
           );
           currentEventSource = es;
+          const streamChatId = currentChatId;
           let taskDone = false;
 
           // Safety net: if the model takes extremely long (>10 min), surface it
@@ -3980,7 +3981,8 @@
                 traceContainer,
                 startTime,
                 es,
-                currentChat
+                currentChat,
+                streamChatId
               );
             } catch (parseErr) {
               console.error(
@@ -4600,56 +4602,59 @@
         traceContainer,
         startTime,
         es,
-        currentChat
+        currentChat,
+        streamChatId
       ) {
+        const isActiveChat = streamChatId === currentChatId;
         const stepCount = traceContainer.querySelectorAll(".trace-step").length;
         if (event.type === "status") {
-          setAgentStatus(event.message);
+          if (isActiveChat) setAgentStatus(event.message);
           return;
         }
         if (event.type === "thinking") {
-          // Accumulate thinking content so multiple stages are shown together
           const current = traceContainer.dataset.pendingThinking || "";
           traceContainer.dataset.pendingThinking = current + event.content;
-          setAgentStatus("Reasoning...");
+          if (isActiveChat) setAgentStatus("Reasoning...");
           return;
         }
         if (event.type === "step") {
-          addTraceStep(
-            traceContainer,
-            event.tool,
-            event.args,
-            event.result,
-            event.elapsed_ms,
-            undefined
-          );
-          traceContainer.dataset.elapsed =
-            ((Date.now() - startTime) / 1000).toFixed(1) + "s";
-          updateTraceSummary(traceContainer);
-          setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
+          if (isActiveChat) {
+            addTraceStep(
+              traceContainer,
+              event.tool,
+              event.args,
+              event.result,
+              event.elapsed_ms,
+              undefined
+            );
+            traceContainer.dataset.elapsed =
+              ((Date.now() - startTime) / 1000).toFixed(1) + "s";
+            updateTraceSummary(traceContainer);
+            setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
+          }
         } else if (event.type === "confirm_request") {
           if (alwaysAllowedTools.has(event.tool)) {
             resolveConfirm(taskId, true, null);
-            setAgentStatus("Agent thinking… (auto-approved)");
+            if (isActiveChat) setAgentStatus("Agent thinking… (auto-approved)");
             return;
           }
-          setAgentStatus("⚠️ Waiting for your approval…");
-          const card = createConfirmCard(taskId, event.tool, event.args);
-          appendToChat(card);
-        } else if (event.type === "confirm_resolved") {
-          setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
-        } else if (event.type === "done") {
-          traceContainer.dataset.elapsed =
-            ((Date.now() - startTime) / 1000).toFixed(1) + "s";
-          updateTraceSummary(traceContainer);
-
-          // If the model reasoned before responding, prepend a collapsed reasoning block
-          const pendingThinking = traceContainer.dataset.pendingThinking;
-          if (pendingThinking) {
-            delete traceContainer.dataset.pendingThinking;
+          if (isActiveChat) {
+            setAgentStatus("⚠️ Waiting for your approval…");
+            const card = createConfirmCard(taskId, event.tool, event.args);
+            appendToChat(card);
           }
+        } else if (event.type === "confirm_resolved") {
+          if (isActiveChat) setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
+        } else if (event.type === "done") {
+          const pendingThinking = traceContainer.dataset.pendingThinking;
+          if (pendingThinking) delete traceContainer.dataset.pendingThinking;
 
-          appendMessage("assistant", event.message, [], true, pendingThinking);
+          if (isActiveChat) {
+            traceContainer.dataset.elapsed =
+              ((Date.now() - startTime) / 1000).toFixed(1) + "s";
+            updateTraceSummary(traceContainer);
+            appendMessage("assistant", event.message, [], true, pendingThinking);
+          }
           if (currentChat) {
             currentChat.messages.push({
               role: "assistant",
@@ -4658,25 +4663,28 @@
             });
             saveChats();
           }
-
           clearAgentStatus();
           es.close();
         } else if (event.type === "image") {
-          appendImageCard({
-            image_b64: event.image_b64,
-            width: event.width,
-            height: event.height,
-            steps: event.steps,
-            elapsed_ms: event.elapsed_ms,
-            prompt: event.prompt,
-            size: event.size || "512x512",
-            style: "default",
-          });
+          if (isActiveChat) {
+            appendImageCard({
+              image_b64: event.image_b64,
+              width: event.width,
+              height: event.height,
+              steps: event.steps,
+              elapsed_ms: event.elapsed_ms,
+              prompt: event.prompt,
+              size: event.size || "512x512",
+              style: "default",
+            });
+          }
         } else if (event.type === "error") {
-          const errEl = document.createElement("div");
-          errEl.className = "agent-error-message";
-          errEl.textContent = "⚠ " + event.message;
-          appendToChat(errEl);
+          if (isActiveChat) {
+            const errEl = document.createElement("div");
+            errEl.className = "agent-error-message";
+            errEl.textContent = "⚠ " + event.message;
+            appendToChat(errEl);
+          }
           clearAgentStatus();
           es.close();
         }
