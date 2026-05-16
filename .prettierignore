@@ -1,0 +1,12 @@
+# Operational state — written at runtime by the bridge / learner subagent,
+# not source code. Excluding from prettier so background writes (which may
+# omit trailing newlines) don't fail CI.
+USER_MEMORY.md
+
+# Build / cache / vendor dirs (defense in depth; .gitignore covers most).
+node_modules/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+mlx_models/
