@@ -145,6 +145,18 @@ def get_user_memory():
     return ""
 
 
+def write_user_memory(content: str):
+    """Write USER_MEMORY.md atomically with a guaranteed trailing newline.
+
+    Both writers (background learner + manual save) route through here so
+    prettier --check stays green; otherwise the file ends without a newline
+    and CI fails on every run that observes it.
+    """
+    normalized = (content or "").rstrip("\n") + "\n"
+    with open(MEMORY_FILE, "w") as f:
+        f.write(normalized)
+
+
 def strip_thinking(text):
     """Helper to remove common thinking tags from model output"""
     # Handle Gemma 4 specific channel markers: <|channel>thought\n...<channel|>
@@ -224,8 +236,7 @@ INSTRUCTIONS:
             updated_content = re.sub(r"\n```$", "", updated_content)
             # Deduplicate horizontal lines
             updated_content = re.sub(r"\n---+\n---+", "\n---", updated_content)
-            with open(MEMORY_FILE, "w") as f:
-                f.write(updated_content.strip())
+            write_user_memory(updated_content.strip())
             logger.info("Memory updated successfully.")
 
     except Exception as e:
@@ -353,8 +364,7 @@ async def update_memory_manual(request: Request):
     try:
         body = await request.json()
         new_content = body.get("memory", "")
-        with open(MEMORY_FILE, "w") as f:
-            f.write(new_content)
+        write_user_memory(new_content)
         return {"status": "success"}
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
