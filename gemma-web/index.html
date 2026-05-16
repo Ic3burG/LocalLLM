@@ -1861,14 +1861,14 @@
                     color: var(--llm-text-muted);
                     cursor: pointer;
                     outline: none;
-                    max-width: 110px;
+                    max-width: 150px;
                   "
                 >
-                  <option value="gemma4-e4b">Gemma3 E4B</option>
-                  <option value="gemma4-26b-mlx">Gemma3 E26</option>
-                  <option value="gemma4-31b-mlx">Gemma3 E31</option>
-                  <option value="qwen3.5">Qwen 3.5</option>
-                  <option value="deepseek-v4">DeepSeek V4</option>
+                  <option value="gemma4-e4b">Gemma 4 E4B</option>
+                  <option value="gemma4-26b-mlx">Gemma 4 E26B</option>
+                  <option value="gemma4-31b-mlx">Gemma 4 31B</option>
+                  <option value="phi4-mini">Phi-4 Mini</option>
+                  <option value="deepseek-v4-mini">DeepSeek V4 Mini</option>
                 </select>
               </div>
               <!-- Deep think toggle — id="deep-think-toggle" preserved -->
@@ -2867,6 +2867,7 @@
       const alwaysAllowedTools = new Set(); // tools auto-approved for this browser session
       let chats = JSON.parse(localStorage.getItem("gemma_chats") || "[]");
       let currentAttachments = [];
+      let currentEventSource = null;
 
       // --- Context Menu Logic ---
       const contextMenu = document.getElementById("context-menu");
@@ -3151,11 +3152,16 @@
       }
 
       function createNewChat() {
+        if (currentEventSource) {
+          currentEventSource.close();
+          currentEventSource = null;
+          clearAgentStatus();
+        }
         currentChatId = Date.now().toString();
         const newChat = {
           id: currentChatId,
           title: "New Chat",
-          model: modelSelect.value,
+          model: modelSelect.value || "gemma4-e4b",
           messages: [
             {
               role: "system",
@@ -3167,6 +3173,7 @@
         chats.unshift(newChat);
         saveChats();
         loadChat(currentChatId);
+        userInput.focus();
       }
 
       function loadChat(id) {
@@ -3940,6 +3947,7 @@
           const es = new EventSource(
             `http://localhost:3001/api/chat/stream/${task_id}`
           );
+          currentEventSource = es;
           let taskDone = false;
 
           // Safety net: if the model takes extremely long (>10 min), surface it
@@ -3958,6 +3966,7 @@
               if (event.type === "done" || event.type === "error") {
                 taskDone = true;
                 clearTimeout(stallTimer);
+                currentEventSource = null;
               }
               handleAgentEvent(
                 event,
@@ -4782,6 +4791,7 @@
         if (railNewChatBtn) {
           railNewChatBtn.addEventListener("click", () => {
             if (typeof createNewChat === "function") createNewChat();
+            openSidebar();
           });
         }
 
