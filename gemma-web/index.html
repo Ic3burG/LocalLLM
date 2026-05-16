@@ -171,13 +171,11 @@
         left: 19px;
       }
 
-      /* ── Sidebar overlay panel ── */
+      /* ── Sidebar (flex child — takes its own column, never overlays main) ── */
       .sidebar-panel {
-        position: absolute;
-        left: 56px;
-        top: 0;
-        bottom: 0;
+        position: relative;
         width: 240px;
+        flex-shrink: 0;
         background: var(--llm-panel);
         border-right: 1px solid var(--llm-panel-border);
         backdrop-filter: var(--llm-blur);
@@ -187,14 +185,15 @@
         flex-direction: column;
         padding: 12px 10px;
         z-index: 15;
-        transition:
-          transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
-          opacity 0.22s;
+        min-height: 0;
+        transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
       }
       .sidebar-panel.panel-hidden {
-        transform: translateX(-8px);
-        opacity: 0;
-        pointer-events: none;
+        width: 0;
+        padding-left: 0;
+        padding-right: 0;
+        overflow: hidden;
+        border-right: none;
       }
       .sidebar-new-btn {
         display: flex;
@@ -227,7 +226,7 @@
       }
       .chat-history-item {
         border-radius: 8px;
-        padding: 7px 10px;
+        padding: 7px 28px 7px 10px;
         cursor: pointer;
         margin-bottom: 2px;
         transition: background 0.12s;
@@ -253,6 +252,36 @@
         font-size: 10px;
         color: var(--llm-text-muted);
         margin-top: 1px;
+      }
+      .chat-item-kebab {
+        position: absolute;
+        right: 4px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: var(--llm-text-muted);
+        cursor: pointer;
+        opacity: 0;
+        font-size: 16px;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition:
+          opacity 0.12s,
+          background 0.12s;
+      }
+      .chat-history-item:hover .chat-item-kebab,
+      .chat-item-kebab:focus {
+        opacity: 1;
+      }
+      .chat-item-kebab:hover {
+        background: rgba(6, 182, 212, 0.15);
+        color: var(--llm-accent-solid);
       }
       .all-chats-link {
         margin-top: auto;
@@ -1275,7 +1304,10 @@
         .sidebar-panel {
           position: fixed;
           left: 56px;
-          height: 100%;
+          top: 0;
+          bottom: 0;
+          width: 240px;
+          z-index: 30;
         }
         .sidebar-panel.panel-hidden {
           display: none;
@@ -1333,24 +1365,6 @@
       </button>
 
       <div class="rail-divider"></div>
-
-      <button class="rail-btn active" id="rail-chat-btn" title="Chat history">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-          />
-        </svg>
-      </button>
 
       <button class="rail-btn" id="rail-allchats-btn" title="All Chats">
         <svg
@@ -3119,8 +3133,7 @@
         chats = chats.filter((c) => !selectedChatIds.has(c.id));
         if (selectedChatIds.has(currentChatId)) {
           currentChatId = null;
-          chatBox.innerHTML = "";
-          chatBox.appendChild(welcomeMessage);
+          resetChatBoxToWelcome();
           chatTitle.textContent = "LocalLLM";
         }
         selectedChatIds.clear();
@@ -3151,15 +3164,87 @@
         else if (tab === "memory") tabMemory.click();
       }
 
+      // Build a fresh welcome-screen DOM tree every call. This avoids relying
+      // on a single long-lived welcomeMessage reference that can become stale
+      // after innerHTML resets, XSS-sanitizer rewrites, or detached-node GC.
+      function buildWelcomeElement() {
+        const greetingText = (() => {
+          const h = new Date().getHours();
+          const period = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+          return `Good ${period}, Omar`;
+        })();
+
+        const wrap = document.createElement("div");
+        wrap.id = "welcome-message";
+        wrap.className = "welcome-screen";
+
+        const logo = document.createElement("div");
+        logo.className = "welcome-logo";
+        logo.innerHTML =
+          '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>';
+        wrap.appendChild(logo);
+
+        const title = document.createElement("div");
+        title.id = "welcome-greeting";
+        title.className = "welcome-title";
+        title.textContent = greetingText;
+        wrap.appendChild(title);
+
+        const sub = document.createElement("div");
+        sub.className = "welcome-sub";
+        sub.textContent =
+          "LocalLLM is ready. Your models run privately on this machine — no data leaves.";
+        wrap.appendChild(sub);
+
+        const chipsRow = document.createElement("div");
+        chipsRow.className = "welcome-chips";
+        const chipDefs = [
+          { label: "✍️ Help me write", prefill: "Help me write something" },
+          { label: "🐍 Debug code", prefill: "Debug this code: " },
+          {
+            label: "🧠 Brainstorm",
+            prefill: "Help me brainstorm ideas about ",
+          },
+          { label: "📝 Summarize", prefill: "Summarize this: " },
+        ];
+        chipDefs.forEach((def) => {
+          const chip = document.createElement("div");
+          chip.className = "welcome-chip";
+          chip.textContent = def.label;
+          chip.addEventListener("click", () => {
+            const ui = document.getElementById("user-input");
+            if (ui) {
+              ui.value = def.prefill;
+              ui.focus();
+            }
+          });
+          chipsRow.appendChild(chip);
+        });
+        wrap.appendChild(chipsRow);
+
+        return wrap;
+      }
+
+      function resetChatBoxToWelcome() {
+        while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild);
+        chatBox.appendChild(buildWelcomeElement());
+        chatBox.scrollTop = 0;
+      }
+
       function createNewChat() {
+        console.log("[NEW_CHAT] click → createNewChat()");
         if (currentEventSource) {
-          currentEventSource.close();
+          try {
+            currentEventSource.close();
+          } catch (e) {
+            console.warn("[NEW_CHAT] EventSource close error:", e);
+          }
           currentEventSource = null;
           clearAgentStatus();
         }
-        currentChatId = Date.now().toString();
+        const newId = Date.now().toString();
         const newChat = {
-          id: currentChatId,
+          id: newId,
           title: "New Chat",
           model: modelSelect.value || "gemma4-e4b",
           messages: [
@@ -3174,12 +3259,19 @@
         currentChatId = newChat.id;
         localStorage.setItem("gemma_chats", JSON.stringify(chats));
         chatTitle.textContent = "New Chat";
-        modelSelect.value = newChat.model;
-        while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild);
-        chatBox.appendChild(welcomeMessage);
-        chatBox.scrollTop = 0;
+        if (modelSelect) modelSelect.value = newChat.model;
+
+        // Force the main panel back to the welcome screen for this fresh chat.
+        resetChatBoxToWelcome();
+        console.log(
+          "[NEW_CHAT] chatBox reset, child count:",
+          chatBox.childNodes.length,
+          "currentChatId:",
+          currentChatId
+        );
+
         renderHistory();
-        userInput.focus();
+        if (userInput) userInput.focus();
       }
 
       function loadChat(id) {
@@ -3188,13 +3280,15 @@
         if (!chat) return;
         chatTitle.textContent = chat.title;
         modelSelect.value = chat.model || "gemma4-e4b";
-        chatBox.innerHTML = "";
+        while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild);
         chat.messages.forEach((msg) => {
           if (msg.role !== "system") {
             appendMessage(msg.role, msg.content, [], false, msg.reasoning);
           }
         });
-        if (chat.messages.length <= 1) chatBox.appendChild(welcomeMessage);
+        if (chat.messages.length <= 1) {
+          chatBox.appendChild(buildWelcomeElement());
+        }
         chatBox.scrollTop = chatBox.scrollHeight;
         renderHistory();
       }
@@ -3207,8 +3301,7 @@
         chats = chats.filter((c) => c.id !== id);
         if (currentChatId === id) {
           currentChatId = null;
-          chatBox.innerHTML = "";
-          chatBox.appendChild(welcomeMessage);
+          resetChatBoxToWelcome();
           chatTitle.textContent = "LocalLLM";
         }
         saveChats();
@@ -3219,41 +3312,59 @@
         const starredList = document.getElementById("starred-list");
         const starredSection = document.getElementById("starred-section");
 
+        // Render Starred section
+        while (starredList.firstChild)
+          starredList.removeChild(starredList.firstChild);
         if (starredChats.length > 0) {
           starredSection.classList.remove("hidden");
-          starredList.innerHTML = starredChats
-            .map((chat) => renderChatItem(chat))
-            .join("");
+          starredChats.forEach((chat) =>
+            starredList.appendChild(buildChatItem(chat))
+          );
         } else {
           starredSection.classList.add("hidden");
         }
 
-        // Show only the 5 most recent chats; use All Chats for the full list
-        const MAX_SIDEBAR = 5;
-        const visibleChats = chats.slice(0, MAX_SIDEBAR);
-        historyList.innerHTML = visibleChats
-          .map((chat) => renderChatItem(chat))
-          .join("");
-        if (chats.length > MAX_SIDEBAR) {
-          const moreLink = document.createElement("div");
-          moreLink.className = "all-chats-link";
-          moreLink.style.cssText =
-            "margin-top:8px;border:none;padding:6px 10px;";
-          moreLink.textContent = `${chats.length - MAX_SIDEBAR} more in All Chats →`;
-          moreLink.addEventListener("click", showAllChats);
-          historyList.appendChild(moreLink);
-        }
+        // Render Recents — show every chat. The #history-list container is
+        // flex:1 with overflow-y:auto, so it fills available height and scrolls
+        // if there are more chats than fit. All Chats button stays pinned at
+        // the bottom of the sidebar for full management.
+        while (historyList.firstChild)
+          historyList.removeChild(historyList.firstChild);
+        chats.forEach((chat) => historyList.appendChild(buildChatItem(chat)));
       }
 
-      function renderChatItem(chat) {
-        return `
-    <div onclick="loadChat('${chat.id}')"
-         oncontextmenu="showContextMenu(event,'${chat.id}')"
-         class="chat-history-item ${currentChatId === chat.id ? "active" : ""}">
-      <div class="item-title">${chat.title}</div>
-      <div class="item-meta">${formatTimeAgo(chat.timestamp)}</div>
-    </div>
-  `;
+      // Build a chat row using safe DOM methods (titles are user input).
+      function buildChatItem(chat) {
+        const row = document.createElement("div");
+        row.className =
+          "chat-history-item" + (currentChatId === chat.id ? " active" : "");
+        row.addEventListener("click", () => loadChat(chat.id));
+        row.addEventListener("contextmenu", (e) => showContextMenu(e, chat.id));
+
+        const title = document.createElement("div");
+        title.className = "item-title";
+        title.textContent = chat.title || "Untitled";
+        row.appendChild(title);
+
+        const meta = document.createElement("div");
+        meta.className = "item-meta";
+        meta.textContent = formatTimeAgo(chat.timestamp);
+        row.appendChild(meta);
+
+        // Visible kebab "⋯" → opens the existing context menu (Star/Rename/Delete)
+        const kebab = document.createElement("button");
+        kebab.type = "button";
+        kebab.className = "chat-item-kebab";
+        kebab.title = "More actions";
+        kebab.setAttribute("aria-label", "More actions");
+        kebab.textContent = "⋯";
+        kebab.addEventListener("click", (e) => {
+          e.stopPropagation();
+          showContextMenu(e, chat.id);
+        });
+        row.appendChild(kebab);
+
+        return row;
       }
 
       // Theme Icons
@@ -4264,8 +4375,9 @@
       });
 
       renderHistory();
+      // Sidebar is persistent — never hide it on init.
+      sidebar.classList.remove("panel-hidden");
       if (chats.length > 0) loadChat(chats[0].id);
-      else sidebar.classList.add("panel-hidden");
 
       // ── Agent UI Helpers ────────────────────────────────────────────────
 
@@ -4644,7 +4756,8 @@
             appendToChat(card);
           }
         } else if (event.type === "confirm_resolved") {
-          if (isActiveChat) setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
+          if (isActiveChat)
+            setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
         } else if (event.type === "done") {
           const pendingThinking = traceContainer.dataset.pendingThinking;
           if (pendingThinking) delete traceContainer.dataset.pendingThinking;
@@ -4653,7 +4766,13 @@
             traceContainer.dataset.elapsed =
               ((Date.now() - startTime) / 1000).toFixed(1) + "s";
             updateTraceSummary(traceContainer);
-            appendMessage("assistant", event.message, [], true, pendingThinking);
+            appendMessage(
+              "assistant",
+              event.message,
+              [],
+              true,
+              pendingThinking
+            );
           }
           if (currentChat) {
             currentChat.messages.push({
@@ -4781,31 +4900,21 @@
         });
       // ── end image mode wiring ─────────────────────────────────────────
 
-      // ── Rail sidebar toggle ──────────────────────────────────────────────
+      // ── Rail sidebar wiring (sidebar is persistent; no toggle button) ────
       (function () {
-        const railChatBtn = document.getElementById("rail-chat-btn");
         const sidebarPanel = document.getElementById("sidebar");
 
+        // Sidebar is always shown — ensure no stale panel-hidden class lingers.
         function openSidebar() {
           sidebarPanel.classList.remove("panel-hidden");
-          railChatBtn.classList.add("active");
         }
-        function closeSidebar() {
-          sidebarPanel.classList.add("panel-hidden");
-          railChatBtn.classList.remove("active");
-        }
-        function toggleSidebar() {
-          if (sidebarPanel.classList.contains("panel-hidden")) openSidebar();
-          else closeSidebar();
-        }
-        railChatBtn.addEventListener("click", toggleSidebar);
+        openSidebar();
 
         // New Chat rail button
         const railNewChatBtn = document.getElementById("rail-new-chat-btn");
         if (railNewChatBtn) {
           railNewChatBtn.addEventListener("click", () => {
             if (typeof createNewChat === "function") createNewChat();
-            openSidebar();
           });
         }
 

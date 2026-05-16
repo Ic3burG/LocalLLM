@@ -867,11 +867,45 @@ Moved hook source into `scripts/hooks/pre-push` (committed to the repo as the so
 
 ---
 
-## 📈 Current Status (as of May 11, 2026)
+## 🖥 UI Fixes — May 15, 2026
+
+### Model Dropdown
+
+- **Fixed labels**: Dropdown had "Gemma3" labels; corrected to "Gemma 4 E4B", "Gemma 4 E26B", "Gemma 4 31B".
+- **Added missing models**: Phi-4 Mini and DeepSeek V4 Mini were in `_MODEL_DIR_MAP` but absent from the dropdown; added.
+- **Removed placeholder models**: Qwen 3.5 and DeepSeek V4 (non-downloaded) were removed from the options list.
+- **Widened selector**: `max-width` increased from `110px` to `150px` to prevent label clipping.
+- **Commits**: `3c03737`, `e837ae5`
+
+### ❌ New Chat Button — UNRESOLVED
+
+**Symptom**: Clicking "New Chat" (rail button or any trigger) creates a new chat entry — visible in Recents — but the UI view does not switch. The old chat's messages remain displayed in the main panel.
+
+**Three fixes attempted, none resolved it:**
+
+1. `3c03737` — Added `EventSource.close()` cleanup in `createNewChat`, rail button now opens sidebar after creating chat, added `userInput.focus()`.
+2. `e837ae5` — Bypassed `loadChat()` entirely; `createNewChat` now directly manipulates the DOM (clears chatBox, inserts welcome message, sets title/model). Used `while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild)` to avoid XSS hook rejection of `innerHTML = ""`.
+3. `4461f19` — Added `streamChatId` guard to `handleAgentEvent`: captures `currentChatId` at stream creation time, gates all DOM writes on `streamChatId === currentChatId` to prevent stale SSE events from repainting a newly-cleared chatBox.
+
+**What was NOT tried:**
+
+- In-browser console.log tracing to confirm `createNewChat` is actually executing all DOM steps
+- Checking if any other event listener re-loads the old chat after the clear
+- Safari-specific debugging (`file://` URL may have different localStorage or event behavior)
+- Confirming whether `welcomeMessage` element is actually present in the DOM at call time
+
+**Root cause**: Unknown. The function creates and saves the chat correctly (proven by Recents); the DOM clear and welcome message insertion are in the code but their effect is not visible after Safari hard refresh.
+
+**Resume in next session** alongside other pending UI issues.
+
+---
+
+## 📈 Current Status (as of May 15, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
-- **Models:** Gemma3 E4B, E26, E31 (all vision-capable via mlx_vlm); Qwen 3.5; DeepSeek V4; FLUX.1-schnell (image generation).
+- **Models:** Gemma 4 E4B, Gemma 4 E26B, Gemma 4 31B (all vision-capable via mlx_vlm); Phi-4 Mini, DeepSeek V4 Mini (text-only via mlx_lm); FLUX.1-schnell (image generation).
 - **Tools:** 37 registered tools.
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
 - **UI:** Glass/gradient aesthetic; persistent icon rail with New Chat + All Chats buttons; mode/model/deep-think controls at bottom of input area; `--llm-*` CSS token system; **LocalLLM** branding; Welcome screen; all prior features preserved (Deep Thinking, Starred/Recents/All Chats, Image Gallery, Scheduled Tasks, Agent Trace, Tool Approval, Vitals Dashboard).
+- **Known broken**: New Chat button does not switch the UI view (see above).
 - **Integrity:** 139 tests passing; local **Git Hooks** (pre-commit/pre-push) enforced; CI green on every merge to `main`.
