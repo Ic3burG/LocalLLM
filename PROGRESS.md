@@ -900,12 +900,160 @@ Moved hook source into `scripts/hooks/pre-push` (committed to the repo as the so
 
 ---
 
-## 📈 Current Status (as of May 15, 2026)
+## 🛠 Sidebar Layout, New Chat Architectural Fix, CI Mandate — May 16, 2026
+
+Wrapped up every UI issue from the May 15 backlog and turned "CI must be green"
+into an enforced project rule that loads automatically into every Claude Code
+session via a new `CLAUDE.md`.
+
+### UI fixes (`gemma-web/index.html`)
+
+- **Sidebar covers input → fixed.** Converted `.sidebar-panel` from
+  `position: absolute; left: 56px` (an overlay that ate the leftmost 240 px of
+  the chat area) into a flex column with `position: relative; flex-shrink: 0`.
+  The body layout is now `rail (56 px) | sidebar (240 px) | main (flex 1)`, so
+  pinning the sidebar can never cover the input or any other main-area control.
+  Mobile keeps the `position: fixed` overlay behavior.
+- **Recents now fills available height.** Removed the hardcoded
+  `MAX_SIDEBAR = 5` cap in `renderHistory`. Every chat is rendered into
+  `#history-list`, which already had `flex: 1; overflow-y: auto`, so the list
+  fills all available height and scrolls if there are more chats than fit.
+- **Visible kebab "⋯" menu restored** on each chat row. Appears on hover, opens
+  the existing Star / Rename / Delete context menu via `showContextMenu`.
+  Right-click still works for power users.
+- **`renderHistory` / `renderChatItem` rewritten with safe DOM construction.**
+  Chat titles are user input; the prior implementation interpolated them
+  straight into `innerHTML` strings (XSS risk). New `buildChatItem` builds rows
+  with `document.createElement` and sets text via `textContent`.
+- **Redundant rail buttons removed.** Deleted the rail's "Chat history" toggle
+  (`rail-chat-btn`) — useless once the sidebar is persistent — and the rail's
+  single-icon "All Chats" button (`rail-allchats-btn`) — duplicated the
+  in-sidebar action.
+- **In-sidebar All Chats relocated** to sit directly at the end of the Recents
+  list (above Scheduled Tasks, not below). Replaced `margin-top: auto` with a
+  fixed 6 px gap on `.all-chats-link` since flex auto-pushing no longer
+  applies.
+
+### New Chat button — architectural fix after 3 failed attempts
+
+Per `superpowers:systematic-debugging` Phase 4.5: after 3 fixes fail, question
+the architecture. The root cause turned out to be the long-lived
+`welcomeMessage` DOM reference captured at script init — every code path that
+reset `chatBox` via `innerHTML = ""` (or the XSS sanitizer's equivalent) could
+silently detach or invalidate it, after which `chatBox.appendChild(welcomeMessage)`
+became a no-op or null-op.
+
+The fix:
+
+- New `buildWelcomeElement()` returns a fresh DOM tree — logo SVG, time-based
+  greeting, subtitle, four prompt chips — every call. No stale singleton.
+- New `resetChatBoxToWelcome()` clears `chatBox` (`while firstChild`) and
+  appends a fresh welcome. `createNewChat`, `loadChat`, `deleteChat`, and
+  `bulkDelete` all route through it.
+- Added `console.log("[NEW_CHAT] …")` instrumentation in `createNewChat` so
+  any future failure is immediately diagnosable in DevTools.
+
+### CI mandate — encoded so future sessions cannot drift
+
+- **`CLAUDE.md` (new)** — auto-loaded by Claude Code in every session.
+  Establishes "CI is the gate of done" as an absolute rule: run
+  `bash .git/hooks/pre-push` before claiming complete, never bypass hooks,
+  monitor GitHub Actions after pushing, copy the Definition-of-Done checklist
+  into every task report.
+- **`GEMINI.md`** updated with the same CI mandate and the new sidebar
+  structure rules (persistent flex column, scrollable Recents, kebab menus).
+- **`scripts/hooks/pre-commit` (new)** — self-healing: runs
+  `prettier --write` and `ruff format` on staged files, re-stages them, then
+  verifies the whole repo via `--check`. Formatting drift can no longer reach
+  CI.
+
+### USER_MEMORY.md writer fix
+
+The bridge's learner subagent and the `PUT /v1/memory` endpoint both wrote the
+file via `f.write(content.strip())`, which deleted the trailing newline. The
+next `prettier --check` always failed.
+
+- **`write_user_memory(content)` helper** added to `gemma_bridge.py` —
+  `rstrip("\n")` + add exactly one. Both write paths now route through it.
+- **Removed `USER_MEMORY.md` from `.prettierignore`** (added earlier as a
+  workaround). Prettier owns it again.
+- **`tests/test_memory_writer.py` (new)** — 3 regression tests for the
+  trailing-newline invariant. Runs `gemma_bridge` in a **subprocess** so the
+  native `mlx_vlm` / `mflux` imports don't poison `sys.modules` for the
+  `sentence_transformers`-dependent tests that run after it (same defense
+  pattern documented in Session 9 / `mock_deps` fixture).
+
+### Launchd plist repair + new installer
+
+**Root cause for the "Restart Backend failed" message:** Both launchd plists
+(`~/Library/LaunchAgents/com.gemini.litert.plist` and
+`com.gemini.gemma-bridge.plist`) still referenced the pre-rebrand path
+`/Users/ojdavis/Claude Code/Gemma4/`. The directory no longer exists, so every
+`launchctl load` since the rename silently spawned a process that died
+immediately. The bridge appeared to be running only because of a stale
+manually-started PID with 5 days 20 hours of uptime; once it was killed,
+launchd had nothing to restart.
+
+- Both plists rewritten in place to point at
+  `/Users/ojdavis/Claude Code/LocalLLM/` (with timestamped `.bak` backups).
+  Unloaded + reloaded — both services up.
+- **`scripts/install-launchd.sh` (new)** — templated installer that derives
+  the project path from its own location (`$SCRIPT_DIR/..`), discovers
+  `node` via `command -v`, and writes both plists with absolute paths it
+  generates fresh. Supports `--print` (preview), `--uninstall`
+  (unload + remove), and default install (unload-old + write + load + verify
+  ports 3001 and 9379 are listening). Means the plists can never drift out
+  of sync with the project directory again — just re-run the script after a
+  rename or move.
+
+### Files Changed
+
+| File                             | Change                                                                                                                                                                               |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `gemma-web/index.html`           | Persistent flex sidebar; New Chat architectural fix (`buildWelcomeElement`, `resetChatBoxToWelcome`); safe-DOM `buildChatItem` + visible kebab; rail cleanup; All Chats repositioned |
+| `gemma_bridge.py`                | `write_user_memory()` helper; both write paths route through it                                                                                                                      |
+| `tests/test_memory_writer.py`    | **New** — subprocess-isolated regression tests for trailing-newline invariant                                                                                                        |
+| `CLAUDE.md`                      | **New** — auto-loaded session mandate: "CI is the gate of done", hooks rules, feature integrity, Definition-of-Done checklist                                                        |
+| `GEMINI.md`                      | Added CI mandate; refreshed sidebar structure rules                                                                                                                                  |
+| `scripts/hooks/pre-commit`       | **New** — self-healing hook: `prettier --write` + `ruff format` on staged files, re-stage, then verify                                                                               |
+| `.prettierignore`                | Created during repair, then trimmed once the writer was fixed (now only excludes build/cache dirs)                                                                                   |
+| `scripts/install-launchd.sh`     | **New** — templated launchd installer that cannot drift on project rename                                                                                                            |
+| `~/Library/LaunchAgents/*.plist` | Manually repaired in this session; future installs run through `install-launchd.sh`                                                                                                  |
+
+### Outcome
+
+- **All 6 UI issues resolved** (sidebar layout, New Chat view switch, history
+  cap, redundant rail button, restored kebab menu, All Chats position).
+- **142 tests passing** locally (was 139 — gained 3 from
+  `test_memory_writer.py`).
+- **CI green on every push this session.** PR-free direct-to-main flow with
+  the pre-push hook acting as the local mirror.
+- **Launchd services running fresh code**, so the new `write_user_memory`
+  is now active and the next bridge-side memory update will keep
+  `USER_MEMORY.md` prettier-clean.
+
+---
+
+## 📈 Current Status (as of May 16, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
-- **Models:** Gemma 4 E4B, Gemma 4 E26B, Gemma 4 31B (all vision-capable via mlx_vlm); Phi-4 Mini, DeepSeek V4 Mini (text-only via mlx_lm); FLUX.1-schnell (image generation).
+  Both managed by repaired launchd plists; can be reinstalled via
+  `bash scripts/install-launchd.sh` after any project rename or move.
+- **Models:** Gemma 4 E4B, Gemma 4 E26B, Gemma 4 31B (all vision-capable via
+  mlx_vlm); Phi-4 Mini, DeepSeek V4 Mini (text-only via mlx_lm);
+  FLUX.1-schnell (image generation).
 - **Tools:** 37 registered tools.
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
-- **UI:** Glass/gradient aesthetic; persistent icon rail with New Chat + All Chats buttons; mode/model/deep-think controls at bottom of input area; `--llm-*` CSS token system; **LocalLLM** branding; Welcome screen; all prior features preserved (Deep Thinking, Starred/Recents/All Chats, Image Gallery, Scheduled Tasks, Agent Trace, Tool Approval, Vitals Dashboard).
-- **Known broken**: New Chat button does not switch the UI view (see above).
-- **Integrity:** 139 tests passing; local **Git Hooks** (pre-commit/pre-push) enforced; CI green on every merge to `main`.
+- **UI:** Glass/gradient aesthetic; persistent flex sidebar (rail | sidebar |
+  main, no overlay); kebab "⋯" on every chat row for Star / Rename / Delete;
+  Recents fills available height; All Chats button sits at end of chat list;
+  mode/model/deep-think controls at bottom of input area; `--llm-*` CSS token
+  system; **LocalLLM** branding; Welcome screen rebuilt fresh on every
+  navigation. All prior features preserved (Deep Thinking, Starred/Recents/All
+  Chats, Image Gallery, Scheduled Tasks, Agent Trace, Tool Approval, Vitals
+  Dashboard).
+- **No known broken features.** (The previously open New Chat bug is fixed
+  via the architectural pivot above.)
+- **Integrity:** 142 tests passing; local **Git Hooks** (self-healing
+  pre-commit + CI-mirror pre-push) enforced; `CLAUDE.md` mandate auto-loaded
+  every session; CI green on every push to `main`.
