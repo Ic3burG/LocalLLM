@@ -1034,7 +1034,47 @@ launchd had nothing to restart.
 
 ---
 
-## 📈 Current Status (as of May 16, 2026)
+## 🎨 Image Generation Recovery — May 17, 2026
+
+Image generation in the UI was failing with the opaque `Image generation failed: generation_failed`. Systematic debugging peeled back **five layered issues**, each masking the next; fixing them brought FLUX.1-schnell back end-to-end and hardened the error surface so future failures of these classes will be self-diagnosing.
+
+### Root-cause chain (five layers)
+
+1. **Orphaned bridge on the wrong Python.** The live `gemma_bridge.py` process (PID 19449) had been started by hand against the system Python 3.14, not `.venv/bin/python3`. The system interpreter does not have `mflux`, so every `/v1/image/generate` request raised `ImportError` and the broad `except Exception` collapsed it to the generic `generation_failed` code.
+2. **Stale `.venv` from the `Gemma4 → LocalLLM` rename.** The venv was not relocatable: `.venv/bin/activate` and the `huggingface-cli` shebang both still pointed at `/Users/ojdavis/Claude Code/Gemma4/.venv/bin/python`. `scripts/download_sd.sh` used `source .venv/bin/activate`, so PATH leaked through to system Python (no mflux). The launchd-managed bridge happened to work because launchd invokes `.venv/bin/python3` directly, bypassing `activate`.
+3. **mflux alias renamed.** `Flux1.from_name("flux-schnell", …)` used to be a valid alias; the current mflux registers `"schnell"` as the only alias for `black-forest-labs/FLUX.1-schnell`. `"flux-schnell"` was silently treated as a literal repo id and resolution failed at weight download.
+4. **FLUX.1-schnell is now a gated HuggingFace repo.** Black Forest Labs added access gating; `omarjdavis` was authenticated (write-scope token) but not yet approved for this specific repo, so the HTTP head call returned `403 GatedRepoError`. Existing error mapping in `gemma_bridge.py` had no clause for this — fell through to `generation_failed`.
+5. **Threaded import race in `inference_engine` vs. `image_pipeline`.** `inference_engine.py` starts a daemon thread at module-load that imports `mlx_vlm → transformers`. The main thread was concurrently running `image_pipeline.py`, which imports `mflux → transformers`. `transformers.__init__.py` uses `_LazyModule`; the loser of the import-lock race got a fully-imported but **partially populated** module, so mflux's `from transformers import PreTrainedTokenizer` failed at bind time, mflux silently set `_Flux1 = None`, and the bridge always reported `image_backend_unavailable`.
+
+### Fixes
+
+| File                     | Change                                                                                                                                                                                                                                                                                       |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image_pipeline.py`      | Moved the `mflux` deep-import **above** `from inference_engine import …` so transformers finishes loading on the main thread before the worker thread spawns. Also changed `Flux1.from_name("flux-schnell", …)` → `"schnell"`.                                                               |
+| `gemma_bridge.py`        | Added explicit handlers for `ImportError` → `image_backend_unavailable` (503) and `huggingface_hub.errors.GatedRepoError` → `model_access_denied` (403). `GatedRepoError` is detected via `isinstance` inside the broad `except` so `huggingface_hub` is not a hard import-time requirement. |
+| `gemma-web/index.html`   | Added matching user-facing strings in the image-mode `errorMessages` dict for both new error codes so the UI surfaces actionable next steps (re-run installer / request HF access).                                                                                                          |
+| `scripts/download_sd.sh` | Replaced `source .venv/bin/activate && python3 - <<…` with a direct `"$REPO_ROOT/.venv/bin/python3"` invocation (immune to the stale `activate` path), and fixed the mflux alias.                                                                                                            |
+
+### System state changes
+
+- Stopped the orphaned bridge process and reinstalled both launchd agents (`com.gemini.litert`, `com.gemini.gemma-bridge`) via `bash scripts/install-launchd.sh`.
+- Rebuilt `.venv` from scratch against the current project path; reinstalled `requirements.txt` plus `pytest pytest-asyncio` (the dev-test deps CI installs separately).
+- Downloaded FLUX.1-schnell weights to `~/.cache/huggingface` (~24 GB pulled) and verified with the script's built-in 1-step test render.
+
+### Outcome
+
+- `POST /v1/image/generate` with a small prompt returns a 200 KB PNG in ~11 s at 512×512 / 2 steps. UI image mode works end-to-end.
+- `bash .git/hooks/pre-push` green: ruff check + ruff format --check + prettier --check + pytest, **142 passed**.
+- Two new error codes are wired through the full stack (bridge → JSON → frontend → user-visible string), so the next time any of these layers regress, the UI tells the user exactly which one.
+
+### Follow-ups noted (not yet bundled)
+
+- The `inference_engine` daemon thread that imports heavy ML libs at module-load is fragile. A future hardening would be either to gate the worker thread's first imports behind `_inference_ready.wait()` on the consumer side, or to move the worker-thread start out of module-load into an explicit startup hook.
+- `pytest` and `pytest-asyncio` are dev-only and not in `requirements.txt`; any future venv rebuild will need them reinstalled. Consider a `requirements-dev.txt` or extras group.
+
+---
+
+## 📈 Current Status (as of May 17, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
   Both managed by repaired launchd plists; can be reinstalled via

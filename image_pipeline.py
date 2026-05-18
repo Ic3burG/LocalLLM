@@ -5,12 +5,17 @@ import random
 import threading
 import time
 
-from inference_engine import get_loaded_models
-
+# Import mflux BEFORE inference_engine. inference_engine starts a daemon thread
+# at module-load that imports mlx_vlm → transformers; doing it after would race
+# with mflux's own `from transformers import PreTrainedTokenizer`, which
+# transformers' lazy loader can't satisfy mid-load (the symbol comes up empty
+# and mflux silently disables itself).
 try:
     from mflux.models.flux.variants.txt2img.flux import Flux1 as _Flux1
 except ImportError:
     _Flux1 = None  # type: ignore
+
+from inference_engine import get_loaded_models
 
 logger = logging.getLogger("image_pipeline")
 
@@ -80,7 +85,7 @@ def generate_image(
             _unload_text_model()
 
         t0 = time.monotonic()
-        flux = _Flux1.from_name("flux-schnell", quantize=4)
+        flux = _Flux1.from_name("schnell", quantize=4)
         result = flux.generate_image(
             seed=random.randint(0, 2**31 - 1),
             prompt=styled_prompt,

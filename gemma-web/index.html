@@ -2804,6 +2804,10 @@
                 "Not enough memory. Try a smaller size or switch to a lighter text model.",
               timeout:
                 "Generation timed out. Try fewer steps or a smaller size.",
+              image_backend_unavailable:
+                "Image backend (mflux) is not installed in the bridge's Python environment. Re-run scripts/install-launchd.sh.",
+              model_access_denied:
+                "HuggingFace denied access to the image model. Visit https://huggingface.co/black-forest-labs/FLUX.1-schnell to request access, then re-run scripts/download_sd.sh.",
             };
             appendMessage(
               "assistant",

@@ -18,6 +18,10 @@ try:
     import mlx.core as mx
 except ImportError:
     mx = None
+try:
+    from huggingface_hub.errors import GatedRepoError as _GatedRepoError
+except ImportError:
+    _GatedRepoError = None
 import image_pipeline
 import pdf_pipeline
 from agent_utils import (
@@ -451,9 +455,15 @@ async def generate_image_route(request: Request):
         return JSONResponse({"error": str(e)}, status_code=400)
     except FileNotFoundError:
         return JSONResponse({"error": "model_not_found"}, status_code=503)
+    except ImportError as e:
+        logger.error("image backend unavailable: %s", e, exc_info=True)
+        return JSONResponse({"error": "image_backend_unavailable"}, status_code=503)
     except MemoryError:
         return JSONResponse({"error": "insufficient_memory"}, status_code=507)
     except Exception as e:
+        if _GatedRepoError is not None and isinstance(e, _GatedRepoError):
+            logger.error("image model access denied: %s", e)
+            return JSONResponse({"error": "model_access_denied"}, status_code=403)
         logger.error("image generation failed: %s", e, exc_info=True)
         return JSONResponse({"error": "generation_failed"}, status_code=500)
 
