@@ -38,6 +38,14 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
+// Serve static files from the current directory (gemma-web)
+app.use(express.static(__dirname));
+
+// Explicit route for index.html at root
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "index.html"));
+});
+
 app.post("/api/document", upload.single("file"), async (req, res) => {
   const t0 = Date.now();
   try {

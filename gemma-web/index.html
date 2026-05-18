@@ -2832,7 +2832,7 @@
 
       async function updateServerStatus() {
         try {
-          const r = await fetch("http://localhost:3001/api/backend/status", {
+          const r = await fetch("/api/backend/status", {
             signal: AbortSignal.timeout(4000),
           });
           const { online } = await r.json();
@@ -3209,8 +3209,7 @@
       }
 
       function resetChatBoxToWelcome() {
-        while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild);
-        chatBox.appendChild(buildWelcomeElement());
+        chatBox.replaceChildren(buildWelcomeElement());
         chatBox.scrollTop = 0;
       }
 
@@ -3263,7 +3262,7 @@
         if (!chat) return;
         chatTitle.textContent = chat.title;
         modelSelect.value = chat.model || "gemma4-e4b";
-        while (chatBox.firstChild) chatBox.removeChild(chatBox.firstChild);
+        chatBox.replaceChildren();
         chat.messages.forEach((msg) => {
           if (msg.role !== "system") {
             appendMessage(msg.role, msg.content, [], false, msg.reasoning);
@@ -3296,8 +3295,7 @@
         const starredSection = document.getElementById("starred-section");
 
         // Render Starred section
-        while (starredList.firstChild)
-          starredList.removeChild(starredList.firstChild);
+        starredList.replaceChildren();
         if (starredChats.length > 0) {
           starredSection.classList.remove("hidden");
           starredChats.forEach((chat) =>
@@ -3311,8 +3309,7 @@
         // flex:1 with overflow-y:auto, so it fills available height and scrolls
         // if there are more chats than fit. All Chats button stays pinned at
         // the bottom of the sidebar for full management.
-        while (historyList.firstChild)
-          historyList.removeChild(historyList.firstChild);
+        historyList.replaceChildren();
         chats.forEach((chat) => historyList.appendChild(buildChatItem(chat)));
       }
 
@@ -3487,7 +3484,7 @@
 
       async function loadMemory() {
         try {
-          const response = await fetch("http://localhost:3001/api/memory");
+          const response = await fetch("/api/memory");
           const data = await response.json();
           memoryEditor.value = data.memory || "";
         } catch (e) {
@@ -3497,9 +3494,7 @@
 
       async function loadSystemPrompt() {
         try {
-          const response = await fetch(
-            "http://localhost:3001/api/system_prompt"
-          );
+          const response = await fetch("/api/system_prompt");
           const data = await response.json();
           systemPromptDisplay.value = data.system_prompt || "";
         } catch (e) {
@@ -3509,7 +3504,7 @@
 
       async function updateVitals() {
         try {
-          const r = await fetch("http://localhost:3001/api/stats");
+          const r = await fetch("/api/stats");
           if (!r.ok) throw new Error(`HTTP ${r.status}`);
           const data = await r.json();
 
@@ -3684,7 +3679,7 @@
       async function saveMemory() {
         try {
           saveMemoryBtn.disabled = true;
-          const response = await fetch("http://localhost:3001/api/memory", {
+          const response = await fetch("/api/memory", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ memory: memoryEditor.value }),
@@ -3713,7 +3708,7 @@
           '<span class="text-blue-400">Starting integrity check...</span>';
 
         try {
-          const r = await fetch("http://localhost:3001/api/backend/check");
+          const r = await fetch("/api/backend/check");
           const data = await r.json();
 
           if (data.success) {
@@ -3751,7 +3746,7 @@
           status.className =
             "text-xs text-yellow-500 opacity-100 transition-opacity";
           try {
-            await fetch("http://localhost:3001/api/backend/restart", {
+            await fetch("/api/backend/restart", {
               method: "POST",
             });
             status.textContent = "Waiting for backend...";
@@ -3760,9 +3755,7 @@
             const poll = setInterval(async () => {
               attempts++;
               try {
-                const r = await fetch(
-                  "http://localhost:3001/api/backend/status"
-                );
+                const r = await fetch("/api/backend/status");
                 const { online } = await r.json();
                 if (online) {
                   clearInterval(poll);
@@ -3968,7 +3961,7 @@
           messageContent = fullText;
         }
         if (currentChat.messages.length === 1) {
-          chatBox.innerHTML = "";
+          chatBox.replaceChildren();
         }
         const newDocIds = attachments
           .filter((a) => a.type === "pdf" && a.status === "ready" && a.doc_id)
@@ -4001,7 +3994,7 @@
         if (
           currentChat.messages.filter((m) => m.role !== "system").length === 1
         ) {
-          fetch("http://localhost:3001/api/title", {
+          fetch("/api/title", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ messages: currentChat.messages }),
@@ -4019,20 +4012,16 @@
 
         setAgentStatus("Thinking...");
         try {
-          const response = await fetch(
-            "http://localhost:3001/api/chat/stream",
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                messages: currentChat.messages,
-                model: currentChat.model,
-                doc_ids,
-                deep_think:
-                  document.getElementById("deep-think-toggle").checked,
-              }),
-            }
-          );
+          const response = await fetch("/api/chat/stream", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              messages: currentChat.messages,
+              model: currentChat.model,
+              doc_ids,
+              deep_think: document.getElementById("deep-think-toggle").checked,
+            }),
+          });
           if (!response.ok) {
             const errText = await response.text();
             throw new Error(errText || `Server error: ${response.status}`);
@@ -4044,9 +4033,14 @@
           const startTime = Date.now();
 
           console.log("[TRACE] Starting SSE stream for task:", task_id);
-          const es = new EventSource(
-            `http://localhost:3001/api/chat/stream/${task_id}`
-          );
+          if (currentEventSource) {
+            try {
+              currentEventSource.close();
+            } catch (e) {
+              console.warn("[SUBMIT] EventSource close error:", e);
+            }
+          }
+          const es = new EventSource(`/api/chat/stream/${task_id}`);
           currentEventSource = es;
           const streamChatId = currentChatId;
           let taskDone = false;
@@ -4187,7 +4181,7 @@
             const formData = new FormData();
             formData.append("file", file);
 
-            fetch("http://localhost:3001/api/document", {
+            fetch("/api/document", {
               method: "POST",
               body: formData,
             })
@@ -4532,7 +4526,7 @@
         toolToAlwaysAllow = null
       ) {
         if (toolToAlwaysAllow) alwaysAllowedTools.add(toolToAlwaysAllow);
-        fetch(`http://localhost:3001/api/agent/confirm/${taskId}`, {
+        fetch(`/api/agent/confirm/${taskId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ approved }),
@@ -4577,7 +4571,7 @@
       }
 
       async function loadScheduledTasks() {
-        const res = await fetch("http://localhost:3001/api/agent/schedule");
+        const res = await fetch("/api/agent/schedule");
         const tasks = await res.json();
         renderInAppTasks(tasks);
       }
@@ -4643,10 +4637,9 @@
       }
 
       async function deleteScheduledTask(name) {
-        await fetch(
-          `http://localhost:3001/api/agent/schedule/${encodeURIComponent(name)}`,
-          { method: "DELETE" }
-        );
+        await fetch(`/api/agent/schedule/${encodeURIComponent(name)}`, {
+          method: "DELETE",
+        });
         loadScheduledTasks();
       }
 
@@ -4663,7 +4656,7 @@
         const prompt = document.getElementById("new-task-prompt").value.trim();
         if (!name || !schedule || !prompt) return;
 
-        await fetch("http://localhost:3001/api/agent/schedule", {
+        await fetch("/api/agent/schedule", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name, schedule, prompt }),
