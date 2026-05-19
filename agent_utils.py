@@ -308,7 +308,7 @@ async def _google_search(query: str) -> dict:
             sources.append(
                 {
                     "kind": "web",
-                    "title": r.get("title", "Untitled"),
+                    "title": r.get("title") or "Untitled",
                     "url": url or None,
                     "domain": domain,
                     "snippet": trim_snippet(r.get("body")),
@@ -356,7 +356,7 @@ async def _web_fetch(url: str) -> dict:
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
             title_tag = soup.find("title")
-            title = title_tag.get_text().strip() if title_tag else url
+            title = (title_tag.get_text().strip() if title_tag else "") or url
             for tag in soup(["script", "style"]):
                 tag.decompose()
             lines = [
