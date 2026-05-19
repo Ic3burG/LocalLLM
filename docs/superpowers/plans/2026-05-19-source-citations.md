@@ -20,18 +20,18 @@
 
 ## File Map
 
-| File                          | Role                                                                                                                                                                       | Status          |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------- |
-| `citations.py`                | Source dataclass, dedupe helper, index assignment, snippet trimming, model-text formatter                                                                                  | **New**         |
-| `agent_utils.py`              | `_google_search` / `_web_fetch` return citation-aware dict; AGENT_SYSTEM_PROMPT gains CITATIONS block                                                                      | Modify          |
-| `agent.py`                    | `react_loop_sse` consumes citation-aware results, emits sources SSE event, threads index assignment                                                                        | Modify          |
-| `pdf_pipeline.py`             | New `build_numbered_document_context()` alongside existing `build_document_context` (legacy kept until callers move)                                                       | Modify          |
-| `gemma_bridge.py`             | `/v1/chat/stream` handler emits a sources event into the SSE queue when RAG chunks are present; uses numbered context builder                                              | Modify          |
-| `gemma-web/server.js`         | No code change required — `/api/chat/stream/:taskId` already proxies all event types verbatim.                                                                             | Verify only     |
-| `gemma-web/index.html`        | New chip + popover CSS, `renderCitations()` post-processor, hover/focus/click handlers, RAG modal, fallback footer, `sources` field added to persisted messages            | Modify          |
-| `tests/test_citations.py`     | Unit tests for `citations.py` helpers                                                                                                                                      | **New**         |
-| `tests/test_agent.py`         | New cases: structured tool returns, global indexing across calls, sources SSE emission, CITATIONS block in prompt                                                          | Modify          |
-| `tests/test_pdf_pipeline.py`  | New cases: `build_numbered_document_context` format                                                                                                                        | New if missing  |
+| File                         | Role                                                                                                                                                            | Status         |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `citations.py`               | Source dataclass, dedupe helper, index assignment, snippet trimming, model-text formatter                                                                       | **New**        |
+| `agent_utils.py`             | `_google_search` / `_web_fetch` return citation-aware dict; AGENT_SYSTEM_PROMPT gains CITATIONS block                                                           | Modify         |
+| `agent.py`                   | `react_loop_sse` consumes citation-aware results, emits sources SSE event, threads index assignment                                                             | Modify         |
+| `pdf_pipeline.py`            | New `build_numbered_document_context()` alongside existing `build_document_context` (legacy kept until callers move)                                            | Modify         |
+| `gemma_bridge.py`            | `/v1/chat/stream` handler emits a sources event into the SSE queue when RAG chunks are present; uses numbered context builder                                   | Modify         |
+| `gemma-web/server.js`        | No code change required — `/api/chat/stream/:taskId` already proxies all event types verbatim.                                                                  | Verify only    |
+| `gemma-web/index.html`       | New chip + popover CSS, `renderCitations()` post-processor, hover/focus/click handlers, RAG modal, fallback footer, `sources` field added to persisted messages | Modify         |
+| `tests/test_citations.py`    | Unit tests for `citations.py` helpers                                                                                                                           | **New**        |
+| `tests/test_agent.py`        | New cases: structured tool returns, global indexing across calls, sources SSE emission, CITATIONS block in prompt                                               | Modify         |
+| `tests/test_pdf_pipeline.py` | New cases: `build_numbered_document_context` format                                                                                                             | New if missing |
 
 ---
 
@@ -1137,20 +1137,16 @@ function renderCitations(containerEl, sources) {
 
   const proseEl = containerEl.querySelector(".prose") || containerEl;
   const skipTags = new Set(["CODE", "PRE", "A", "BUTTON"]);
-  const walker = document.createTreeWalker(
-    proseEl,
-    NodeFilter.SHOW_TEXT,
-    {
-      acceptNode(node) {
-        let p = node.parentElement;
-        while (p && p !== proseEl) {
-          if (skipTags.has(p.tagName)) return NodeFilter.FILTER_REJECT;
-          p = p.parentElement;
-        }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    }
-  );
+  const walker = document.createTreeWalker(proseEl, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      let p = node.parentElement;
+      while (p && p !== proseEl) {
+        if (skipTags.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+        p = p.parentElement;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
   const textNodes = [];
   let n;
   while ((n = walker.nextNode())) textNodes.push(n);
@@ -1257,9 +1253,7 @@ Then, inside the existing `done` branch, after `appendMessage(...)` is called (a
 ```javascript
 if (traceContainer.dataset.pendingSources) {
   const sources = JSON.parse(traceContainer.dataset.pendingSources);
-  const lastAssistant = chatBox.querySelector(
-    ".message-gemma:last-of-type"
-  );
+  const lastAssistant = chatBox.querySelector(".message-gemma:last-of-type");
   if (lastAssistant && sources.length) {
     renderCitations(lastAssistant, sources);
   }
