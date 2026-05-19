@@ -42,11 +42,9 @@ def trim_snippet(text: str | None) -> str:
 
 
 def assign_indices(sources: list[dict], existing_count: int) -> list[dict]:
-    """Mutates the dicts in `sources` to add a 1-indexed `idx` that
-    continues from `existing_count`. Returns the same list for chaining."""
-    for i, s in enumerate(sources):
-        s["idx"] = existing_count + i + 1
-    return sources
+    """Return a new list of Sources with 1-indexed `idx` continuing
+    from `existing_count`. The input dicts are not mutated."""
+    return [{**s, "idx": existing_count + i + 1} for i, s in enumerate(sources)]
 
 
 def dedupe_by_url(sources: list[dict]) -> list[dict]:

@@ -10,7 +10,7 @@ from citations import (
 def test_trim_snippet_caps_to_200_chars():
     long = "x" * 400
     out = trim_snippet(long)
-    assert len(out) <= 200
+    assert len(out) == 200
     assert out.endswith("…")
 
 
