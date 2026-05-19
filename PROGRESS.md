@@ -1074,7 +1074,56 @@ Image generation in the UI was failing with the opaque `Image generation failed:
 
 ---
 
-## 📈 Current Status (as of May 17, 2026)
+## ⚙️ CI Action Version Sweep + Workflow Security Audit — May 18, 2026
+
+GitHub's runner started emitting Node.js 20 deprecation warnings on every CI run (Node 24 becomes default June 2, 2026; Node 20 fully removed September 16, 2026). Addressed in two passes, with a workflow-security audit folded in.
+
+### Pass 1 — bump the obvious offenders
+
+| Action               | Was   | Now   |
+| -------------------- | ----- | ----- |
+| `actions/checkout`   | `@v4` | `@v5` |
+| `actions/setup-node` | `@v4` | `@v5` |
+
+Committed as `ci: bump checkout to v5 and setup-node to v5`. I left `actions/setup-python` at `@v5` on the assumption no successor existed.
+
+### Pass 2 — corrections after a fuller audit
+
+That assumption was wrong, and the deprecation banner was incomplete:
+
+1. **`setup-python@v6` had shipped** in September 2025 (latest `v6.2.0`, January 2026). Bumped both occurrences in `ci.yml`. Action's Python-setup behavior is unchanged; the major bump is the underlying Node-24 runtime.
+2. **Two more `checkout@v4` references hid in `.github/workflows/claude-code-review.yml` and `.github/workflows/claude.yml`** — workflows GitHub never warned about because they hadn't run in the most recent push window. Bumped both to `@v5`.
+
+Committed as `ci: setup-python v5→v6 + sweep remaining checkout@v4 actions`.
+
+### Workflow injection audit (driven by the `PreToolUse` hook)
+
+Editing any workflow file triggers a security-reminder hook that lists every dangerous `${{ github.event.* }}` field (`pull_request.title`, `comment.body`, `head_ref`, etc.). The hook's value isn't a per-file CVE check — it's the friction that forces an audit of all workflows every time one is touched. Sweeping all three:
+
+- **`ci.yml`** — zero `${{ }}` interpolation in any `run:` block. Safe.
+- **`claude-code-review.yml`** — one interpolation, line 41: `prompt: "/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"`. `github.repository` is GitHub-controlled `owner/name`; `pull_request.number` is an integer. Neither is shell-exploitable.
+- **`claude.yml`** — `contains(github.event.comment.body, '@claude')` etc. all inside the `if:` condition. `contains()` is literal substring matching, not shell eval. No `run:` blocks interpolate user data.
+
+No injection vectors anywhere. The hook's reminder was generic, but it correctly nudged me toward the full-tree audit that turned up the two leftover `@v4`s.
+
+### Behavioral note about the hook
+
+The `PreToolUse:Edit` hook on workflow files **blocks batched/parallel `Edit` tool calls** (and `replace_all: true`) but **lets sequential single-target Edits through**. Workaround for future workflow changes: always issue Edits one-at-a-time, never in a parallel tool-use batch.
+
+### Outcome
+
+- Three CI runs after the pushes, all green. Deprecation banner reduced from "checkout@v4, setup-node@v4, setup-python@v5" → no Node.js 20 action warnings at all.
+- All four workflow files now on current major actions: `checkout@v5`, `setup-python@v6`, `setup-node@v5`, `claude-code-action@v1` (Anthropic's, unchanged).
+- Audit documented in PROGRESS so the next workflow edit can skip the re-derivation step.
+
+### Outstanding
+
+- FastAPI's `on_event` is deprecated (warning surfaces in pytest output; not Node.js related). Migration to lifespan event handlers in `gemma_bridge.py` is a separate follow-up.
+- Pre-existing `huggingface_hub` deprecation in test output (`hf_xet.download_files()`); ignore unless upstream removes it.
+
+---
+
+## 📈 Current Status (as of May 18, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
   Both managed by repaired launchd plists; can be reinstalled via
