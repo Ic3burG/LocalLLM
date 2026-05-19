@@ -1,5 +1,4 @@
 from citations import (
-    Source,
     assign_indices,
     dedupe_by_url,
     format_sources_for_model,
