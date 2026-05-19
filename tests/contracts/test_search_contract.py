@@ -24,21 +24,21 @@ async def test_google_search_contract():
     query = "python programming"
     result = await _google_search(query)
 
-    # Implementation returns a string, verify it's not an error message
-    assert isinstance(result, str), "Result should be a string"
-    assert not result.startswith("ERROR:"), f"Search failed with error: {result}"
-    assert result != "No results found.", "Search should return at least one result"
+    # Implementation returns a {"sources": [...], "model_text": str} dict.
+    assert isinstance(result, dict), "Result should be a dict"
+    assert "sources" in result and "model_text" in result, (
+        f"Result missing required keys: {result}"
+    )
+    assert not result["model_text"].startswith("ERROR:"), (
+        f"Search failed with error: {result['model_text']}"
+    )
+    assert result["sources"], "Search should return at least one source"
 
-    # Verify structure: results are separated by double newlines
-    blocks = result.split("\n\n")
-    assert len(blocks) > 0, "Should have at least one block of results"
-
-    # Verify each block looks like a search result
-    # Format: title\nurl\nbody
-    for block in blocks:
-        lines = block.split("\n")
-        assert len(lines) >= 2, "Each result block should have at least title and URL"
-        assert lines[1].startswith("http"), (
-            f"Second line should be a URL, got: {lines[1]}"
+    # Verify each source has the expected web-source structure.
+    for s in result["sources"]:
+        assert s["kind"] == "web", f"Expected web source, got: {s.get('kind')}"
+        assert s.get("title"), "Source should have a title"
+        assert s.get("url", "").startswith("http"), (
+            f"Source url should be http(s), got: {s.get('url')}"
         )
-        # The body might be empty or missing in some cases, but title and URL should be there.
+        # body/snippet may be empty in some cases, but title and URL must be there.

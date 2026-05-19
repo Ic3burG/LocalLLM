@@ -22,16 +22,22 @@ async def test_google_search():
         result = await _google_search(query)
 
         mock_ddgs.text.assert_called_once_with(query, max_results=5)
-        expected = "\n\n".join(
-            [
-                "Title 1\nhttps://example.com/1",
-                "Title 2\nhttps://example.com/2",
-                "Title 3\nhttps://example.com/3",
-                "Title 4\nhttps://example.com/4",
-                "Title 5\nhttps://example.com/5",
-            ]
-        )
-        assert result == expected
+        assert isinstance(result, dict)
+        assert len(result["sources"]) == 5
+        urls = [s["url"] for s in result["sources"]]
+        assert urls == [
+            "https://example.com/1",
+            "https://example.com/2",
+            "https://example.com/3",
+            "https://example.com/4",
+            "https://example.com/5",
+        ]
+        titles = [s["title"] for s in result["sources"]]
+        assert titles == ["Title 1", "Title 2", "Title 3", "Title 4", "Title 5"]
+        # All entries should be web sources with the expected domain
+        for s in result["sources"]:
+            assert s["kind"] == "web"
+            assert s["domain"] == "example.com"
 
 
 @pytest.mark.asyncio
@@ -61,11 +67,16 @@ async def test_web_fetch():
         result = await _web_fetch(url)
 
         mock_get.assert_called_once_with(url, timeout=10)
+        assert isinstance(result, dict)
+        body = result["model_text"]
         # Should remove script and style, and strip whitespace
-        assert "alert('bad')" not in result
-        assert "color: red" not in result
-        assert "Hello World" in result
-        assert "This is a test." in result
+        assert "alert('bad')" not in body
+        assert "color: red" not in body
+        assert "Hello World" in body
+        assert "This is a test." in body
+        assert len(result["sources"]) == 1
+        assert result["sources"][0]["url"] == url
+        assert result["sources"][0]["domain"] == "example.com"
 
 
 @pytest.mark.asyncio
@@ -76,7 +87,8 @@ async def test_web_fetch_error():
         url = "https://example.com"
         result = await _web_fetch(url)
 
-        assert "ERROR: Connection error" in result
+        assert result["sources"] == []
+        assert "ERROR: Connection error" in result["model_text"]
 
 
 @pytest.mark.asyncio

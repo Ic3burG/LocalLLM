@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from agent_utils import _google_search, _web_fetch
+
 # FAKE_RESPONSE for reuse
 FAKE_RESPONSE = {"choices": [{"message": {"content": "hello"}}]}
 
@@ -527,5 +529,98 @@ async def test_web_fetch_logs_error_on_exception(caplog):
         caplog.at_level(logging.ERROR, logger="agent_utils"),
     ):
         result = await agent_utils._web_fetch("https://example.com")
-    assert result.startswith("ERROR:")
+    assert result["sources"] == []
+    assert result["model_text"].startswith("ERROR:")
     assert any("web_fetch" in r.getMessage().lower() for r in caplog.records)
+
+
+# ── Task 2: Structured returns from _google_search and _web_fetch ──────────
+
+
+@pytest.mark.asyncio
+async def test_google_search_returns_dict_with_sources(monkeypatch):
+    fake_results = [
+        {
+            "title": "ESPN — NBA Scores",
+            "href": "https://espn.com/nba",
+            "body": "Lakers 112, Celtics 108. Final score from last night's game.",
+        },
+        {
+            "title": "NBA.com Recap",
+            "href": "https://www.nba.com/recap",
+            "body": "LeBron scored 35 points.",
+        },
+    ]
+
+    class FakeDDGS:
+        def text(self, query, max_results=5):
+            return fake_results
+
+    import sys
+
+    fake_mod = types.ModuleType("ddgs")
+    fake_mod.DDGS = FakeDDGS
+    monkeypatch.setitem(sys.modules, "ddgs", fake_mod)
+
+    out = await _google_search("nba scores")
+
+    assert isinstance(out, dict)
+    assert "sources" in out
+    assert "model_text" in out
+    assert len(out["sources"]) == 2
+    s0 = out["sources"][0]
+    assert s0["kind"] == "web"
+    assert s0["title"] == "ESPN — NBA Scores"
+    assert s0["url"] == "https://espn.com/nba"
+    assert s0["domain"] == "espn.com"
+    assert "Lakers 112" in s0["snippet"]
+    assert s0.get("idx") in (None, 0)
+
+
+@pytest.mark.asyncio
+async def test_google_search_handles_empty_results(monkeypatch):
+    class FakeDDGS:
+        def text(self, q, max_results=5):
+            return []
+
+    import sys
+
+    fake_mod = types.ModuleType("ddgs")
+    fake_mod.DDGS = FakeDDGS
+    monkeypatch.setitem(sys.modules, "ddgs", fake_mod)
+
+    out = await _google_search("nothing matches")
+    assert out == {"sources": [], "model_text": "No results found."}
+
+
+@pytest.mark.asyncio
+async def test_web_fetch_returns_dict_with_one_source(monkeypatch):
+    html = (
+        b"<html><head><title>ESPN NBA</title></head>"
+        b"<body><p>Lakers won 112-108.</p></body></html>"
+    )
+
+    class FakeResp:
+        status_code = 200
+        text = html.decode()
+
+        def raise_for_status(self):
+            pass
+
+    class FakeRequests:
+        @staticmethod
+        def get(url, timeout=10):
+            return FakeResp()
+
+    import sys
+
+    monkeypatch.setitem(sys.modules, "requests", FakeRequests)
+
+    out = await _web_fetch("https://espn.com/nba")
+    assert isinstance(out, dict)
+    assert len(out["sources"]) == 1
+    s = out["sources"][0]
+    assert s["kind"] == "web"
+    assert s["url"] == "https://espn.com/nba"
+    assert s["domain"] == "espn.com"
+    assert "Lakers won" in out["model_text"]

@@ -286,7 +286,11 @@ async def _get_current_datetime() -> str:
     return now.strftime("%A, %Y-%m-%d %H:%M:%S %Z")
 
 
-async def _google_search(query: str) -> str:
+async def _google_search(query: str) -> dict:
+    from urllib.parse import urlparse
+
+    from citations import trim_snippet
+
     try:
         from ddgs import DDGS
 
@@ -294,13 +298,27 @@ async def _google_search(query: str) -> str:
         results = await loop.run_in_executor(
             None, lambda: DDGS().text(query, max_results=5)
         )
-        lines = [
-            f"{r['title']}\n{r['href']}\n{r.get('body', '')}".rstrip() for r in results
-        ]
-        return "\n\n".join(lines) if lines else "No results found."
+        if not results:
+            return {"sources": [], "model_text": "No results found."}
+
+        sources = []
+        for r in results:
+            url = r.get("href") or ""
+            domain = urlparse(url).hostname or None
+            sources.append(
+                {
+                    "kind": "web",
+                    "title": r.get("title", "Untitled"),
+                    "url": url or None,
+                    "domain": domain,
+                    "snippet": trim_snippet(r.get("body")),
+                    "meta": {},
+                }
+            )
+        return {"sources": sources, "model_text": ""}
     except Exception as e:
         logger.error("google_search failed: %s", e, extra={"query": query})
-        return f"ERROR: {e}"
+        return {"sources": [], "model_text": f"ERROR: {e}"}
 
 
 def validate_url(url: str):
@@ -321,7 +339,11 @@ def validate_url(url: str):
         raise PermissionError(f"SSRF detected: Access to {host} is blocked")
 
 
-async def _web_fetch(url: str) -> str:
+async def _web_fetch(url: str) -> dict:
+    from urllib.parse import urlparse
+
+    from citations import trim_snippet
+
     try:
         validate_url(url)
         import requests
@@ -333,6 +355,8 @@ async def _web_fetch(url: str) -> str:
             resp = requests.get(url, timeout=10)
             resp.raise_for_status()
             soup = BeautifulSoup(resp.text, "html.parser")
+            title_tag = soup.find("title")
+            title = title_tag.get_text().strip() if title_tag else url
             for tag in soup(["script", "style"]):
                 tag.decompose()
             lines = [
@@ -340,12 +364,23 @@ async def _web_fetch(url: str) -> str:
                 for line in soup.get_text(separator="\n").splitlines()
                 if line.strip()
             ]
-            return "\n".join(lines)[:5000]
+            body = "\n".join(lines)[:5000]
+            return title, body
 
-        return await loop.run_in_executor(None, _sync_fetch)
+        title, body = await loop.run_in_executor(None, _sync_fetch)
+        domain = urlparse(url).hostname or None
+        source = {
+            "kind": "web",
+            "title": title,
+            "url": url,
+            "domain": domain,
+            "snippet": trim_snippet(body),
+            "meta": {},
+        }
+        return {"sources": [source], "model_text": body}
     except Exception as e:
         logger.error("web_fetch failed: %s", e, extra={"url": url})
-        return f"ERROR: {e}"
+        return {"sources": [], "model_text": f"ERROR: {e}"}
 
 
 async def _grep_search(pattern: str, path: str = ".") -> str:

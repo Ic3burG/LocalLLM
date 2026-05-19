@@ -60,14 +60,14 @@ async def test_web_fetch_ssrf_localhost():
     # After fix, it should raise PermissionError or return an ERROR message containing "SSRF detected".
     url = "http://localhost:9379/v1/models"
     result = await _web_fetch(url)
-    assert "SSRF detected" in result
+    assert "SSRF detected" in result["model_text"]
 
 
 @pytest.mark.asyncio
 async def test_web_fetch_ssrf_ip():
     url = "http://127.0.0.1/etc"
     result = await _web_fetch(url)
-    assert "SSRF detected" in result
+    assert "SSRF detected" in result["model_text"]
 
 
 from agent_utils import AUDIT_LOG_PATH, _python_interpreter, _shell
