@@ -5,7 +5,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
 
-from pdf_pipeline import build_document_context, chunk_text, retrieve_chunks
+from pdf_pipeline import (
+    build_document_context,
+    build_numbered_document_context,
+    chunk_text,
+    chunks_to_sources,
+    retrieve_chunks,
+)
 
 
 def test_chunk_text_single_short_page():
@@ -100,3 +106,43 @@ def test_build_document_context_format():
 
 def test_build_document_context_empty():
     assert build_document_context([]) == ""
+
+
+def _fake_chunks():
+    return [
+        {
+            "filename": "annual_report.pdf",
+            "pages": [4],
+            "text": "Q3 revenue grew 18% year-over-year.",
+            "score": 0.91,
+        },
+        {
+            "filename": "annual_report.pdf",
+            "pages": [7, 8],
+            "text": "Operating margin expanded to 22.3%.",
+            "score": 0.83,
+        },
+    ]
+
+
+def test_build_numbered_document_context_format():
+    ctx = build_numbered_document_context(_fake_chunks())
+    assert "[1] (annual_report.pdf, p.4):" in ctx
+    assert "Q3 revenue grew 18% year-over-year." in ctx
+    assert "[2] (annual_report.pdf, p.7, p.8):" in ctx
+    assert "RELEVANT EXCERPTS" in ctx
+
+
+def test_chunks_to_sources_yields_rag_records():
+    sources = chunks_to_sources(_fake_chunks())
+    assert len(sources) == 2
+    s0 = sources[0]
+    assert s0["kind"] == "rag"
+    assert s0["title"] == "annual_report.pdf"
+    assert s0["meta"]["page"] == 4
+    assert "Q3 revenue" in s0["snippet"]
+    assert s0["url"] is None
+
+
+def test_build_numbered_document_context_empty():
+    assert build_numbered_document_context([]) == ""

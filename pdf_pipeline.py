@@ -126,3 +126,52 @@ def build_document_context(chunks: list[dict]) -> str:
         parts.append("[END DOCUMENT CONTEXT]")
     parts.append("Answer the user's question using the context above where relevant.")
     return "\n".join(parts)
+
+
+def build_numbered_document_context(chunks: list[dict]) -> str:
+    """Render RAG chunks with [N] prefixes so the model can cite them.
+
+    Format matches the agent-mode TOOL_RESULT convention:
+        RELEVANT EXCERPTS FROM USER'S DOCUMENTS:
+        [1] (file.pdf, p.4): "chunk text"
+        [2] (file.pdf, p.7, p.8): "chunk text"
+    """
+    if not chunks:
+        return ""
+    lines = ["RELEVANT EXCERPTS FROM USER'S DOCUMENTS:"]
+    for idx, ch in enumerate(chunks, start=1):
+        pages = ", ".join(f"p.{p}" for p in ch.get("pages", []))
+        loc = f"{ch['filename']}, {pages}" if pages else ch["filename"]
+        text = ch.get("text", "").strip()
+        lines.append(f'[{idx}] ({loc}): "{text}"')
+    lines.append(
+        "When you state a fact from these excerpts, append [N] at the end "
+        "of the claim, matching the index above."
+    )
+    return "\n".join(lines)
+
+
+def chunks_to_sources(chunks: list[dict]) -> list[dict]:
+    """Convert retrieved chunks into Source records (without idx — the
+    caller assigns indices)."""
+    from citations import trim_snippet
+
+    sources = []
+    for ch in chunks:
+        pages = ch.get("pages") or []
+        first_page = pages[0] if pages else None
+        sources.append(
+            {
+                "kind": "rag",
+                "title": ch["filename"],
+                "url": None,
+                "domain": None,
+                "snippet": trim_snippet(ch.get("text")),
+                "meta": {
+                    "page": first_page,
+                    "pages": pages,
+                    "file": ch["filename"],
+                },
+            }
+        )
+    return sources

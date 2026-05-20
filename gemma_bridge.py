@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 import re
@@ -586,6 +587,7 @@ async def chat_stream(request: Request):
                 )
 
         # RAG: inject retrieved document chunks into system prompt
+        pending_rag_sources: list[dict] = []
         if doc_ids:
             last_content = messages[-1].get("content", "") if messages else ""
             if isinstance(last_content, list):
@@ -602,7 +604,7 @@ async def chat_stream(request: Request):
             )
             record_embedding_latency(emb_latency)
             if chunks:
-                context_block = pdf_pipeline.build_document_context(chunks)
+                context_block = pdf_pipeline.build_numbered_document_context(chunks)
                 system_injected = False
                 for msg in messages:
                     if msg.get("role") == "system":
@@ -612,10 +614,20 @@ async def chat_stream(request: Request):
                 if not system_injected:
                     messages.insert(0, {"role": "system", "content": context_block})
 
+                from citations import assign_indices
+
+                rag_sources = pdf_pipeline.chunks_to_sources(chunks)
+                pending_rag_sources = assign_indices(rag_sources, existing_count=0)
+
         # Start ReAct loop as background task
         task_id = str(uuid.uuid4())
         sse_queues[task_id] = asyncio.Queue()
         confirm_queues[task_id] = asyncio.Queue()
+
+        if pending_rag_sources:
+            await sse_queues[task_id].put(
+                json.dumps({"type": "sources", "items": pending_rag_sources})
+            )
 
         asyncio.create_task(
             react_loop_sse(task_id, messages, model_id, deep_think=deep_think)
