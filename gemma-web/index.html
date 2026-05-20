@@ -4215,11 +4215,20 @@
         bodyEl.className = "citation-modal-body";
         bodyEl.textContent = source.snippet || "(no excerpt available)";
 
+        const onKey = (e) => {
+          if (e.key === "Escape") dismiss();
+        };
+        const dismiss = () => {
+          backdrop.remove();
+          document.removeEventListener("keydown", onKey);
+        };
+        document.addEventListener("keydown", onKey);
+
         const actions = document.createElement("div");
         actions.className = "citation-modal-actions";
         const closeBtn = document.createElement("button");
         closeBtn.textContent = "Close";
-        closeBtn.addEventListener("click", () => backdrop.remove());
+        closeBtn.addEventListener("click", dismiss);
         actions.appendChild(closeBtn);
 
         modal.appendChild(titleEl);
@@ -4228,17 +4237,9 @@
         modal.appendChild(actions);
         backdrop.appendChild(modal);
         backdrop.addEventListener("click", (e) => {
-          if (e.target === backdrop) backdrop.remove();
+          if (e.target === backdrop) dismiss();
         });
         document.body.appendChild(backdrop);
-
-        const onKey = (e) => {
-          if (e.key === "Escape") {
-            backdrop.remove();
-            document.removeEventListener("keydown", onKey);
-          }
-        };
-        document.addEventListener("keydown", onKey);
       }
 
       function attachChipBehavior(btn, source) {
