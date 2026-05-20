@@ -4010,12 +4010,123 @@
         containerEl.appendChild(footer);
       }
 
+      const _popover = (() => {
+        let el = null;
+        let openTimer = null;
+        let closeTimer = null;
+
+        function ensure() {
+          if (el) return el;
+          el = document.createElement("div");
+          el.className = "citation-popover";
+          el.setAttribute("role", "tooltip");
+          document.body.appendChild(el);
+          el.addEventListener("mouseenter", () => {
+            clearTimeout(closeTimer);
+          });
+          el.addEventListener("mouseleave", scheduleClose);
+          return el;
+        }
+
+        function position(chip) {
+          ensure();
+          const r = chip.getBoundingClientRect();
+          el.style.left = "-9999px";
+          el.style.top = "-9999px";
+          el.classList.add("visible");
+          const pr = el.getBoundingClientRect();
+          const margin = 8;
+          let top = r.top - pr.height - margin;
+          if (top < margin) top = r.bottom + margin;
+          let left = r.left + r.width / 2 - pr.width / 2;
+          left = Math.max(
+            margin,
+            Math.min(left, window.innerWidth - pr.width - margin)
+          );
+          el.style.left = `${left}px`;
+          el.style.top = `${top}px`;
+        }
+
+        function render(source) {
+          ensure();
+          // Replace children via DOM methods — never interpret user data as HTML.
+          el.replaceChildren();
+
+          const titleEl = document.createElement("div");
+          titleEl.className = "citation-popover-title";
+          titleEl.textContent = `${KIND_ICON[source.kind] || "🔗"} ${source.title || "Untitled"}`;
+          el.appendChild(titleEl);
+
+          if (source.kind === "rag" && source.meta && source.meta.page) {
+            const pageEl = document.createElement("div");
+            pageEl.className = "citation-popover-domain";
+            pageEl.textContent = `page ${source.meta.page}`;
+            el.appendChild(pageEl);
+          } else if (source.domain) {
+            const domEl = document.createElement("div");
+            domEl.className = "citation-popover-domain";
+            domEl.textContent = source.domain;
+            el.appendChild(domEl);
+          }
+
+          const snipEl = document.createElement("div");
+          snipEl.className = "citation-popover-snippet";
+          snipEl.textContent = source.snippet || "";
+          el.appendChild(snipEl);
+
+          let actionText = "";
+          if (source.kind === "web") actionText = "Click chip to open ↗";
+          else if (source.kind === "rag")
+            actionText = "Click chip for full chunk →";
+          if (actionText) {
+            const actEl = document.createElement("div");
+            actEl.className = "citation-popover-action";
+            actEl.textContent = actionText;
+            el.appendChild(actEl);
+          }
+        }
+
+        function open(chip, source) {
+          clearTimeout(closeTimer);
+          clearTimeout(openTimer);
+          openTimer = setTimeout(() => {
+            render(source);
+            position(chip);
+          }, 150);
+        }
+
+        function scheduleClose() {
+          clearTimeout(openTimer);
+          closeTimer = setTimeout(() => {
+            if (el) el.classList.remove("visible");
+          }, 120);
+        }
+
+        function closeNow() {
+          clearTimeout(openTimer);
+          clearTimeout(closeTimer);
+          if (el) el.classList.remove("visible");
+        }
+
+        return { open, scheduleClose, closeNow };
+      })();
+
       function attachChipBehavior(btn, source) {
-        // Click stub only; popover wiring added in Task 7, RAG modal in Task 8.
+        btn.addEventListener("mouseenter", () => _popover.open(btn, source));
+        btn.addEventListener("mouseleave", () => _popover.scheduleClose());
+        btn.addEventListener("focus", () => _popover.open(btn, source));
+        btn.addEventListener("blur", () => _popover.scheduleClose());
+        btn.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") {
+            _popover.closeNow();
+            btn.blur();
+          }
+        });
         btn.addEventListener("click", () => {
           if (source.kind === "web" && source.url) {
             window.open(source.url, "_blank", "noopener,noreferrer");
           }
+          // RAG modal wiring added in Task 8.
         });
       }
 
