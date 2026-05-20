@@ -1048,6 +1048,122 @@
         font-size: 13px;
       }
 
+      /* ── Citation chips ── */
+      .citation-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+        height: 16px;
+        padding: 0 6px;
+        margin: 0 2px;
+        border-radius: 9999px;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1;
+        border: 1px solid var(--chip-border, rgb(199 210 254));
+        background: var(--chip-bg, rgb(238 242 255));
+        color: var(--chip-fg, rgb(67 56 202));
+        cursor: pointer;
+        vertical-align: baseline;
+        text-decoration: none;
+        transition:
+          background 120ms ease,
+          transform 120ms ease;
+      }
+      .citation-chip:hover,
+      .citation-chip:focus-visible {
+        background: var(--chip-bg-hover, rgb(224 231 255));
+        outline: none;
+        transform: translateY(-1px);
+      }
+      .citation-chip[data-kind="web"] {
+        --chip-border: rgb(199 210 254);
+        --chip-bg: rgb(238 242 255);
+        --chip-bg-hover: rgb(224 231 255);
+        --chip-fg: rgb(67 56 202);
+      }
+      .citation-chip[data-kind="rag"] {
+        --chip-border: rgb(167 243 208);
+        --chip-bg: rgb(236 253 245);
+        --chip-bg-hover: rgb(209 250 229);
+        --chip-fg: rgb(4 120 87);
+      }
+      .citation-chip[data-kind="file"] {
+        --chip-border: rgb(203 213 225);
+        --chip-bg: rgb(248 250 252);
+        --chip-bg-hover: rgb(241 245 249);
+        --chip-fg: rgb(51 65 85);
+        cursor: default;
+      }
+      .citation-popover {
+        position: fixed;
+        z-index: 1000;
+        max-width: 320px;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 1px solid rgb(226 232 240);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+        font-size: 12px;
+        color: rgb(30 41 59);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 120ms ease;
+      }
+      .dark .citation-popover {
+        background: rgba(15, 23, 42, 0.92);
+        border-color: rgb(51 65 85);
+        color: rgb(226 232 240);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+      }
+      .citation-popover.visible {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .citation-popover-title {
+        font-weight: 700;
+        margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .citation-popover-domain {
+        font-size: 10px;
+        opacity: 0.7;
+        margin-bottom: 6px;
+      }
+      .citation-popover-snippet {
+        font-size: 12px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+        max-height: 160px;
+        overflow: auto;
+      }
+      .citation-popover-action {
+        margin-top: 8px;
+        font-size: 11px;
+        opacity: 0.7;
+      }
+      .citation-footer {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed rgb(226 232 240);
+        font-size: 11px;
+        color: rgb(71 85 105);
+      }
+      .citation-footer-summary {
+        cursor: pointer;
+        user-select: none;
+      }
+      .citation-footer-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+
       /* ── Tool confirm card ── */
       .confirm-card {
         background: var(--llm-panel);
@@ -3794,6 +3910,115 @@
         sidebarOverlay.classList.add("hidden");
       });
 
+      // ── Citation chip rendering ──────────────────────────────────────
+      const _citationSourceStore = new WeakMap();
+      const KIND_ICON = { web: "🌐", rag: "📄", file: "📁" };
+
+      function renderCitations(containerEl, sources) {
+        if (!sources || sources.length === 0) return;
+        _citationSourceStore.set(containerEl, sources);
+
+        const proseEl = containerEl.querySelector(".prose") || containerEl;
+        const skipTags = new Set(["CODE", "PRE", "A", "BUTTON"]);
+        const walker = document.createTreeWalker(
+          proseEl,
+          NodeFilter.SHOW_TEXT,
+          {
+            acceptNode(node) {
+              let p = node.parentElement;
+              while (p && p !== proseEl) {
+                if (skipTags.has(p.tagName)) return NodeFilter.FILTER_REJECT;
+                p = p.parentElement;
+              }
+              return NodeFilter.FILTER_ACCEPT;
+            },
+          }
+        );
+        const textNodes = [];
+        let n;
+        while ((n = walker.nextNode())) textNodes.push(n);
+
+        const markerPattern = /\[(\d+)\]/g;
+        const validIdx = new Set(sources.map((s) => s.idx));
+
+        for (const node of textNodes) {
+          const text = node.nodeValue;
+          const matches = [...text.matchAll(markerPattern)];
+          if (matches.length === 0) continue;
+
+          const frag = document.createDocumentFragment();
+          let last = 0;
+          let touched = false;
+          for (const m of matches) {
+            const idx = parseInt(m[1], 10);
+            if (!validIdx.has(idx)) continue;
+            touched = true;
+            const start = m.index;
+            const end = start + m[0].length;
+            if (start > last) {
+              frag.appendChild(
+                document.createTextNode(text.slice(last, start))
+              );
+            }
+            const source = sources.find((s) => s.idx === idx);
+            frag.appendChild(buildChipEl(source));
+            last = end;
+          }
+          if (!touched) continue;
+          if (last < text.length) {
+            frag.appendChild(document.createTextNode(text.slice(last)));
+          }
+          node.parentNode.replaceChild(frag, node);
+        }
+
+        renderCitationFooterIfNeeded(containerEl, sources);
+      }
+
+      function buildChipEl(source) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "citation-chip";
+        btn.dataset.kind = source.kind;
+        btn.dataset.idx = String(source.idx);
+        btn.setAttribute("aria-label", `Source ${source.idx}: ${source.title}`);
+        btn.textContent = String(source.idx);
+        attachChipBehavior(btn, source);
+        return btn;
+      }
+
+      function renderCitationFooterIfNeeded(containerEl, sources) {
+        const used = new Set();
+        containerEl.querySelectorAll(".citation-chip").forEach((c) => {
+          used.add(parseInt(c.dataset.idx, 10));
+        });
+        const unused = sources.filter((s) => !used.has(s.idx));
+        if (unused.length === 0) return;
+        const footer = document.createElement("div");
+        footer.className = "citation-footer";
+        const summary = document.createElement("div");
+        summary.className = "citation-footer-summary";
+        summary.textContent = `📎 ${unused.length} source${unused.length === 1 ? "" : "s"}`;
+        const list = document.createElement("div");
+        list.className = "citation-footer-list";
+        list.style.display = "none";
+        unused.forEach((s) => list.appendChild(buildChipEl(s)));
+        summary.addEventListener("click", () => {
+          list.style.display = list.style.display === "none" ? "flex" : "none";
+        });
+        footer.appendChild(summary);
+        footer.appendChild(list);
+        containerEl.appendChild(footer);
+      }
+
+      function attachChipBehavior(btn, source) {
+        // Click stub only; popover wiring added in Task 7, RAG modal in Task 8.
+        btn.addEventListener("click", () => {
+          if (source.kind === "web" && source.url) {
+            window.open(source.url, "_blank", "noopener,noreferrer");
+          }
+        });
+      }
+
       function appendMessage(
         role,
         content,
@@ -4734,6 +4959,15 @@
         } else if (event.type === "confirm_resolved") {
           if (isActiveChat)
             setAgentStatus(`Agent thinking… (step ${stepCount + 1} done)`);
+        } else if (event.type === "sources") {
+          // Buffer until 'done' so we can render once the message exists.
+          const existing = traceContainer.dataset.pendingSources
+            ? JSON.parse(traceContainer.dataset.pendingSources)
+            : [];
+          traceContainer.dataset.pendingSources = JSON.stringify(
+            existing.concat(event.items || [])
+          );
+          return;
         } else if (event.type === "done") {
           const pendingThinking = traceContainer.dataset.pendingThinking;
           if (pendingThinking) delete traceContainer.dataset.pendingThinking;
@@ -4757,6 +4991,24 @@
               reasoning: pendingThinking,
             });
             saveChats();
+          }
+          if (traceContainer.dataset.pendingSources) {
+            const sources = JSON.parse(traceContainer.dataset.pendingSources);
+            const lastAssistant = chatBox.querySelector(
+              ".message-gemma:last-of-type"
+            );
+            if (lastAssistant && sources.length) {
+              renderCitations(lastAssistant, sources);
+            }
+            if (currentChat && currentChat.messages.length) {
+              const last =
+                currentChat.messages[currentChat.messages.length - 1];
+              if (last.role === "assistant") {
+                last.sources = sources;
+                saveChats();
+              }
+            }
+            delete traceContainer.dataset.pendingSources;
           }
           clearAgentStatus();
           es.close();
