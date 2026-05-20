@@ -1163,6 +1163,83 @@
         gap: 6px;
         margin-top: 6px;
       }
+      .citation-modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        z-index: 2000;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(2px);
+      }
+      .citation-modal-backdrop.visible {
+        display: flex;
+      }
+      .citation-modal {
+        max-width: 560px;
+        width: calc(100vw - 32px);
+        max-height: 80vh;
+        background: white;
+        border-radius: 14px;
+        box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      .dark .citation-modal {
+        background: rgb(15 23 42);
+        color: rgb(226 232 240);
+      }
+      .citation-modal-title {
+        font-size: 14px;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .citation-modal-meta {
+        font-size: 12px;
+        opacity: 0.7;
+      }
+      .citation-modal-body {
+        font-size: 13px;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow: auto;
+        flex: 1 1 auto;
+        padding: 12px;
+        border-radius: 8px;
+        background: rgb(248 250 252);
+      }
+      .dark .citation-modal-body {
+        background: rgb(30 41 59);
+      }
+      .citation-modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .citation-modal-actions button {
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        border: 1px solid rgb(203 213 225);
+        background: white;
+        cursor: pointer;
+      }
+      .dark .citation-modal-actions button {
+        background: rgb(30 41 59);
+        border-color: rgb(71 85 105);
+        color: rgb(226 232 240);
+      }
+      .citation-modal-actions button.primary {
+        background: rgb(16 185 129);
+        color: white;
+        border-color: rgb(16 185 129);
+      }
 
       /* ── Tool confirm card ── */
       .confirm-card {
@@ -4111,6 +4188,59 @@
         return { open, scheduleClose, closeNow };
       })();
 
+      function openRagModal(source) {
+        const backdrop = document.createElement("div");
+        backdrop.className = "citation-modal-backdrop visible";
+        const modal = document.createElement("div");
+        modal.className = "citation-modal";
+
+        const pages =
+          source.meta && source.meta.pages && source.meta.pages.length
+            ? source.meta.pages.map((p) => `p.${p}`).join(", ")
+            : source.meta && source.meta.page
+              ? `p.${source.meta.page}`
+              : "";
+
+        const titleEl = document.createElement("div");
+        titleEl.className = "citation-modal-title";
+        titleEl.textContent = `📄 ${source.title || "Document chunk"}`;
+
+        const metaEl = document.createElement("div");
+        metaEl.className = "citation-modal-meta";
+        metaEl.textContent = pages
+          ? `${source.title} · ${pages}`
+          : source.title;
+
+        const bodyEl = document.createElement("div");
+        bodyEl.className = "citation-modal-body";
+        bodyEl.textContent = source.snippet || "(no excerpt available)";
+
+        const actions = document.createElement("div");
+        actions.className = "citation-modal-actions";
+        const closeBtn = document.createElement("button");
+        closeBtn.textContent = "Close";
+        closeBtn.addEventListener("click", () => backdrop.remove());
+        actions.appendChild(closeBtn);
+
+        modal.appendChild(titleEl);
+        modal.appendChild(metaEl);
+        modal.appendChild(bodyEl);
+        modal.appendChild(actions);
+        backdrop.appendChild(modal);
+        backdrop.addEventListener("click", (e) => {
+          if (e.target === backdrop) backdrop.remove();
+        });
+        document.body.appendChild(backdrop);
+
+        const onKey = (e) => {
+          if (e.key === "Escape") {
+            backdrop.remove();
+            document.removeEventListener("keydown", onKey);
+          }
+        };
+        document.addEventListener("keydown", onKey);
+      }
+
       function attachChipBehavior(btn, source) {
         btn.addEventListener("mouseenter", () => _popover.open(btn, source));
         btn.addEventListener("mouseleave", () => _popover.scheduleClose());
@@ -4123,10 +4253,13 @@
           }
         });
         btn.addEventListener("click", () => {
+          _popover.closeNow();
           if (source.kind === "web" && source.url) {
             window.open(source.url, "_blank", "noopener,noreferrer");
+          } else if (source.kind === "rag") {
+            openRagModal(source);
           }
-          // RAG modal wiring added in Task 8.
+          // file kind: no-op
         });
       }
 
