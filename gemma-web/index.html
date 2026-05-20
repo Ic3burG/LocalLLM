@@ -3459,6 +3459,14 @@
         chat.messages.forEach((msg) => {
           if (msg.role !== "system") {
             appendMessage(msg.role, msg.content, [], false, msg.reasoning);
+            if (msg.role === "assistant" && msg.sources && msg.sources.length) {
+              const lastAssistant = chatBox.querySelector(
+                ".message-gemma:last-of-type"
+              );
+              if (lastAssistant) {
+                renderCitations(lastAssistant, msg.sources);
+              }
+            }
           }
         });
         if (chat.messages.length <= 1) {
