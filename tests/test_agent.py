@@ -675,12 +675,16 @@ async def test_react_loop_emits_sources_event_for_tool_with_citations(monkeypatc
         task_id, [{"role": "user", "content": "lakers score"}], "gemma4-e4b"
     )
 
-    events = []
-    while True:
-        item = agent_mod.sse_queues[task_id].get_nowait()
-        if item is None:
-            break
-        events.append(_json.loads(item))
+    # Cleanup so re-runs don't collide on the hardcoded task_id.
+    try:
+        events = []
+        while True:
+            item = agent_mod.sse_queues[task_id].get_nowait()
+            if item is None:
+                break
+            events.append(_json.loads(item))
+    finally:
+        agent_mod.sse_queues.pop(task_id, None)
 
     sources_events = [e for e in events if e.get("type") == "sources"]
     assert len(sources_events) == 1
@@ -771,12 +775,16 @@ async def test_react_loop_indexes_sources_globally_across_two_calls(monkeypatch)
         task_id, [{"role": "user", "content": "x"}], "gemma4-e4b"
     )
 
-    events = []
-    while True:
-        item = agent_mod.sse_queues[task_id].get_nowait()
-        if item is None:
-            break
-        events.append(_json.loads(item))
+    # Cleanup so re-runs don't collide on the hardcoded task_id.
+    try:
+        events = []
+        while True:
+            item = agent_mod.sse_queues[task_id].get_nowait()
+            if item is None:
+                break
+            events.append(_json.loads(item))
+    finally:
+        agent_mod.sse_queues.pop(task_id, None)
 
     sources_events = [e for e in events if e.get("type") == "sources"]
     assert len(sources_events) == 2
