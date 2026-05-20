@@ -21,6 +21,10 @@ from agent_utils import (
     register_tool,
     strip_thinking_blocks,
 )
+from citations import (
+    assign_indices,
+    format_sources_for_model,
+)
 from logging_config import task_id_var
 
 router = APIRouter()
@@ -416,6 +420,7 @@ async def react_loop_sse(
     telemetry.record_start(task_id)
 
     q = sse_queues[task_id]
+    run_sources: list[dict] = []
 
     # Merge all system messages into a single agent system prompt to prevent
     # consecutive system-role messages, which Gemma 3 rejects outright.
@@ -574,22 +579,60 @@ async def react_loop_sse(
                 )
                 result = f"ERROR: {e}"
             elapsed = int((time.monotonic() - t0) * 1000)
+
+            # Citation-aware tool result?
+            new_sources: list[dict] = []
+            if isinstance(result, dict) and "sources" in result:
+                new_sources = list(result.get("sources") or [])
+                model_text = result.get("model_text", "")
+                existing_urls = {
+                    s["url"]
+                    for s in run_sources
+                    if s.get("kind") == "web" and s.get("url")
+                }
+                new_sources = [
+                    s
+                    for s in new_sources
+                    if not (s.get("kind") == "web" and s.get("url") in existing_urls)
+                ]
+                new_sources = assign_indices(
+                    new_sources, existing_count=len(run_sources)
+                )
+                run_sources.extend(new_sources)
+
+                if new_sources:
+                    await q.put(json.dumps({"type": "sources", "items": new_sources}))
+
+                header = format_sources_for_model(new_sources)
+                if header and model_text:
+                    formatted_result_for_model = f"{header}\n\n{model_text}"
+                elif header:
+                    formatted_result_for_model = header
+                else:
+                    formatted_result_for_model = model_text
+                display_result = formatted_result_for_model
+            else:
+                formatted_result_for_model = result
+                display_result = result
+
             await q.put(
                 json.dumps(
                     {
                         "type": "step",
                         "tool": name_or_msg,
                         "args": dict(enumerate(args)),
-                        "result": result,
+                        "result": display_result,
                         "elapsed_ms": elapsed,
                     }
                 )
             )
 
-            model_tool_result = result
-            if isinstance(result, str):
+            model_tool_result = formatted_result_for_model
+            if isinstance(formatted_result_for_model, str):
+                # Image-tool special case: legacy path may still return a JSON
+                # blob marked __image__. Preserve that behavior.
                 try:
-                    img_data = json.loads(result)
+                    img_data = json.loads(formatted_result_for_model)
                     if not img_data.get("__image__"):
                         raise ValueError
                     await q.put(

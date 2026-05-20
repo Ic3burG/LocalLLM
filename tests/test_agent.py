@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import importlib.machinery
 import json
@@ -624,3 +625,160 @@ async def test_web_fetch_returns_dict_with_one_source(monkeypatch):
     assert s["url"] == "https://espn.com/nba"
     assert s["domain"] == "espn.com"
     assert "Lakers won" in out["model_text"]
+
+
+@pytest.mark.asyncio
+async def test_react_loop_emits_sources_event_for_tool_with_citations(monkeypatch):
+    """When a tool returns {sources, model_text}, the loop should
+    enqueue a `{type: 'sources', items: [...]}` event."""
+    import json as _json
+
+    import agent as agent_mod
+
+    fake_dict_result = {
+        "sources": [
+            {
+                "kind": "web",
+                "title": "ESPN",
+                "url": "https://espn.com",
+                "domain": "espn.com",
+                "snippet": "Lakers won.",
+                "meta": {},
+            }
+        ],
+        "model_text": "",
+    }
+
+    class FakeTool:
+        risk = "safe"
+
+        async def fn(self, *_args):
+            return fake_dict_result
+
+    monkeypatch.setitem(agent_mod.TOOL_REGISTRY, "google_search", FakeTool())
+
+    replies = iter(['TOOL: google_search("lakers")', "DONE: Lakers won [1]."])
+
+    async def fake_inference(messages, model_id):
+        return next(replies)
+
+    monkeypatch.setattr(agent_mod, "run_inference", fake_inference)
+    monkeypatch.setattr(
+        agent_mod, "summarize_history", lambda m: asyncio.sleep(0, result=m)
+    )
+    monkeypatch.setattr(agent_mod, "is_model_loaded", lambda mid: True)
+
+    task_id = "test-task-citations"
+    agent_mod.sse_queues[task_id] = asyncio.Queue()
+
+    await agent_mod.react_loop_sse(
+        task_id, [{"role": "user", "content": "lakers score"}], "gemma4-e4b"
+    )
+
+    events = []
+    while True:
+        item = agent_mod.sse_queues[task_id].get_nowait()
+        if item is None:
+            break
+        events.append(_json.loads(item))
+
+    sources_events = [e for e in events if e.get("type") == "sources"]
+    assert len(sources_events) == 1
+    items = sources_events[0]["items"]
+    assert items[0]["idx"] == 1
+    assert items[0]["url"] == "https://espn.com"
+
+
+@pytest.mark.asyncio
+async def test_react_loop_indexes_sources_globally_across_two_calls(monkeypatch):
+    """Two google_search calls in one run should produce indices 1,2 then 3,4."""
+    import json as _json
+
+    import agent as agent_mod
+
+    first_call = {
+        "sources": [
+            {
+                "kind": "web",
+                "title": "A",
+                "url": "https://a.com",
+                "domain": "a.com",
+                "snippet": "x",
+                "meta": {},
+            },
+            {
+                "kind": "web",
+                "title": "B",
+                "url": "https://b.com",
+                "domain": "b.com",
+                "snippet": "y",
+                "meta": {},
+            },
+        ],
+        "model_text": "",
+    }
+    second_call = {
+        "sources": [
+            {
+                "kind": "web",
+                "title": "C",
+                "url": "https://c.com",
+                "domain": "c.com",
+                "snippet": "z",
+                "meta": {},
+            },
+            {
+                "kind": "web",
+                "title": "D",
+                "url": "https://d.com",
+                "domain": "d.com",
+                "snippet": "w",
+                "meta": {},
+            },
+        ],
+        "model_text": "",
+    }
+    results = iter([first_call, second_call])
+
+    class FakeTool:
+        risk = "safe"
+
+        async def fn(self, *_args):
+            return next(results)
+
+    monkeypatch.setitem(agent_mod.TOOL_REGISTRY, "google_search", FakeTool())
+
+    replies = iter(
+        [
+            'TOOL: google_search("first")',
+            'TOOL: google_search("second")',
+            "DONE: ok",
+        ]
+    )
+
+    async def fake_inference(messages, model_id):
+        return next(replies)
+
+    monkeypatch.setattr(agent_mod, "run_inference", fake_inference)
+    monkeypatch.setattr(
+        agent_mod, "summarize_history", lambda m: asyncio.sleep(0, result=m)
+    )
+    monkeypatch.setattr(agent_mod, "is_model_loaded", lambda mid: True)
+
+    task_id = "test-task-global-idx"
+    agent_mod.sse_queues[task_id] = asyncio.Queue()
+    await agent_mod.react_loop_sse(
+        task_id, [{"role": "user", "content": "x"}], "gemma4-e4b"
+    )
+
+    events = []
+    while True:
+        item = agent_mod.sse_queues[task_id].get_nowait()
+        if item is None:
+            break
+        events.append(_json.loads(item))
+
+    sources_events = [e for e in events if e.get("type") == "sources"]
+    assert len(sources_events) == 2
+    assert [s["idx"] for s in sources_events[0]["items"]] == [1, 2]
+    assert [s["idx"] for s in sources_events[1]["items"]] == [3, 4]
