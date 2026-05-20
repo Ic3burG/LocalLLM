@@ -790,3 +790,13 @@ async def test_react_loop_indexes_sources_globally_across_two_calls(monkeypatch)
     assert len(sources_events) == 2
     assert [s["idx"] for s in sources_events[0]["items"]] == [1, 2]
     assert [s["idx"] for s in sources_events[1]["items"]] == [3, 4]
+
+
+def test_agent_system_prompt_contains_citations_block():
+    from agent_utils import AGENT_SYSTEM_PROMPT
+
+    assert "CITATIONS:" in AGENT_SYSTEM_PROMPT
+    assert "[1]" in AGENT_SYSTEM_PROMPT
+    assert "TOOL_RESULT" in AGENT_SYSTEM_PROMPT
+    # The example must show inline citations to anchor the model's behavior.
+    assert "[1]" in AGENT_SYSTEM_PROMPT.split("EXAMPLE")[-1]

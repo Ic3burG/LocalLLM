@@ -1044,11 +1044,22 @@ RULES:
    Write your DONE answer as a complete, standalone response — as if the user never saw the intermediate tool calls.
 6. Never invent tool results. Never assume you know a tool's output before calling it.
 
+CITATIONS:
+- TOOL_RESULTs are numbered like [1], [2], [3]. These indices are stable
+  across the whole conversation turn.
+- When you state a fact from a tool result, append the matching index in
+  square brackets at the end of the claim. Multiple sources: [1][3].
+- Do NOT invent or renumber citations. Only cite indices that appeared
+  in a TOOL_RESULT above.
+- In your final DONE: answer, keep the [N] markers inline.
+
 EXAMPLE:
-User: What's the weather in Austin right now?
-TOOL: google_search("Austin TX weather today")
-TOOL_RESULT: Austin, TX: 84°F, partly cloudy. High of 91°F expected.
-DONE: It's currently 84°F and partly cloudy in Austin, with a high of 91°F expected today."""
+User: What's the score of last night's Lakers game?
+TOOL: google_search("Lakers score last night")
+TOOL_RESULT:
+[1] ESPN — NBA Scores (espn.com)
+    Lakers 112, Celtics 108. Final score from last night's game.
+DONE: The Lakers beat the Celtics 112–108 last night [1]."""
 
 
 def strip_thinking_blocks(text: str) -> str:
