@@ -1148,15 +1148,15 @@ Ran through the full superpowers workflow: brainstorm → spec (`docs/superpower
 
 ### Files Changed
 
-| File                     | Change                                                                            |
-| ------------------------ | --------------------------------------------------------------------------------- |
-| `citations.py`           | New — Source shape + trim/dedupe/index/format helpers                             |
-| `agent_utils.py`         | `_google_search`/`_web_fetch` return structured dicts; CITATIONS block in prompt  |
-| `agent.py`               | `react_loop_sse` accumulates sources, emits SSE event, numbers `TOOL_RESULT`s     |
-| `pdf_pipeline.py`        | New `build_numbered_document_context` + `chunks_to_sources` (legacy builder kept) |
-| `gemma_bridge.py`        | `/v1/chat/stream` numbers RAG chunks and emits a `sources` event                  |
-| `gemma-web/index.html`   | Chip CSS, `renderCitations` post-processor, popover, RAG modal, footer, persistence |
-| `tests/`                 | +16 tests (`test_citations.py`, citation cases in `test_agent.py` / `test_pdf_pipeline.py`) |
+| File                   | Change                                                                                      |
+| ---------------------- | ------------------------------------------------------------------------------------------- |
+| `citations.py`         | New — Source shape + trim/dedupe/index/format helpers                                       |
+| `agent_utils.py`       | `_google_search`/`_web_fetch` return structured dicts; CITATIONS block in prompt            |
+| `agent.py`             | `react_loop_sse` accumulates sources, emits SSE event, numbers `TOOL_RESULT`s               |
+| `pdf_pipeline.py`      | New `build_numbered_document_context` + `chunks_to_sources` (legacy builder kept)           |
+| `gemma_bridge.py`      | `/v1/chat/stream` numbers RAG chunks and emits a `sources` event                            |
+| `gemma-web/index.html` | Chip CSS, `renderCitations` post-processor, popover, RAG modal, footer, persistence         |
+| `tests/`               | +16 tests (`test_citations.py`, citation cases in `test_agent.py` / `test_pdf_pipeline.py`) |
 
 ### The stale-bridge gotcha (testing lesson)
 
