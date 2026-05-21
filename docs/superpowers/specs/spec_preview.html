@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Word & Excel Support — Design</title>
+    <title>Image Gallery v2 — Design</title>
     <style>
       * {
         box-sizing: border-box;
@@ -83,27 +83,6 @@
         color: inherit;
         padding: 0;
       }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 16px 0;
-        font-size: 0.92em;
-      }
-      th {
-        background: #1e3a5f;
-        color: #fff;
-        text-align: left;
-        padding: 10px 14px;
-        font-weight: 600;
-      }
-      td {
-        padding: 9px 14px;
-        border-bottom: 1px solid #e2e8f0;
-        vertical-align: top;
-      }
-      tr:nth-child(even) td {
-        background: #f8fafc;
-      }
       ul,
       ol {
         padding-left: 24px;
@@ -112,12 +91,6 @@
       }
       li {
         margin: 4px 0;
-      }
-      li p {
-        margin: 2px 0;
-      }
-      input[type="checkbox"] {
-        margin-right: 6px;
       }
       blockquote {
         border-left: 4px solid #3b82f6;
@@ -139,456 +112,278 @@
   </head>
   <body>
     <div class="container">
-      <h1>Word &amp; Excel Support Design</h1>
+      <h1>Image Gallery v2 — Design</h1>
       <p>
-        <strong>Date:</strong> 2026-05-08<br />
-        <strong>Status:</strong> Approved
+        <strong>Date:</strong> 2026-05-21 <strong>Status:</strong> Approved
+        (pending spec review) <strong>Area:</strong>
+        <code>gemma-web/index.html</code> (single-file frontend)
       </p>
-      <h2>Overview</h2>
+      <h2>Problem</h2>
       <p>
-        Add comprehensive Word (<code>.docx</code>) and Excel
-        (<code>.xlsx</code>) support to the Gemma4 local LLM agent. This
-        includes:
+        The image gallery (<code>showImageGallery</code>, ~line 3129) is a bare
+        grid of thumbnails with one-line truncated captions and
+        <strong>no interactivity</strong> — no click handler, no download, no
+        way to read the full prompt. Meanwhile, images in the chat stream
+        already have rich tooling (Save / Regenerate / Edit-prompt buttons and a
+        full-screen lightbox showing the full prompt + metadata), so the gallery
+        is the poor cousin.
       </p>
+      <p>
+        Separately, generated images live only in an in-memory
+        <code>Map</code> (<code>_imageStore</code>, line 2808) that is wiped on
+        page reload. So &quot;previously generated&quot; today means only
+        &quot;generated since the last page load.&quot;
+      </p>
+      <h2>Goals</h2>
+      <ol>
+        <li>Persist generated images across page reloads.</li>
+        <li>Let users <strong>download</strong> images from the gallery.</li>
+        <li>
+          Let users <strong>see the full prompt</strong> for each image from the
+          gallery.
+        </li>
+        <li>
+          Add quality-of-life features: click-to-lightbox, copy-prompt,
+          search/filter
+        </li>
+      </ol>
+      <p>by prompt, and delete (single + clear-all).</p>
+      <h2>Non-Goals</h2>
       <ul>
-        <li>
-          Agent tools for reading and writing both formats (with full annotation
-          extraction and rich authoring)
-        </li>
-        <li>
-          RAG ingestion pipeline for both formats (same chunking + embedding
-          flow as PDF)
-        </li>
-        <li>Upload UI extended to accept both formats</li>
-        <li>Path-based ingestion tools for the agent to ingest local files</li>
+        <li>Server-side image storage. Persistence stays client-side.</li>
+        <li>Editing/inpainting images. Out of scope.</li>
+        <li>Cross-device sync. IndexedDB is per-browser-profile only.</li>
       </ul>
+      <h2>Storage Decision: IndexedDB (not localStorage)</h2>
+      <p>
+        A 512×512 PNG is ~400–900 KB; base64 inflates it another ~33%.
+        localStorage&#x27;s total budget is ~5 MB <strong>and</strong>
+        <code>gemma_chats</code> already occupies it, so localStorage would fit
+        only ~5 images before risking quota errors that corrupt chat history.
+      </p>
+      <p>
+        IndexedDB has a much larger quota (hundreds of MB) and is designed for
+        binary/ large data. It is the correct foundation. We store the
+        <strong>same record shape</strong> <code>_imageStore</code> already
+        uses, to minimize churn:
+      </p>
+      <pre><code>store: &quot;images&quot; (keyPath: &quot;id&quot;)
+record: {
+  id,            // string, same id scheme as _imageIdCounter
+  prompt,
+  image_b64,     // kept as base64 string (consistency with existing render path)
+  width, height,
+  steps,
+  elapsed_ms,
+  style,
+  size,
+  createdAt,     // Date.now() — new field, used for sort order
+}</code></pre>
+      <p>
+        We keep <code>image_b64</code> as a string (rather than a Blob) because
+        every render path already does
+        <code>&quot;data:image/png;base64,&quot; + image_b64</code>; switching
+        to Blobs would ripple through unrelated code for no real benefit at
+        these volumes.
+      </p>
+      <h3>Graceful degradation</h3>
+      <p>
+        All IndexedDB calls are wrapped so that if the API is unavailable or
+        throws (e.g. private browsing), the app
+        <strong>silently falls back to session-only behavior</strong> — the
+        in-memory <code>Map</code> still works, nothing hard-fails, errors are
+        <code>console.warn</code>-ed.
+      </p>
       <h2>Architecture</h2>
-      <h3>New module: <code>office_pipeline.py</code></h3>
+      <h3>New module: IndexedDB wrapper</h3>
       <p>
-        Mirrors <code>pdf_pipeline.py</code> in structure and return shape.
-        <code>chunk_text()</code> and <code>embed_texts()</code> are imported
-        from <code>pdf_pipeline.py</code> — no duplication.
+        A small set of promise-returning helpers near the image-mode state
+        block:
       </p>
-      <pre><code>office_pipeline.py
-  extract_text_from_word(file_bytes)  → (list[(section_num, text)], metadata_dict)
-  extract_text_from_excel(file_bytes) → (list[(sheet_name, text)], metadata_dict)
-  ingest_office(file_bytes, filename) → {doc_id, filename, page_count, chunks, embeddings}
-</code></pre>
-      <p>
-        <code>ingest_office</code> returns the same dict shape as
-        <code>ingest_pdf</code> so the rest of the codebase treats it
-        identically.
-      </p>
-      <h3><code>agent_utils.py</code> additions</h3>
-      <p>
-        Four new async tool functions following the existing
-        <code>_read_pdf</code> / <code>_write_pdf</code> pattern:
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Function</th>
-            <th>Risk</th>
-            <th>Description</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>_read_word(path)</code></td>
-            <td>safe</td>
-            <td>Extract full text + all annotations from a Word file</td>
-          </tr>
-          <tr>
-            <td><code>_write_word(path, spec)</code></td>
-            <td>risky</td>
-            <td>Create a Word file from a structured spec dict</td>
-          </tr>
-          <tr>
-            <td><code>_read_excel(path)</code></td>
-            <td>safe</td>
-            <td>Extract full text + all annotations from an Excel file</td>
-          </tr>
-          <tr>
-            <td><code>_write_excel(path, spec)</code></td>
-            <td>risky</td>
-            <td>Create an Excel file from a structured spec dict</td>
-          </tr>
-        </tbody>
-      </table>
-      <p>
-        Registered via <code>register_tool()</code> at the bottom of
-        <code>agent_utils.py</code>.
-      </p>
-      <h3>Upload endpoint</h3>
-      <p>
-        The existing multipart upload endpoint in <code>gemma-web/</code> gains
-        a MIME-type / file extension check:<br />
-        - <code>.docx</code> /
-        <code
-          >application/vnd.openxmlformats-officedocument.wordprocessingml.document</code
-        >
-        → <code>ingest_office()</code><br />
-        - <code>.xlsx</code> /
-        <code
-          >application/vnd.openxmlformats-officedocument.spreadsheetml.sheet</code
-        >
-        → <code>ingest_office()</code><br />
-        - <code>.pdf</code> → <code>ingest_pdf()</code> (unchanged)
-      </p>
-      <p>No UI changes needed — the existing upload widget accepts any file.</p>
-      <h3>Libraries added to <code>requirements.txt</code></h3>
       <ul>
-        <li><code>python-docx</code> — Word read/write</li>
-        <li><code>openpyxl</code> — Excel read/write</li>
         <li>
-          <code>oletools</code> — embedded OLE object text extraction inside
-          Excel files
+          <code>_imgDBOpen()</code> → opens/creates DB +
+          <code>images</code> store (memoized).
+        </li>
+        <li><code>_imgDBPut(record)</code> → write one record.</li>
+        <li><code>_imgDBGetAll()</code> → read all records.</li>
+        <li><code>_imgDBDelete(id)</code> → delete one record.</li>
+        <li><code>_imgDBClear()</code> → clear the store.</li>
+      </ul>
+      <p>
+        Each is a thin <code>try/catch</code> wrapper; failures resolve to a
+        no-op / empty result.
+      </p>
+      <h3>Generate flow (minimal change)</h3>
+      <p>
+        <code>appendImageCard</code> (line 2861) keeps calling
+        <code>_storeImageData(data)</code> (the in-memory Map remains the fast
+        cache that lightbox/save handlers read from). We extend
+        <code>_storeImageData</code> to also stamp <code>createdAt</code> and
+        fire <code>_imgDBPut</code> (fire-and-forget; not awaited so generation
+        UX is unaffected).
+      </p>
+      <h3>Page-load rehydration</h3>
+      <p>
+        On startup, after the Map is declared, call an async
+        <code>_rehydrateImages()</code> that:
+      </p>
+      <ol>
+        <li>
+          <code>_imgDBGetAll()</code> → load records into
+          <code>_imageStore</code>.
+        </li>
+        <li>
+          Set <code>_imageIdCounter</code> to the max numeric id seen, so new
+          ids never collide
+        </li>
+      </ol>
+      <p>with persisted ones.</p>
+      <p>
+        Because <code>openLightbox</code>, the Save/Regenerate/Edit handlers,
+        and the gallery all read from <code>_imageStore</code>, persisted images
+        work in every existing code path with no further changes.
+      </p>
+      <h3>Shared download helper (targeted dedup)</h3>
+      <p>
+        There are currently three copies of the
+        <code>&lt;a download=&quot;generated.png&quot;&gt;</code> anchor trick
+        (chat-card Save line ~5322, lightbox Save line ~5350, and we need a
+        third for the gallery). Replace them with one helper:
+      </p>
+      <pre><code>function downloadImage(data) {
+  const slug = (data.prompt || &quot;image&quot;)
+    .toLowerCase().replace(/[^a-z0-9]+/g, &quot;-&quot;)
+    .replace(/^-+|-+$/g, &quot;&quot;).slice(0, 40) || &quot;image&quot;;
+  const a = document.createElement(&quot;a&quot;);
+  a.href = &quot;data:image/png;base64,&quot; + data.image_b64;
+  a.download = `localllm-${slug}-${data.id ?? &quot;&quot;}.png`.replace(/-+\.png$/, &quot;.png&quot;);
+  a.click();
+}</code></pre>
+      <p>
+        This upgrades all download paths (chat card, lightbox, gallery) to
+        descriptive filenames like <code>localllm-a-red-fox-7.png</code> instead
+        of <code>generated.png</code>. (Requires that records carry their
+        <code>id</code>; we add <code>id</code> into the stored
+        <code>data</code>.)
+      </p>
+      <h3>Gallery modal rewrite (<code>showImageGallery</code>)</h3>
+      <p>
+        Rebuilt to render from <code>_imageStore</code>, sorted by
+        <code>createdAt</code> descending (newest first). Structure:
+      </p>
+      <p>
+        <strong>Header:</strong> title + image count, a
+        <strong>search input</strong> (filters cards by prompt substring,
+        case-insensitive — mirrors All-Chats search at line 3213), a
+        <strong>Clear all</strong> button, and the existing Close button.
+      </p>
+      <p><strong>Grid card</strong> (per image):</p>
+      <ul>
+        <li>
+          Thumbnail — <code>click → openLightbox(id)</code> (delivers full
+          prompt + metadata +
         </li>
       </ul>
-      <h2>Reading &amp; Extraction</h2>
-      <h3>Word (<code>extract_text_from_word</code>)</h3>
+      <p>Save/Regenerate/Edit, all already built).</p>
+      <ul>
+        <li>
+          Caption: prompt (clamped to ~2 lines, not single-line truncate).
+        </li>
+        <li>Action row:</li>
+        <ul>
+          <li>
+            <strong>Copy prompt</strong> →
+            <code>navigator.clipboard.writeText(data.prompt)</code>, with a
+            brief
+          </li>
+        </ul>
+      </ul>
+      <p>&quot;Copied!&quot; affordance.</p>
+      <ul>
+        <li><strong>Download</strong> → <code>downloadImage(data)</code>.</li>
+        <li>
+          <strong>Delete (✕)</strong> → removes from <code>_imageStore</code> +
+          <code>_imgDBDelete(id)</code>, re-renders.
+        </li>
+      </ul>
       <p>
-        Returns <code>(list[(section_num, text)], metadata_dict)</code>. Section
-        numbers follow heading boundaries.
+        Single click, <strong>no confirm</strong> (low-stakes per-item action).
       </p>
-      <p><code>metadata_dict</code> keys:</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Key</th>
-            <th>Content</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>comments</code></td>
-            <td>
-              <code>[{author, date, text, ref_text}]</code> — comment body plus
-              the text it references
-            </td>
-          </tr>
-          <tr>
-            <td><code>tracked_changes</code></td>
-            <td>
-              <code>[{author, date, type: "insert"\|"delete", text}]</code> —
-              parsed from <code>&lt;w:ins&gt;</code>/<code>&lt;w:del&gt;</code>
-              lxml nodes
-            </td>
-          </tr>
-          <tr>
-            <td><code>footnotes</code></td>
-            <td><code>[{ref_num, text}]</code></td>
-          </tr>
-          <tr>
-            <td><code>endnotes</code></td>
-            <td><code>[{ref_num, text}]</code></td>
-          </tr>
-          <tr>
-            <td><code>properties</code></td>
-            <td>
-              <code
-                >{title, author, created, modified, subject, keywords,
-                description}</code
-              >
-              from <code>core_properties</code>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-      <h3>Excel (<code>extract_text_from_excel</code>)</h3>
       <p>
-        Returns <code>(list[(sheet_name, text)], metadata_dict)</code>. Each
-        sheet's text is a TSV-style dump of cell coordinates + values.
+        <strong>Clear all</strong> → <code>confirm(...)</code> (mirrors
+        <code>bulkDelete</code> at line 3302), then
+        <code>_imageStore.clear()</code> + <code>_imgDBClear()</code> +
+        re-render.
       </p>
-      <p><code>metadata_dict</code> keys:</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Key</th>
-            <th>Content</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>cell_notes</code></td>
-            <td>
-              <code>[{sheet, cell, author, text}]</code> — legacy yellow-sticky
-              notes
-            </td>
-          </tr>
-          <tr>
-            <td><code>threaded_comments</code></td>
-            <td>
-              <code>[{sheet, cell, thread: [{author, date, text}]}]</code> —
-              modern comment threads with replies
-            </td>
-          </tr>
-          <tr>
-            <td><code>formulas</code></td>
-            <td><code>[{sheet, cell, formula, cached_value}]</code></td>
-          </tr>
-          <tr>
-            <td><code>embedded_objects</code></td>
-            <td>
-              <code>[{type, extracted_text}]</code> — text from OLE objects via
-              oletools; macros flagged as
-              <code>{type: "vba_macro", flagged: true}</code>, never executed
-            </td>
-          </tr>
-          <tr>
-            <td><code>properties</code></td>
-            <td><code>{title, author, created, modified, keywords}</code></td>
-          </tr>
-        </tbody>
-      </table>
-      <h3>
-        <code>_read_word</code> / <code>_read_excel</code> tool output format
-      </h3>
       <p>
-        Both tools format extraction results into a single readable text block:
-        body text first, followed by clearly labelled annotation sections (##
-        Comments, ## Tracked Changes, etc.). This is what the agent receives.
+        <strong>Search</strong> is re-render-on-input: keep a module-scoped
+        <code>_galleryQuery</code> string and a
+        <code>renderGalleryGrid()</code> that filters before building cards
+        (same shape as <code>renderAllChats</code>).
       </p>
-      <h2>Writing (Rich Authoring)</h2>
-      <p>Both write tools accept a JSON-serializable <code>spec</code> dict.</p>
-      <h3><code>_write_word(path, spec)</code></h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Spec key</th>
-            <th>Type</th>
-            <th>Behavior</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>properties</code></td>
-            <td>dict</td>
-            <td>
-              <code>{title, author, subject, keywords}</code> — document
-              metadata
-            </td>
-          </tr>
-          <tr>
-            <td><code>sections</code></td>
-            <td>list</td>
-            <td>Ordered list of content blocks</td>
-          </tr>
-        </tbody>
-      </table>
-      <p>Content block types:</p>
-      <table>
-        <thead>
-          <tr>
-            <th><code>type</code></th>
-            <th>Fields</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>"heading"</code></td>
-            <td><code>level</code> (1–6), <code>text</code></td>
-          </tr>
-          <tr>
-            <td><code>"paragraph"</code></td>
-            <td>
-              <code>text</code>, <code>bold</code>, <code>italic</code>,
-              <code>underline</code>
-            </td>
-          </tr>
-          <tr>
-            <td><code>"table"</code></td>
-            <td>
-              <code>rows</code> (list of lists), <code>header_row</code> (bool),
-              <code>merge</code> (list of
-              <code>{row, col, rowspan, colspan}</code>)
-            </td>
-          </tr>
-          <tr>
-            <td><code>"footnote"</code></td>
-            <td><code>ref_paragraph</code> (int index), <code>text</code></td>
-          </tr>
-          <tr>
-            <td><code>"endnote"</code></td>
-            <td><code>ref_paragraph</code> (int index), <code>text</code></td>
-          </tr>
-        </tbody>
-      </table>
-      <h3><code>_write_excel(path, spec)</code></h3>
-      <table>
-        <thead>
-          <tr>
-            <th>Spec key</th>
-            <th>Type</th>
-            <th>Behavior</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>properties</code></td>
-            <td>dict</td>
-            <td>
-              <code>{title, author, subject, keywords}</code> — document
-              metadata
-            </td>
-          </tr>
-          <tr>
-            <td><code>sheets</code></td>
-            <td>list</td>
-            <td>List of sheet definitions</td>
-          </tr>
-        </tbody>
-      </table>
-      <p>Sheet definition:</p>
-      <table>
-        <thead>
-          <tr>
-            <th>Field</th>
-            <th>Type</th>
-            <th>Content</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>name</code></td>
-            <td>str</td>
-            <td>Sheet tab name</td>
-          </tr>
-          <tr>
-            <td><code>rows</code></td>
-            <td>list of lists</td>
-            <td>
-              Each cell:
-              <code
-                >{value, formula, bold, italic, bg_color, border, number_format,
-                alignment}</code
-              >
-            </td>
-          </tr>
-          <tr>
-            <td><code>merges</code></td>
-            <td>list</td>
-            <td><code>[{range}]</code> e.g. <code>"A1:C3"</code></td>
-          </tr>
-          <tr>
-            <td><code>charts</code></td>
-            <td>list</td>
-            <td>
-              <code>[{type: "bar"\|"line"\|"pie", title, data_range}]</code>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      <h3>Z-index note</h3>
       <p>
-        Both write tools return the written file path on success, or an
-        <code>"ERROR: ..."</code> string on failure.
+        The gallery modal is <code>z-index:300</code>. Implementation must
+        confirm the <code>lightbox-overlay</code> sits
+        <strong>above</strong> the gallery (so clicking a gallery thumbnail
+        shows the lightbox on top, and closing it returns to the gallery). If
+        not, adjust the lightbox overlay&#x27;s z-index.
       </p>
       <h2>Error Handling</h2>
-      <p>
-        Follows the existing <code>agent_utils.py</code> pattern throughout:
-      </p>
       <ul>
         <li>
-          All tool functions wrap logic in <code>try/except</code>, log via
-          <code>logger.error()</code> with structured
-          <code>extra={}</code> kwargs
-        </li>
-        <li>
-          Return <code>"ERROR: ..."</code> string to the agent — never raise
-        </li>
-        <li>
-          Corrupt / password-protected files return a descriptive error;
-          processing does not crash
-        </li>
-        <li>
-          Missing annotations (e.g. a Word file with no comments) return empty
-          lists — not an error
-        </li>
-        <li>
-          Macros detected in Excel: flagged in <code>embedded_objects</code>,
-          processing continues normally
+          IndexedDB open/read/write/delete failures: caught,
+          <code>console.warn</code>, degrade to
         </li>
       </ul>
-      <h2>Testing</h2>
+      <p>session-only. Never throw into UI flow.</p>
+      <ul>
+        <li>
+          <code>navigator.clipboard</code> may be unavailable on insecure
+          origins: wrap in
+        </li>
+      </ul>
       <p>
-        New file: <code>tests/test_office_pipeline.py</code>, mirroring
-        <code>tests/test_pdf_pipeline.py</code>.
+        <code>try/catch</code>; on failure, no crash (optionally fall back to a
+        hidden textarea + <code>execCommand</code>, but only if trivial —
+        otherwise just warn).
       </p>
-      <table>
-        <thead>
-          <tr>
-            <th>Test</th>
-            <th>Coverage</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>test_read_word_body</code></td>
-            <td>Paragraph and heading extraction</td>
-          </tr>
-          <tr>
-            <td><code>test_read_word_annotations</code></td>
-            <td>Comments, tracked changes, footnotes, endnotes, metadata</td>
-          </tr>
-          <tr>
-            <td><code>test_read_excel_cells</code></td>
-            <td>Cell values, formulas, cached values</td>
-          </tr>
-          <tr>
-            <td><code>test_read_excel_annotations</code></td>
-            <td>
-              Cell notes, threaded comments, embedded objects, macro flagging
-            </td>
-          </tr>
-          <tr>
-            <td><code>test_write_word_roundtrip</code></td>
-            <td>Write then re-read, verify body + table structure</td>
-          </tr>
-          <tr>
-            <td><code>test_write_excel_roundtrip</code></td>
-            <td>Write then re-read, verify cells + chart presence</td>
-          </tr>
-          <tr>
-            <td><code>test_ingest_office_word</code></td>
-            <td>Returns same shape dict as <code>ingest_pdf</code></td>
-          </tr>
-          <tr>
-            <td><code>test_ingest_office_excel</code></td>
-            <td>Returns same shape dict as <code>ingest_pdf</code></td>
-          </tr>
-        </tbody>
-      </table>
-      <h2>Files to Create / Modify</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>File</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><code>office_pipeline.py</code></td>
-            <td>Create</td>
-          </tr>
-          <tr>
-            <td><code>agent_utils.py</code></td>
-            <td>Modify — add 4 tool functions + registrations</td>
-          </tr>
-          <tr>
-            <td><code>gemma-web/server.js</code> (or equivalent)</td>
-            <td>Modify — extend upload endpoint MIME check</td>
-          </tr>
-          <tr>
-            <td><code>requirements.txt</code></td>
-            <td>Modify — add python-docx, openpyxl, oletools</td>
-          </tr>
-          <tr>
-            <td><code>tests/test_office_pipeline.py</code></td>
-            <td>Create</td>
-          </tr>
-        </tbody>
-      </table>
+      <h2>Testing &amp; Verification</h2>
+      <ul>
+        <li>
+          No JS unit-test harness exists; the repo&#x27;s pytest suite is
+          backend-only.
+        </li>
+        <li>Verification per <code>CLAUDE.md</code> Definition of Done:</li>
+        <ol>
+          <li>
+            <code>bash .git/hooks/pre-push</code> must exit 0 (prettier + ruff +
+            pytest unaffected,
+          </li>
+        </ol>
+      </ul>
+      <p>but formatting of <code>index.html</code> must pass prettier).</p>
+      <ol>
+        <li>
+          Manual browser sanity check of: generate → reload → image still in
+          gallery;
+        </li>
+      </ol>
+      <p>
+        click thumbnail → lightbox; copy prompt; download (descriptive
+        filename); delete one; clear all; search filter. Can be driven via
+        Claude-in-Chrome.
+      </p>
+      <h2>Rollout / Risk</h2>
+      <ul>
+        <li>Pure additive frontend change; no backend or API change.</li>
+        <li>
+          Worst case (IndexedDB blocked) reverts to today&#x27;s session-only
+          behavior.
+        </li>
+        <li>No existing feature removed (honors Feature Integrity mandate).</li>
+      </ul>
     </div>
   </body>
 </html>
