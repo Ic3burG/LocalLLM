@@ -1246,11 +1246,11 @@ made images persistent and turned the gallery into a real workspace.
 
 ### Files Changed
 
-| File                  | Change                                                                      |
-| --------------------- | --------------------------------------------------------------------------- |
-| `gemma-web/index.html` | IndexedDB layer, persist/rehydrate wiring, `downloadImage`, gallery rewrite. |
-| `scripts/render_spec.py` | New: renders design specs/plans to HTML preview for browser review.        |
-| `PROGRESS.md`         | This update.                                                                |
+| File                     | Change                                                                       |
+| ------------------------ | ---------------------------------------------------------------------------- |
+| `gemma-web/index.html`   | IndexedDB layer, persist/rehydrate wiring, `downloadImage`, gallery rewrite. |
+| `scripts/render_spec.py` | New: renders design specs/plans to HTML preview for browser review.          |
+| `PROGRESS.md`            | This update.                                                                 |
 
 ### Outcome
 
