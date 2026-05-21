@@ -2929,6 +2929,21 @@
         sendBtn.disabled = false;
       });
 
+      function downloadImage(data) {
+        if (!data || !data.image_b64) return;
+        const slug =
+          (data.prompt || "image")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "-")
+            .replace(/^-+|-+$/g, "")
+            .slice(0, 40) || "image";
+        const idPart = data.id != null ? "-" + data.id : "";
+        const a = document.createElement("a");
+        a.href = "data:image/png;base64," + data.image_b64;
+        a.download = `localllm-${slug}${idPart}.png`;
+        a.click();
+      }
+
       let _lightboxImageId = null;
 
       function setMode(mode) {
@@ -5436,10 +5451,7 @@
         const data = _imageStore.get(imageId);
         if (!data) return;
         if (btn.textContent.includes("Save")) {
-          const a = document.createElement("a");
-          a.href = "data:image/png;base64," + data.image_b64;
-          a.download = "generated.png";
-          a.click();
+          downloadImage(data);
         } else if (btn.textContent.includes("Regenerate")) {
           submitImageGeneration(
             data.prompt,
@@ -5465,12 +5477,7 @@
       document
         .getElementById("lb-save-btn")
         .addEventListener("click", function () {
-          const data = _imageStore.get(_lightboxImageId);
-          if (!data) return;
-          const a = document.createElement("a");
-          a.href = "data:image/png;base64," + data.image_b64;
-          a.download = "generated.png";
-          a.click();
+          downloadImage(_imageStore.get(_lightboxImageId));
         });
       document
         .getElementById("lb-regen-btn")
