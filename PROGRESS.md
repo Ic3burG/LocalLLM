@@ -1264,6 +1264,18 @@ made images persistent and turned the gallery into a real workspace.
   (integrated code reading + prettier JS-parse), not clicked through in a
   browser.
 
+### Next steps / where we left off
+
+- **Click through the gallery in a real browser** at http://localhost:3001:
+  generate → reload (confirm persistence) → click thumbnail (lightbox) → Copy
+  prompt → Download (descriptive filename) → Delete one → Clear all → search
+  filter. This is the one unverified part of the feature.
+- Spec/plan live at `docs/superpowers/specs/2026-05-21-image-gallery-v2-design.md`
+  and `docs/superpowers/plans/2026-05-21-image-gallery-v2.md`; regenerate HTML
+  previews via `scripts/render_spec.py`.
+- Possible follow-ups if desired: a per-image "regenerate from gallery" action,
+  or a cap/age-out policy on persisted images if IndexedDB grows large.
+
 ---
 
 ## 📈 Current Status (as of May 21, 2026)
