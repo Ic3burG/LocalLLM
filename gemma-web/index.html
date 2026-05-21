@@ -2813,6 +2813,99 @@
         return id;
       }
 
+      // ── IndexedDB persistence for generated images ────────────────────
+      // Stores the same record shape _imageStore uses, keyed by id, plus a
+      // createdAt timestamp. All ops are best-effort: any failure (e.g.
+      // private browsing) degrades to session-only behavior.
+      const _IMG_DB_NAME = "localllm_images";
+      const _IMG_STORE = "images";
+      let _imgDBPromise = null;
+
+      function _imgDBOpen() {
+        if (_imgDBPromise) return _imgDBPromise;
+        _imgDBPromise = new Promise((resolve, reject) => {
+          if (!("indexedDB" in window)) {
+            reject(new Error("no indexedDB"));
+            return;
+          }
+          const req = indexedDB.open(_IMG_DB_NAME, 1);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(_IMG_STORE)) {
+              db.createObjectStore(_IMG_STORE, { keyPath: "id" });
+            }
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        }).catch((err) => {
+          console.warn("[gallery] IndexedDB unavailable:", err);
+          return null;
+        });
+        return _imgDBPromise;
+      }
+
+      async function _imgDBPut(record) {
+        try {
+          const db = await _imgDBOpen();
+          if (!db) return;
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(_IMG_STORE, "readwrite");
+            tx.objectStore(_IMG_STORE).put(record);
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (err) {
+          console.warn("[gallery] persist failed:", err);
+        }
+      }
+
+      async function _imgDBGetAll() {
+        try {
+          const db = await _imgDBOpen();
+          if (!db) return [];
+          return await new Promise((resolve, reject) => {
+            const tx = db.transaction(_IMG_STORE, "readonly");
+            const req = tx.objectStore(_IMG_STORE).getAll();
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+          });
+        } catch (err) {
+          console.warn("[gallery] load failed:", err);
+          return [];
+        }
+      }
+
+      async function _imgDBDelete(id) {
+        try {
+          const db = await _imgDBOpen();
+          if (!db) return;
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(_IMG_STORE, "readwrite");
+            tx.objectStore(_IMG_STORE).delete(id);
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (err) {
+          console.warn("[gallery] delete failed:", err);
+        }
+      }
+
+      async function _imgDBClear() {
+        try {
+          const db = await _imgDBOpen();
+          if (!db) return;
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction(_IMG_STORE, "readwrite");
+            tx.objectStore(_IMG_STORE).clear();
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+          });
+        } catch (err) {
+          console.warn("[gallery] clear failed:", err);
+        }
+      }
+      // ── end IndexedDB persistence ─────────────────────────────────────
+
       let _lightboxImageId = null;
 
       function setMode(mode) {
