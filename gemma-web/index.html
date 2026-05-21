@@ -2809,7 +2809,10 @@
       let _imageIdCounter = 0;
       function _storeImageData(data) {
         const id = String(++_imageIdCounter);
+        data.id = id;
+        if (!data.createdAt) data.createdAt = Date.now();
         _imageStore.set(id, data);
+        _imgDBPut(data); // fire-and-forget; do not block generation UX
         return id;
       }
 
@@ -2907,6 +2910,19 @@
         }
       }
       // ── end IndexedDB persistence ─────────────────────────────────────
+
+      async function _rehydrateImages() {
+        const rows = await _imgDBGetAll();
+        let maxId = _imageIdCounter;
+        for (const row of rows) {
+          if (!row || row.id == null) continue;
+          _imageStore.set(String(row.id), row);
+          const n = parseInt(row.id, 10);
+          if (!Number.isNaN(n) && n > maxId) maxId = n;
+        }
+        _imageIdCounter = maxId;
+      }
+      _rehydrateImages();
 
       let _lightboxImageId = null;
 
