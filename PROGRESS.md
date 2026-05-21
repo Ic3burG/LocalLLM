@@ -1212,6 +1212,60 @@ Created a global Gemini skill to automate and standardize the process of wrappin
 
 ---
 
+## 🖼 Image Gallery v2 — Persistence & Actions — May 21, 2026
+
+The image gallery was a bare grid of thumbnails with truncated captions and no
+interactivity, and all generated images were lost on page reload. This session
+made images persistent and turned the gallery into a real workspace.
+
+### Persistence (IndexedDB)
+
+- Added a best-effort IndexedDB layer (`_imgDBOpen/_imgDBPut/_imgDBGetAll/_imgDBDelete/_imgDBClear`)
+  storing each generated image (same record shape as the in-memory `_imageStore`,
+  plus a `createdAt` stamp). Chose IndexedDB over `localStorage` because base64
+  PNGs would blow the ~5 MB `localStorage` budget that `gemma_chats` already uses.
+- All DB ops degrade silently to session-only behavior if IndexedDB is
+  unavailable (e.g. private browsing); a transient open failure clears the cached
+  promise so a later call can retry.
+- `_storeImageData` now stamps `id`/`createdAt` and fire-and-forget persists each
+  image; `_rehydrateImages()` repopulates `_imageStore` on load and bumps the id
+  counter. Sends are briefly blocked until rehydration settles to avoid an id
+  collision with persisted records.
+
+### Gallery rewrite
+
+- Click a thumbnail → opens the existing lightbox (full prompt + metadata);
+  lightbox z-index raised above the gallery so it layers correctly.
+- Per-card **Copy prompt**, **⬇ Download**, and **✕ Delete**; header **search**
+  (filters by prompt, shows `N/total` only while searching) and **Clear all**.
+- Downloads unified into one `downloadImage()` helper that names files from a
+  prompt slug + id (e.g. `localllm-a-red-fox-7.png`) instead of `generated.png`,
+  applied to chat-card, lightbox, and gallery save paths.
+- Gallery modal now closes on **Escape** and backdrop click, matching the app's
+  other modals.
+
+### Files Changed
+
+| File                  | Change                                                                      |
+| --------------------- | --------------------------------------------------------------------------- |
+| `gemma-web/index.html` | IndexedDB layer, persist/rehydrate wiring, `downloadImage`, gallery rewrite. |
+| `scripts/render_spec.py` | New: renders design specs/plans to HTML preview for browser review.        |
+| `PROGRESS.md`         | This update.                                                                |
+
+### Outcome
+
+- Full pre-push gate green (ruff + prettier + 160 pytest).
+- Built via subagent-driven development: each task implemented by a fresh
+  subagent with spec-compliance + code-quality review; review findings
+  (promise-poisoning, rehydration race, modal Escape parity) fixed before
+  landing.
+- **Live browser verification still pending** — the Claude-in-Chrome extension
+  was not connected this session, so the UI was sanity-checked statically
+  (integrated code reading + prettier JS-parse), not clicked through in a
+  browser.
+
+---
+
 ## 📈 Current Status (as of May 21, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
