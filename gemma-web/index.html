@@ -3336,8 +3336,9 @@
       }
 
       // --- Image Gallery ---
+      let _galleryQuery = "";
+
       function showImageGallery() {
-        const entries = Array.from(_imageStore.entries());
         let modal = document.getElementById("image-gallery-modal");
         if (!modal) {
           modal = document.createElement("div");
@@ -3347,59 +3348,150 @@
           document.body.appendChild(modal);
         }
         modal.style.display = "flex";
+        _galleryQuery = "";
 
         const header = document.createElement("div");
         header.style.cssText =
-          "display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.10);flex-shrink:0;";
+          "display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.10);flex-shrink:0;";
+
         const title = document.createElement("h2");
-        title.textContent =
-          entries.length === 0
-            ? "Image Gallery — No images yet"
-            : `Image Gallery — ${entries.length} image${entries.length === 1 ? "" : "s"}`;
+        title.id = "gallery-title";
         title.style.cssText =
-          "margin:0;font-size:16px;font-weight:700;color:#f0eeff;";
+          "margin:0;font-size:16px;font-weight:700;color:#f0eeff;white-space:nowrap;";
+
+        const search = document.createElement("input");
+        search.type = "text";
+        search.placeholder = "Search prompts…";
+        search.className = "gallery-toolbar-input";
+        search.addEventListener("input", (e) => {
+          _galleryQuery = e.target.value;
+          renderGalleryGrid();
+        });
+
+        const clearBtn = document.createElement("button");
+        clearBtn.textContent = "Clear all";
+        clearBtn.className = "gallery-toolbar-btn";
+        clearBtn.addEventListener("click", async () => {
+          if (_imageStore.size === 0) return;
+          if (
+            !confirm(
+              "Delete all images from the gallery? This cannot be undone."
+            )
+          )
+            return;
+          _imageStore.clear();
+          await _imgDBClear();
+          renderGalleryGrid();
+        });
+
         const closeBtn = document.createElement("button");
         closeBtn.textContent = "✕ Close";
-        closeBtn.style.cssText =
-          "background:none;border:1px solid rgba(255,255,255,0.2);color:#9d9abf;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;";
+        closeBtn.className = "gallery-toolbar-btn";
         closeBtn.addEventListener("click", () => {
           modal.style.display = "none";
         });
-        header.appendChild(title);
-        header.appendChild(closeBtn);
+
+        const spacer = document.createElement("div");
+        spacer.style.flex = "1";
+
+        header.append(title, search, spacer, clearBtn, closeBtn);
 
         const grid = document.createElement("div");
+        grid.id = "gallery-grid";
         grid.style.cssText =
           "flex:1;overflow-y:auto;padding:16px 24px;display:flex;flex-wrap:wrap;gap:16px;align-content:flex-start;";
+
+        modal.replaceChildren(header, grid);
+        renderGalleryGrid();
+      }
+
+      function renderGalleryGrid() {
+        const grid = document.getElementById("gallery-grid");
+        const title = document.getElementById("gallery-title");
+        if (!grid) return;
+
+        const q = _galleryQuery.trim().toLowerCase();
+        const entries = Array.from(_imageStore.values())
+          .filter((d) => !q || (d.prompt || "").toLowerCase().includes(q))
+          .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+        if (title) {
+          const total = _imageStore.size;
+          title.textContent =
+            total === 0
+              ? "Image Gallery — No images yet"
+              : `Image Gallery — ${entries.length}/${total} image${total === 1 ? "" : "s"}`;
+        }
+
+        grid.replaceChildren();
 
         if (entries.length === 0) {
           const empty = document.createElement("p");
           empty.textContent =
-            "No images generated this session. Use Image mode to generate some.";
+            _imageStore.size === 0
+              ? "No images yet. Use Image mode to generate some."
+              : "No images match your search.";
           empty.style.cssText = "color:#9d9abf;font-size:14px;padding:20px 0;";
           grid.appendChild(empty);
-        } else {
-          entries.forEach(([, data]) => {
-            const card = document.createElement("div");
-            card.style.cssText =
-              "background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.10);border-radius:12px;overflow:hidden;width:220px;flex-shrink:0;";
-            const img = document.createElement("img");
-            img.src = "data:image/png;base64," + data.image_b64;
-            img.style.cssText = "width:100%;display:block;";
-            img.alt = "Generated image";
-            const caption = document.createElement("div");
-            caption.style.cssText =
-              "padding:8px 10px;font-size:11px;color:#9d9abf;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
-            caption.textContent = data.prompt || "No prompt";
-            card.appendChild(img);
-            card.appendChild(caption);
-            grid.appendChild(card);
-          });
+          return;
         }
 
-        modal.innerHTML = "";
-        modal.appendChild(header);
-        modal.appendChild(grid);
+        entries.forEach((data) => {
+          const card = document.createElement("div");
+          card.className = "gallery-card";
+
+          const img = document.createElement("img");
+          img.src = "data:image/png;base64," + data.image_b64;
+          img.alt = "Generated: " + (data.prompt || "");
+          img.addEventListener("click", () => openLightbox(data.id));
+
+          const del = document.createElement("button");
+          del.className = "gallery-delete-btn";
+          del.textContent = "✕";
+          del.title = "Delete";
+          del.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            _imageStore.delete(data.id);
+            await _imgDBDelete(data.id);
+            renderGalleryGrid();
+          });
+
+          const prompt = document.createElement("div");
+          prompt.className = "gallery-card-prompt";
+          prompt.textContent = data.prompt || "No prompt";
+
+          const actions = document.createElement("div");
+          actions.className = "gallery-card-actions";
+
+          const copyBtn = document.createElement("button");
+          copyBtn.className = "img-action-btn";
+          copyBtn.type = "button";
+          copyBtn.textContent = "Copy prompt";
+          copyBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(data.prompt || "");
+              const prev = copyBtn.textContent;
+              copyBtn.textContent = "Copied!";
+              setTimeout(() => (copyBtn.textContent = prev), 1200);
+            } catch (err) {
+              console.warn("[gallery] clipboard failed:", err);
+            }
+          });
+
+          const dlBtn = document.createElement("button");
+          dlBtn.className = "img-action-btn";
+          dlBtn.type = "button";
+          dlBtn.textContent = "⬇ Download";
+          dlBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            downloadImage(data);
+          });
+
+          actions.append(copyBtn, dlBtn);
+          card.append(del, img, prompt, actions);
+          grid.appendChild(card);
+        });
       }
 
       // --- All Chats Modal Logic ---
