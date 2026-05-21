@@ -187,7 +187,11 @@ def main() -> int:
   </body>
 </html>
 """
-    out = src.parent / "spec_preview.html"
+    # Match the established per-directory preview filename convention.
+    preview_name = (
+        "plan_preview.html" if src.parent.name == "plans" else "spec_preview.html"
+    )
+    out = src.parent / preview_name
     out.write_text(doc, encoding="utf-8")
 
     # Keep the generated file prettier-clean (repo mandate). Best-effort.
