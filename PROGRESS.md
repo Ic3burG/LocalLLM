@@ -1123,7 +1123,54 @@ The `PreToolUse:Edit` hook on workflow files **blocks batched/parallel `Edit` to
 
 ---
 
-## 📈 Current Status (as of May 18, 2026)
+## 🔗 Inline Source Citations — May 19–21, 2026
+
+Assistant answers now carry inline citation chips: a small numbered pill sits next to a claim, hovering shows a preview (title, domain or page, snippet), and clicking opens the web source in a new tab or, for RAG, a modal with the cited chunk. Covers all four content origins — `google_search`, `web_fetch`, RAG document chunks, and local file reads.
+
+### Why
+
+The model frequently states facts pulled from web search or an uploaded PDF, but the user had no way to see _where_ a given claim came from without expanding the whole agent trace. Chips put provenance next to the claim itself, the way Perplexity/Bing Copilot do.
+
+### Architecture
+
+One `Source` shape (`{idx, kind, title, url, domain, snippet, meta}`) covers every origin. The data crosses the wire as a **new `{"type":"sources"}` SSE event**, separate from the response text, so the markdown stays clean and chips are rendered in a post-processing pass.
+
+- `citations.py` (new) — `Source` TypedDict + helpers: `trim_snippet`, `assign_indices` (pure), `dedupe_by_url`, `format_sources_for_model`.
+- Agent tools (`agent_utils.py`) — `_google_search` / `_web_fetch` now return `{"sources": [...], "model_text": str}` instead of a bare string.
+- ReAct loop (`agent.py`) — `react_loop_sse` accumulates sources per run, dedupes web URLs against earlier calls, assigns **globally stable** indices (call 2 continues `[3][4]…`, not a fresh `[1][2]`), emits the `sources` event, and rewrites `TOOL_RESULT` with `[N] title (domain)` headers so the model sees the numbering in its own input.
+- RAG (`pdf_pipeline.py` + `gemma_bridge.py`) — `build_numbered_document_context` numbers chunks `[N] (file, p.X): "…"`; `chunks_to_sources` maps them to `Source` records; `/v1/chat/stream` emits the same `sources` event before the loop starts. The legacy `build_document_context` is preserved for the non-streaming `/v1/chat/completions` endpoint.
+- Prompt (`agent_utils.py` `AGENT_SYSTEM_PROMPT`) — a CITATIONS block tells the model to echo the `[N]` indices already visible in `TOOL_RESULT`s. Chosen because echoing visible numbers is the easiest possible task for a local Gemma model (vs. inventing its own scheme).
+- Frontend (`gemma-web/index.html`) — chip CSS (indigo=web, emerald=rag, slate=file), `renderCitations()` walks rendered text nodes and swaps `[N]` for chip `<button>`s while **skipping `<code>`/`<pre>`/`<a>`** so markers inside code stay literal; hover/focus popover with a 150ms-open/120ms-close safe-triangle; RAG chunk modal; a `📎 N sources` fallback footer for turns where the model emitted no markers; and rehydration of chips from `localStorage` on chat reload. All DOM-method construction (no `innerHTML`) — also keeps the repo's security hook happy.
+
+### Build process
+
+Ran through the full superpowers workflow: brainstorm → spec (`docs/superpowers/specs/2026-05-19-source-citations-design.md`) → 10-task TDD plan (`docs/superpowers/plans/2026-05-19-source-citations.md`) → subagent-driven execution, one fresh implementer per task with a two-stage review each (spec compliance, then code quality). Reviews caught real issues — `assign_indices` made pure instead of mutating, a leaked modal `keydown` listener, two empty-title edge cases, and an SSE-queue test-hygiene gap — all fixed before the task closed.
+
+### Files Changed
+
+| File                     | Change                                                                            |
+| ------------------------ | --------------------------------------------------------------------------------- |
+| `citations.py`           | New — Source shape + trim/dedupe/index/format helpers                             |
+| `agent_utils.py`         | `_google_search`/`_web_fetch` return structured dicts; CITATIONS block in prompt  |
+| `agent.py`               | `react_loop_sse` accumulates sources, emits SSE event, numbers `TOOL_RESULT`s     |
+| `pdf_pipeline.py`        | New `build_numbered_document_context` + `chunks_to_sources` (legacy builder kept) |
+| `gemma_bridge.py`        | `/v1/chat/stream` numbers RAG chunks and emits a `sources` event                  |
+| `gemma-web/index.html`   | Chip CSS, `renderCitations` post-processor, popover, RAG modal, footer, persistence |
+| `tests/`                 | +16 tests (`test_citations.py`, citation cases in `test_agent.py` / `test_pdf_pipeline.py`) |
+
+### The stale-bridge gotcha (testing lesson)
+
+After CI went green, a live SSE test against the running server showed the **old** behavior — plain-string search output, no `sources` event, no `[N]` markers. Cause was not a code bug: the launchd-managed bridge (`com.gemini.litert`) was a long-running process started days earlier, and Python does not hot-reload. `launchctl kickstart -k "gui/$(id -u)/com.gemini.litert"` reloaded it, after which the same query produced a clean `sources` event (5 indexed web items), a numbered `TOOL_RESULT`, and a `done` answer ending `…115 to 110 [2].` — the model correctly citing the one source whose snippet held the score. **Always restart the bridge after backend edits before any live test.** (Frontend-only changes just need a browser refresh; the Node proxy serves `index.html` fresh.)
+
+### Outcome
+
+- Full backend pipeline (tool → ReAct → SSE → model citing `[N]`) verified end-to-end on the live server.
+- 16 new tests; pre-push and GitHub Actions green; 17 commits on `main`.
+- Visual chip rendering unverified by automation (the Claude-in-Chrome extension would not connect this session) — confirmed the chip-feeding data is correct and well-formed; left a browser eyeball + a RAG-PDF spot-check as the only open items.
+
+---
+
+## 📈 Current Status (as of May 21, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
   Both managed by repaired launchd plists; can be reinstalled via
@@ -1140,9 +1187,10 @@ The `PreToolUse:Edit` hook on workflow files **blocks batched/parallel `Edit` to
   system; **LocalLLM** branding; Welcome screen rebuilt fresh on every
   navigation. All prior features preserved (Deep Thinking, Starred/Recents/All
   Chats, Image Gallery, Scheduled Tasks, Agent Trace, Tool Approval, Vitals
-  Dashboard).
+  Dashboard). Inline **source-citation chips** on assistant answers (hover for
+  preview, click to open URL or RAG chunk modal; `📎 N sources` fallback footer).
 - **No known broken features.** (The previously open New Chat bug is fixed
   via the architectural pivot above.)
-- **Integrity:** 142 tests passing; local **Git Hooks** (self-healing
+- **Integrity:** 160 tests passing; local **Git Hooks** (self-healing
   pre-commit + CI-mirror pre-push) enforced; `CLAUDE.md` mandate auto-loaded
   every session; CI green on every push to `main`.
