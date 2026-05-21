@@ -2823,7 +2823,7 @@
 
       function _imgDBOpen() {
         if (_imgDBPromise) return _imgDBPromise;
-        _imgDBPromise = new Promise((resolve, reject) => {
+        const p = new Promise((resolve, reject) => {
           if (!("indexedDB" in window)) {
             reject(new Error("no indexedDB"));
             return;
@@ -2839,9 +2839,11 @@
           req.onerror = () => reject(req.error);
         }).catch((err) => {
           console.warn("[gallery] IndexedDB unavailable:", err);
+          _imgDBPromise = null; // clear cache so a later call can retry
           return null;
         });
-        return _imgDBPromise;
+        _imgDBPromise = p;
+        return p;
       }
 
       async function _imgDBPut(record) {
