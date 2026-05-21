@@ -2922,7 +2922,12 @@
         }
         _imageIdCounter = maxId;
       }
-      _rehydrateImages();
+      // Disable sending until rehydration settles so a fast first generation
+      // can't claim an id that collides with a persisted one.
+      sendBtn.disabled = true;
+      _rehydrateImages().finally(() => {
+        sendBtn.disabled = false;
+      });
 
       let _lightboxImageId = null;
 
