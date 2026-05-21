@@ -1170,6 +1170,48 @@ After CI went green, a live SSE test against the running server showed the **old
 
 ---
 
+## 🧠 Memory & Workflow Automation — May 21, 2026
+
+Fixed a critical gap in the autonomous learning system and implemented a standardized session-closeout workflow for the Gemini CLI.
+
+### Learner Subagent Integration
+
+Discovered that the Memory Subagent (`update_memory_task` in `gemma_bridge.py`) was only being triggered by non-streaming completions. Since the frontend primarily uses the streaming `/v1/chat/stream` path for both standard chat and Agent/Deep Thinking modes, memory was not being updated for most user interactions.
+
+- **`agent.py`**: Added a `trigger_memory_update` helper function that uses a local import to call `update_memory_task` from `gemma_bridge.py`, avoiding circular dependencies.
+- **ReAct Loop**: Integrated the trigger into `react_loop_sse`. It now captures the original user prompt and the assistant's final response, firing the learner task in the background at both "done" exit points (explicit `done` marker or plain text completion).
+- **Persistence**: Ensures that every interaction—even complex agentic runs—contributes to the project's long-term `USER_MEMORY.md`.
+
+### `endsession` Skill
+
+Created a global Gemini skill to automate and standardize the process of wrapping up a work session.
+
+- **Research**: Analyzed the equivalent Claude skill and adapted it for the specific mandates of this project (CI-driven development, mandatory pre-push hooks).
+- **Workflow**: Gather accomplishments from git → update `PROGRESS.md` → stage work → run `.git/hooks/pre-push` gate (blocking) → commit & push → monitor GitHub Actions.
+- **Packaging**: Initialized, edited, and packaged the skill using the `skill-creator` toolset.
+- **Installation**: Installed at the **user scope** (`~/.gemini/skills/endsession`), making it available globally across all Gemini CLI sessions on this machine.
+
+### Files Changed
+
+| File                  | Change                                                                        |
+| --------------------- | ----------------------------------------------------------------------------- |
+| `agent.py`            | Added `trigger_memory_update` helper and integrated it into `react_loop_sse`. |
+| `tests/test_agent.py` | Verified stability with existing suite (42 tests).                            |
+| `PROGRESS.md`         | This update.                                                                  |
+
+### Outcome
+
+- Verified the memory update fix with 160+ tests passing (including regressions in `test_memory_writer.py`).
+- Confirmed the `endsession` skill is installed and active.
+- All pre-push checks passed.
+
+### Next Steps
+
+- Monitor the effectiveness of the Learner Subagent during long agentic sessions.
+- Use the `endsession` skill for all future wrap-ups to maintain `PROGRESS.md` consistency.
+
+---
+
 ## 📈 Current Status (as of May 21, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.

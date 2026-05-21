@@ -101,6 +101,21 @@ async def summarize_history(messages: list[dict]) -> list[dict]:
     return new_messages
 
 
+async def trigger_memory_update(user_msg: str, assistant_msg: str):
+    """
+    Triggers the Learner Subagent in gemma_bridge.py.
+    Uses a local import to avoid circular dependency.
+    """
+    try:
+        from gemma_bridge import update_memory_task
+
+        # update_memory_task is an async function that we fire-and-forget
+        # by creating an asyncio task so it doesn't block the UI response.
+        asyncio.create_task(update_memory_task(user_msg, assistant_msg))
+    except Exception as e:
+        logger.error(f"Failed to trigger memory update: {e}")
+
+
 from inference_engine import is_model_loaded, run_inference
 
 # per-task SSE queues and confirmation queues
@@ -440,6 +455,19 @@ async def react_loop_sse(
         f"Current date and time: {now_str}\n\n" + messages[0]["content"]
     )
 
+    # Capture the original last user message for the Learner Subagent
+    last_user_msg = ""
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            content = msg.get("content", "")
+            if isinstance(content, list):
+                last_user_msg = " ".join(
+                    [m.get("text", "") for m in content if m.get("type") == "text"]
+                )
+            else:
+                last_user_msg = content
+            break
+
     try:
         if deep_think:
             reasoning = await run_deep_thinking_pipeline(q, messages, model_id)
@@ -517,6 +545,7 @@ async def react_loop_sse(
                 )
                 await q.put(json.dumps({"type": "done", "message": clean_response}))
                 telemetry.record_complete(task_id, "success")
+                await trigger_memory_update(last_user_msg, clean_response)
                 return
 
             kind, name_or_msg, args = parsed
@@ -527,6 +556,7 @@ async def react_loop_sse(
                 )
                 await q.put(json.dumps({"type": "done", "message": name_or_msg}))
                 telemetry.record_complete(task_id, "success")
+                await trigger_memory_update(last_user_msg, name_or_msg)
                 return
 
             tool = TOOL_REGISTRY.get(name_or_msg)

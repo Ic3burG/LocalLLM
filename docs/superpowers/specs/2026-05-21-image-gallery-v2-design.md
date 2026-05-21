@@ -131,6 +131,7 @@ substring, case-insensitive — mirrors All-Chats search at line 3213), a
 **Clear all** button, and the existing Close button.
 
 **Grid card** (per image):
+
 - Thumbnail — `click → openLightbox(id)` (delivers full prompt + metadata +
   Save/Regenerate/Edit, all already built).
 - Caption: prompt (clamped to ~2 lines, not single-line truncate).
