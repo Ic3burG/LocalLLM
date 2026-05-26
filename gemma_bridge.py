@@ -430,6 +430,20 @@ async def upload_document(file: UploadFile = File(...)):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 
+@app.post("/v1/rag/search")
+async def rag_search(req: dict):
+    query = req.get("query", "")
+    top_k = int(req.get("top_k", 5))
+    doc_ids = list(doc_store.keys())
+    if not doc_ids:
+        return {"results": "", "count": 0}
+    chunks, _ = pdf_pipeline.retrieve_chunks(query, doc_ids, doc_store, top_k=top_k)
+    return {
+        "results": pdf_pipeline.build_numbered_document_context(chunks),
+        "count": len(chunks),
+    }
+
+
 @app.post("/v1/image/generate")
 async def generate_image_route(request: Request):
     body = await request.json()

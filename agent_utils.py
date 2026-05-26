@@ -810,6 +810,29 @@ async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) ->
         return f"ERROR: {e}"
 
 
+async def _recall(query: str) -> str:
+    try:
+        import requests as _requests
+
+        loop = asyncio.get_running_loop()
+
+        def _post():
+            return _requests.post(
+                "http://localhost:9379/v1/rag/search",
+                json={"query": query, "top_k": 5},
+                timeout=30,
+            )
+
+        resp = await loop.run_in_executor(None, _post)
+        data = resp.json()
+        if data.get("count", 0) == 0:
+            return "No relevant documents found in memory."
+        return data["results"]
+    except Exception as e:
+        logger.error("recall failed: %s", e)
+        return f"ERROR: {e}"
+
+
 def _parse_cli_output(stdout: str, stderr: str) -> str:
     """Return pretty-printed JSON if stdout is valid JSON, otherwise raw combined output."""
     try:
@@ -978,6 +1001,12 @@ register_tool(
     "Generate an image on-device using FLUX.1-schnell via mflux",
     _generate_image,
 )
+register_tool(
+    "recall",
+    "safe",
+    "Semantic search over ingested documents",
+    _recall,
+)
 register_tool("gh_run", "risky", "Run a GitHub CLI command (gh)", _gh_run)
 register_tool("aws_run", "risky", "Run an AWS CLI command (aws)", _aws_run)
 register_tool(
@@ -1032,6 +1061,7 @@ TOOLS AVAILABLE:
   delete_cron(name)                              — delete a cron job
   list_scheduled_tasks()                         — list in-app scheduled tasks
   create_scheduled_task(name, schedule, prompt)  — create a scheduled task
+  recall(query)                                  — semantic search over your ingested documents
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.
