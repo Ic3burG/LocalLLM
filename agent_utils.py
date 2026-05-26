@@ -1145,6 +1145,24 @@ async def _send_message(recipient: str, text: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _mail_compose(to: str, subject: str, body: str) -> str:
+    log_audit(f"MAIL_COMPOSE: to={to} subject={subject}")
+    try:
+        script = f"""
+        tell application "Mail"
+            set msg to make new outgoing message with properties {{subject:"{subject}", content:"{body}", visible:true}}
+            tell msg
+                make new to recipient at end of to recipients with properties {{address:"{to}"}}
+            end tell
+        end tell
+        """
+        await _osascript(script)
+        return f"OK: drafted email to {to} (review and send manually)"
+    except Exception as e:
+        logger.error("mail_compose failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _recall(query: str) -> str:
     try:
         import requests as _requests
@@ -1367,6 +1385,7 @@ register_tool("notes_search", "safe", "Search Apple Notes", _notes_search)
 register_tool("notes_create", "risky", "Create an Apple Note", _notes_create)
 register_tool("messages_read", "risky", "Read recent iMessages", _messages_read)
 register_tool("send_message", "risky", "Send an iMessage", _send_message)
+register_tool("mail_compose", "risky", "Draft an email (no auto-send)", _mail_compose)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here
 # because they depend on the scheduler in agent.py.
@@ -1433,6 +1452,7 @@ TOOLS AVAILABLE:
   notes_create(title, body)                      — create a new Apple Note
   messages_read(limit)                           — read your most recent iMessages
   send_message(recipient, text)                  — send an iMessage to a phone/email
+  mail_compose(to, subject, body)                — draft an email in Mail (you review and send)
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.

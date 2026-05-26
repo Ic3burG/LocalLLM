@@ -10,6 +10,7 @@ from agent_utils import (
     _generate_image,
     _google_search,
     _json_query,
+    _mail_compose,
     _messages_read,
     _move_file,
     _notes_create,
@@ -323,3 +324,14 @@ async def test_send_message_builds_script():
         out = await _send_message("+15551234567", "yo")
     assert out.startswith("OK")
     assert "send" in mock_run.call_args.args[0][2]
+
+
+@pytest.mark.asyncio
+async def test_mail_compose_creates_draft():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _mail_compose("a@b.com", "Hi", "Body")
+    assert out.startswith("OK")
+    script = mock_run.call_args.args[0][2]
+    assert "make new outgoing message" in script
+    assert " send " not in script  # draft only, never auto-send
