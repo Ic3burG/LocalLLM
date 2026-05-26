@@ -1064,6 +1064,40 @@ async def _reminders_create(text: str, due: str = "") -> str:
         return f"ERROR: {e}"
 
 
+async def _notes_search(query: str) -> str:
+    try:
+        script = f"""
+        tell application "Notes"
+            set output to ""
+            repeat with n in (notes whose name contains "{query}")
+                set output to output & (name of n) & linefeed & (plaintext of n) & linefeed & "---" & linefeed
+            end repeat
+            return output
+        end tell
+        """
+        out = await _osascript(script)
+        return out or "No matching notes."
+    except Exception as e:
+        logger.error("notes_search failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _notes_create(title: str, body: str) -> str:
+    log_audit(f"NOTES_CREATE: {title}")
+    try:
+        html_body = f"<div><b>{title}</b></div><div>{body}</div>"
+        script = f"""
+        tell application "Notes"
+            make new note at folder "Notes" with properties {{body:"{html_body}"}}
+        end tell
+        """
+        await _osascript(script)
+        return f"OK: created note '{title}'"
+    except Exception as e:
+        logger.error("notes_create failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _recall(query: str) -> str:
     try:
         import requests as _requests
@@ -1282,6 +1316,8 @@ register_tool("calendar_list", "safe", "List upcoming Calendar events", _calenda
 register_tool("calendar_create", "risky", "Create a Calendar event", _calendar_create)
 register_tool("reminders_list", "safe", "List open reminders", _reminders_list)
 register_tool("reminders_create", "risky", "Create a reminder", _reminders_create)
+register_tool("notes_search", "safe", "Search Apple Notes", _notes_search)
+register_tool("notes_create", "risky", "Create an Apple Note", _notes_create)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here
 # because they depend on the scheduler in agent.py.
@@ -1344,6 +1380,8 @@ TOOLS AVAILABLE:
   calendar_create(title, start, end, notes)      — create a Calendar event; dates like "6/1/2026 12:00:00"
   reminders_list(list)                           — list open reminders (list name optional)
   reminders_create(text, due)                    — add a reminder; due like "6/1/2026 09:00:00"
+  notes_search(query)                            — search Apple Notes by title and read matches
+  notes_create(title, body)                      — create a new Apple Note
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.

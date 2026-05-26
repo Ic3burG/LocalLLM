@@ -11,6 +11,8 @@ from agent_utils import (
     _google_search,
     _json_query,
     _move_file,
+    _notes_create,
+    _notes_search,
     _read_csv,
     _read_ics,
     _recall,
@@ -286,3 +288,20 @@ async def test_reminders_create():
         out = await _reminders_create("Call mom")
     assert out.startswith("OK")
     assert "make new reminder" in mock_run.call_args.args[0][2]
+
+
+@pytest.mark.asyncio
+async def test_notes_search():
+    mock_res = MagicMock(stdout="Grocery list\n")
+    with patch("subprocess.run", return_value=mock_res):
+        out = await _notes_search("grocery")
+    assert "Grocery" in out
+
+
+@pytest.mark.asyncio
+async def test_notes_create():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _notes_create("Ideas", "body text")
+    assert out.startswith("OK")
+    assert "make new note" in mock_run.call_args.args[0][2]
