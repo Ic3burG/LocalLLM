@@ -94,6 +94,7 @@ async def test_web_fetch_error():
 @pytest.mark.asyncio
 async def test_recall_returns_results():
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.json.return_value = {"results": "[1] (a.pdf): hi", "count": 1}
     with patch("requests.post", return_value=mock_resp) as mock_post:
         out = await _recall("what is x")
@@ -104,10 +105,20 @@ async def test_recall_returns_results():
 @pytest.mark.asyncio
 async def test_recall_empty():
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.json.return_value = {"results": "", "count": 0}
     with patch("requests.post", return_value=mock_resp):
         out = await _recall("nothing")
     assert "No relevant" in out
+
+
+@pytest.mark.asyncio
+async def test_recall_http_error():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 500
+    with patch("requests.post", return_value=mock_resp):
+        out = await _recall("boom")
+    assert out.startswith("ERROR")
 
 
 @pytest.mark.asyncio

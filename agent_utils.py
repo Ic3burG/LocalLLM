@@ -824,10 +824,12 @@ async def _recall(query: str) -> str:
             )
 
         resp = await loop.run_in_executor(None, _post)
+        if resp.status_code != 200:
+            return f"ERROR: RAG search failed — {resp.status_code}"
         data = resp.json()
         if data.get("count", 0) == 0:
             return "No relevant documents found in memory."
-        return data["results"]
+        return data.get("results", "")
     except Exception as e:
         logger.error("recall failed: %s", e)
         return f"ERROR: {e}"

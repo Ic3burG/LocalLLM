@@ -431,13 +431,18 @@ async def upload_document(file: UploadFile = File(...)):
 
 
 @app.post("/v1/rag/search")
-async def rag_search(req: dict):
-    query = req.get("query", "")
-    top_k = int(req.get("top_k", 5))
+async def rag_search(request: Request):
+    body = await request.json()
+    query = body.get("query", "")
+    top_k = int(body.get("top_k", 5))
     doc_ids = list(doc_store.keys())
     if not doc_ids:
         return {"results": "", "count": 0}
-    chunks, _ = pdf_pipeline.retrieve_chunks(query, doc_ids, doc_store, top_k=top_k)
+    loop = asyncio.get_running_loop()
+    chunks, _ = await loop.run_in_executor(
+        None,
+        lambda: pdf_pipeline.retrieve_chunks(query, doc_ids, doc_store, top_k=top_k),
+    )
     return {
         "results": pdf_pipeline.build_numbered_document_context(chunks),
         "count": len(chunks),
