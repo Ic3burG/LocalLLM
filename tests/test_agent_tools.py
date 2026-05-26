@@ -14,6 +14,8 @@ from agent_utils import (
     _read_csv,
     _read_ics,
     _recall,
+    _reminders_create,
+    _reminders_list,
     _say,
     _screenshot,
     _sqlite_exec,
@@ -267,3 +269,20 @@ async def test_calendar_create_builds_event():
         out = await _calendar_create("Lunch", "6/1/2026 12:00:00")
     assert out.startswith("OK")
     assert "make new event" in mock_run.call_args.args[0][2]
+
+
+@pytest.mark.asyncio
+async def test_reminders_list():
+    mock_res = MagicMock(stdout="Buy milk\n")
+    with patch("subprocess.run", return_value=mock_res):
+        out = await _reminders_list()
+    assert "Buy milk" in out
+
+
+@pytest.mark.asyncio
+async def test_reminders_create():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _reminders_create("Call mom")
+    assert out.startswith("OK")
+    assert "make new reminder" in mock_run.call_args.args[0][2]

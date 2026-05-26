@@ -1027,6 +1027,43 @@ async def _calendar_create(
         return f"ERROR: {e}"
 
 
+async def _reminders_list(list_name: str = "") -> str:
+    try:
+        target = f'list "{list_name}"' if list_name else "default list"
+        script = f"""
+        tell application "Reminders"
+            set output to ""
+            repeat with r in (reminders of {target} whose completed is false)
+                set output to output & (name of r) & linefeed
+            end repeat
+            return output
+        end tell
+        """
+        out = await _osascript(script)
+        return out or "No open reminders."
+    except Exception as e:
+        logger.error("reminders_list failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _reminders_create(text: str, due: str = "") -> str:
+    log_audit(f"REMINDERS_CREATE: {text}")
+    try:
+        props = [f'name:"{text}"']
+        if due:
+            props.append(f'due date:(date "{due}")')
+        script = f"""
+        tell application "Reminders"
+            make new reminder with properties {{{", ".join(props)}}}
+        end tell
+        """
+        await _osascript(script)
+        return f"OK: added reminder '{text}'"
+    except Exception as e:
+        logger.error("reminders_create failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _recall(query: str) -> str:
     try:
         import requests as _requests
@@ -1243,6 +1280,8 @@ register_tool(
 )
 register_tool("calendar_list", "safe", "List upcoming Calendar events", _calendar_list)
 register_tool("calendar_create", "risky", "Create a Calendar event", _calendar_create)
+register_tool("reminders_list", "safe", "List open reminders", _reminders_list)
+register_tool("reminders_create", "risky", "Create a reminder", _reminders_create)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here
 # because they depend on the scheduler in agent.py.
@@ -1303,6 +1342,8 @@ TOOLS AVAILABLE:
   recall(query)                                  — semantic search over your ingested documents
   calendar_list(days)                            — list upcoming Calendar events (default 7 days)
   calendar_create(title, start, end, notes)      — create a Calendar event; dates like "6/1/2026 12:00:00"
+  reminders_list(list)                           — list open reminders (list name optional)
+  reminders_create(text, due)                    — add a reminder; due like "6/1/2026 09:00:00"
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.
