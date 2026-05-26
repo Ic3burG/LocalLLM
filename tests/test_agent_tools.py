@@ -24,6 +24,7 @@ from agent_utils import (
     _screenshot,
     _send_message,
     _sqlite_exec,
+    _transcribe,
     _web_fetch,
 )
 
@@ -355,3 +356,14 @@ async def test_notes_search_escapes_quotes():
         await _notes_search('a"b')
     script = mock_run.call_args.args[0][2]
     assert 'a\\"b' in script
+
+
+@pytest.mark.asyncio
+async def test_transcribe(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "a.wav").write_bytes(b"RIFF")
+    fake = MagicMock()
+    fake.transcribe.return_value = {"text": "  hello world  "}
+    with patch.dict("sys.modules", {"mlx_whisper": fake}):
+        out = await _transcribe("a.wav")
+    assert out == "hello world"

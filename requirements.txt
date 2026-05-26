@@ -19,3 +19,4 @@ openpyxl
 oletools
 olefile
 mflux; sys_platform == "darwin"
+mlx-whisper; sys_platform == "darwin"

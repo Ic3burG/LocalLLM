@@ -1276,6 +1276,25 @@ async def _hf_run(args: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _transcribe(path: str) -> str:
+    try:
+        p = validate_path(path)
+        import mlx_whisper
+
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            result = mlx_whisper.transcribe(
+                str(p), path_or_hf_repo="mlx-community/whisper-base-mlx"
+            )
+            return result["text"].strip()
+
+        return await loop.run_in_executor(None, _run)
+    except Exception as e:
+        logger.error("transcribe failed: %s", e)
+        return f"ERROR: {e}"
+
+
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
@@ -1396,6 +1415,7 @@ register_tool("notes_create", "risky", "Create an Apple Note", _notes_create)
 register_tool("messages_read", "risky", "Read recent iMessages", _messages_read)
 register_tool("send_message", "risky", "Send an iMessage", _send_message)
 register_tool("mail_compose", "risky", "Draft an email (no auto-send)", _mail_compose)
+register_tool("transcribe", "safe", "Transcribe an audio file to text", _transcribe)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here
 # because they depend on the scheduler in agent.py.
@@ -1463,6 +1483,7 @@ TOOLS AVAILABLE:
   messages_read(limit)                           — read your most recent iMessages
   send_message(recipient, text)                  — send an iMessage to a phone/email
   mail_compose(to, subject, body)                — draft an email in Mail (you review and send)
+  transcribe(path)                               — transcribe an audio file to text (on-device)
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.
