@@ -835,6 +835,24 @@ async def _diff_files(path_a: str, path_b: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _json_query(path_or_text: str, expr: str) -> str:
+    try:
+        try:
+            p = validate_path(path_or_text)
+            data = json.loads(p.read_text())
+        except (FileNotFoundError, PermissionError, OSError):
+            data = json.loads(path_or_text)
+        cur = data
+        for part in expr.replace("[", ".").replace("]", "").split("."):
+            if part == "":
+                continue
+            cur = cur[int(part)] if isinstance(cur, list) else cur[part]
+        return json.dumps(cur, indent=2)
+    except Exception as e:
+        logger.error("json_query failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _read_csv(path: str) -> str:
     try:
         p = validate_path(path)
@@ -1073,6 +1091,7 @@ register_tool("screenshot", "risky", "Capture the screen to a PNG file", _screen
 register_tool("move_file", "risky", "Move or rename a file", _move_file)
 register_tool("delete_file", "risky", "Move a file to the Trash", _delete_file)
 register_tool("read_csv", "safe", "Read a CSV file as a table", _read_csv)
+register_tool("json_query", "safe", "Query JSON with a dotted path", _json_query)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1138,6 +1157,7 @@ TOOLS AVAILABLE:
   move_file(src, dst)                            — move or rename a file
   delete_file(path)                              — move a file to the Trash (recoverable)
   read_csv(path)                                 — read a CSV file as a tab-separated table
+  json_query(path_or_text, expr)                 — extract a value from JSON, e.g. "users[0].name"
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files

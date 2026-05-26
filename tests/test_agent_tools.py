@@ -7,6 +7,7 @@ from agent_utils import (
     _delete_file,
     _generate_image,
     _google_search,
+    _json_query,
     _move_file,
     _read_csv,
     _recall,
@@ -129,6 +130,12 @@ async def test_recall_http_error():
     with patch("requests.post", return_value=mock_resp):
         out = await _recall("boom")
     assert out.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_json_query_on_raw_text():
+    out = await _json_query('{"users": [{"name": "Ada"}]}', "users[0].name")
+    assert "Ada" in out
 
 
 @pytest.mark.asyncio
