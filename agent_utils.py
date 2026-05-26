@@ -701,6 +701,20 @@ async def _notify(title: str, message: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _move_file(src: str, dst: str) -> str:
+    log_audit(f"MOVE_FILE: {src} -> {dst}")
+    try:
+        s = validate_path(src)
+        d = validate_path(dst, must_exist=False)
+        import shutil as _shutil
+
+        _shutil.move(str(s), str(d))
+        return f"OK: moved {s} -> {d}"
+    except Exception as e:
+        logger.error("move_file failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _screenshot(path: str = "") -> str:
     log_audit(f"SCREENSHOT: {path}")
     try:
@@ -1023,6 +1037,7 @@ register_tool(
 register_tool("notify", "safe", "Send a macOS system notification", _notify)
 register_tool("say", "safe", "Speak text aloud via macOS say", _say)
 register_tool("screenshot", "risky", "Capture the screen to a PNG file", _screenshot)
+register_tool("move_file", "risky", "Move or rename a file", _move_file)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1085,6 +1100,7 @@ TOOLS AVAILABLE:
   notify(title, message)                         — send a macOS system notification
   say(text)                                      — speak text aloud through the speakers
   screenshot(path)                               — capture the screen to a PNG (path optional)
+  move_file(src, dst)                            — move or rename a file
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files

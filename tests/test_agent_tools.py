@@ -6,6 +6,7 @@ import pytest
 from agent_utils import (
     _generate_image,
     _google_search,
+    _move_file,
     _recall,
     _say,
     _screenshot,
@@ -126,6 +127,16 @@ async def test_recall_http_error():
     with patch("requests.post", return_value=mock_resp):
         out = await _recall("boom")
     assert out.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_move_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "a.txt").write_text("hi")
+    out = await _move_file("a.txt", "b.txt")
+    assert out.startswith("OK")
+    assert (tmp_path / "b.txt").read_text() == "hi"
+    assert not (tmp_path / "a.txt").exists()
 
 
 @pytest.mark.asyncio
