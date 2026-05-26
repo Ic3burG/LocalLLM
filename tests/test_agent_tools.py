@@ -10,6 +10,7 @@ from agent_utils import (
     _generate_image,
     _google_search,
     _json_query,
+    _messages_read,
     _move_file,
     _notes_create,
     _notes_search,
@@ -20,6 +21,7 @@ from agent_utils import (
     _reminders_list,
     _say,
     _screenshot,
+    _send_message,
     _sqlite_exec,
     _web_fetch,
 )
@@ -305,3 +307,19 @@ async def test_notes_create():
         out = await _notes_create("Ideas", "body text")
     assert out.startswith("OK")
     assert "make new note" in mock_run.call_args.args[0][2]
+
+
+@pytest.mark.asyncio
+async def test_messages_read_queries_db():
+    with patch("agent_utils._messages_db_rows", return_value=[("Alice", "hi")]):
+        out = await _messages_read(5)
+    assert "Alice" in out and "hi" in out
+
+
+@pytest.mark.asyncio
+async def test_send_message_builds_script():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _send_message("+15551234567", "yo")
+    assert out.startswith("OK")
+    assert "send" in mock_run.call_args.args[0][2]

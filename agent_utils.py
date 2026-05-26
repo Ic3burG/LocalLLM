@@ -1098,6 +1098,53 @@ async def _notes_create(title: str, body: str) -> str:
         return f"ERROR: {e}"
 
 
+def _messages_db_rows(limit: int) -> list[tuple[str, str]]:
+    import sqlite3
+
+    db = os.path.expanduser("~/Library/Messages/chat.db")
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    try:
+        cur = conn.execute(
+            "SELECT h.id, m.text FROM message m "
+            "JOIN handle h ON m.handle_id = h.ROWID "
+            "WHERE m.text IS NOT NULL ORDER BY m.date DESC LIMIT ?",
+            (limit,),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+async def _messages_read(limit: int = 20) -> str:
+    log_audit(f"MESSAGES_READ: limit={limit}")
+    try:
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(None, _messages_db_rows, int(limit))
+        if not rows:
+            return "No messages found."
+        return "\n".join(f"{sender}: {text}" for sender, text in rows)
+    except Exception as e:
+        logger.error("messages_read failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _send_message(recipient: str, text: str) -> str:
+    log_audit(f"SEND_MESSAGE: to={recipient}")
+    try:
+        script = f"""
+        tell application "Messages"
+            set targetService to 1st service whose service type = iMessage
+            set targetBuddy to buddy "{recipient}" of targetService
+            send "{text}" to targetBuddy
+        end tell
+        """
+        await _osascript(script)
+        return f"OK: message sent to {recipient}"
+    except Exception as e:
+        logger.error("send_message failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _recall(query: str) -> str:
     try:
         import requests as _requests
@@ -1318,6 +1365,8 @@ register_tool("reminders_list", "safe", "List open reminders", _reminders_list)
 register_tool("reminders_create", "risky", "Create a reminder", _reminders_create)
 register_tool("notes_search", "safe", "Search Apple Notes", _notes_search)
 register_tool("notes_create", "risky", "Create an Apple Note", _notes_create)
+register_tool("messages_read", "risky", "Read recent iMessages", _messages_read)
+register_tool("send_message", "risky", "Send an iMessage", _send_message)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here
 # because they depend on the scheduler in agent.py.
@@ -1382,6 +1431,8 @@ TOOLS AVAILABLE:
   reminders_create(text, due)                    — add a reminder; due like "6/1/2026 09:00:00"
   notes_search(query)                            — search Apple Notes by title and read matches
   notes_create(title, body)                      — create a new Apple Note
+  messages_read(limit)                           — read your most recent iMessages
+  send_message(recipient, text)                  — send an iMessage to a phone/email
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.
