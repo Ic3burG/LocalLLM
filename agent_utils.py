@@ -1336,7 +1336,10 @@ async def _ocr_image(path: str) -> str:
         text = await loop.run_in_executor(None, _run)
         return text or "(no text found)"
     except Exception as e:
-        logger.warning("ocr_image native failed, falling back to VLM: %s", e)
+        stderr = getattr(e, "stderr", None)
+        logger.warning(
+            "ocr_image native failed (stderr=%s), falling back to VLM: %s", stderr, e
+        )
         return await _describe_image(
             path, prompt="Transcribe all text visible in this image."
         )

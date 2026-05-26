@@ -21,4 +21,9 @@ let request = VNRecognizeTextRequest { req, _ in
 request.recognitionLevel = .accurate
 
 let handler = VNImageRequestHandler(cgImage: cg, options: [:])
-try? handler.perform([request])
+do {
+    try handler.perform([request])
+} catch {
+    FileHandle.standardError.write("ERROR: \(error)\n".data(using: .utf8)!)
+    exit(1)
+}

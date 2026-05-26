@@ -381,6 +381,7 @@ async def test_describe_image(tmp_path, monkeypatch):
     with patch.dict("sys.modules", {"mlx_vlm": fake}):
         out = await _describe_image("p.png")
     assert "cat" in out
+    fake.apply_chat_template.assert_called_once()
 
 
 @pytest.mark.asyncio
