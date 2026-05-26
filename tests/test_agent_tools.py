@@ -8,6 +8,7 @@ from agent_utils import (
     _generate_image,
     _google_search,
     _move_file,
+    _read_csv,
     _recall,
     _say,
     _screenshot,
@@ -128,6 +129,15 @@ async def test_recall_http_error():
     with patch("requests.post", return_value=mock_resp):
         out = await _recall("boom")
     assert out.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_read_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "d.csv").write_text("a,b\n1,2\n3,4\n")
+    out = await _read_csv("d.csv")
+    assert "a\tb" in out
+    assert "1\t2" in out
 
 
 @pytest.mark.asyncio

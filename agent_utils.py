@@ -835,6 +835,21 @@ async def _diff_files(path_a: str, path_b: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _read_csv(path: str) -> str:
+    try:
+        p = validate_path(path)
+        import csv
+
+        with open(p, newline="") as f:
+            rows = list(csv.reader(f))
+        lines = ["\t".join(r) for r in rows[:200]]
+        suffix = "\n(truncated at 200 rows)" if len(rows) > 200 else ""
+        return "\n".join(lines) + suffix
+    except Exception as e:
+        logger.error("read_csv failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) -> str:
     log_audit(f"GENERATE_IMAGE: prompt={prompt!r} size={size} steps={steps}")
     try:
@@ -1057,6 +1072,7 @@ register_tool("say", "safe", "Speak text aloud via macOS say", _say)
 register_tool("screenshot", "risky", "Capture the screen to a PNG file", _screenshot)
 register_tool("move_file", "risky", "Move or rename a file", _move_file)
 register_tool("delete_file", "risky", "Move a file to the Trash", _delete_file)
+register_tool("read_csv", "safe", "Read a CSV file as a table", _read_csv)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1121,6 +1137,7 @@ TOOLS AVAILABLE:
   screenshot(path)                               — capture the screen to a PNG (path optional)
   move_file(src, dst)                            — move or rename a file
   delete_file(path)                              — move a file to the Trash (recoverable)
+  read_csv(path)                                 — read a CSV file as a tab-separated table
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files
