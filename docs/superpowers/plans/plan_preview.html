@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Image Gallery v2 Implementation Plan</title>
+    <title>Agent Tool Registry Expansion Implementation Plan</title>
     <style>
       * {
         box-sizing: border-box;
@@ -112,7 +112,7 @@
   </head>
   <body>
     <div class="container">
-      <h1>Image Gallery v2 Implementation Plan</h1>
+      <h1>Agent Tool Registry Expansion Implementation Plan</h1>
       <blockquote>
         <strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use
         superpowers:subagent-driven-development (recommended) or
@@ -120,903 +120,1665 @@
         use checkbox (<code>- [ ]</code>) syntax for tracking.
       </blockquote>
       <p>
-        <strong>Goal:</strong> Persist generated images across page reloads
-        (IndexedDB) and enrich the image gallery with click-to-lightbox,
-        download, copy-prompt, prompt-based filenames, search, and delete.
+        <strong>Goal:</strong> Add ~22 new tools to the agent registry across
+        semantic recall, macOS automation, on-device audio/vision, and data/file
+        fill-ins.
       </p>
       <p>
-        <strong>Architecture:</strong> All work is in the single-file frontend
-        <code>gemma-web/index.html</code>. An IndexedDB layer persists each
-        generated image; the existing in-memory <code>_imageStore</code> Map
-        stays as the read cache that every existing handler (lightbox, Save,
-        Regenerate, Edit) uses, and is rehydrated from IndexedDB on load. The
-        gallery modal is rewritten to render from that Map with per-card
-        actions, reusing the already-built lightbox.
+        <strong>Architecture:</strong> Each tool is an
+        <code>async def _name(...) -&gt; str</code> in
+        <code>agent_utils.py</code> returning <code>OK: …</code>/<code
+          >ERROR: …</code
+        >, registered with <code>register_tool(...)</code>, and listed in the
+        <code>TOOLS AVAILABLE</code> system-prompt block. Heavy deps import
+        lazily inside the function; blocking work runs via
+        <code>run_in_executor</code>; risky tools auto-trigger the SSE confirm
+        gate. <code>recall</code> adds a bridge HTTP endpoint to reach the
+        in-memory <code>doc_store</code>.
       </p>
       <p>
-        <strong>Tech Stack:</strong> Vanilla JS, IndexedDB, plain DOM. No build
-        step. Lint/format gate: <code>ruff</code> (Python, unaffected) +
-        <code>prettier</code> (HTML/JS).
+        <strong>Tech Stack:</strong> Python 3 / FastAPI, the
+        <code>osascript</code> CLI for macOS automation,
+        <code>mlx-whisper</code> / <code>mlx-vlm</code> for multimodal, Swift
+        Vision framework for OCR, pytest + <code>unittest.mock</code> for tests.
       </p>
       <p>
-        <strong>Testing note:</strong> This frontend has no JS unit-test
-        harness; the repo&#x27;s pytest suite is backend-only. Per
-        <code>CLAUDE.md</code>, verification = (a)
-        <code>bash .git/hooks/pre-push</code> exits 0 (prettier must pass on
-        <code>index.html</code>), and (b) manual browser observation. Browser
-        checks can be driven with Claude-in-Chrome against the running app (node
-        proxy on <code>:3001</code>). Each task below ends with a concrete
-        observable check and a commit.
+        <strong>Sandbox note:</strong> <code>validate_path()</code> confines
+        file paths to the project root (<code>os.getcwd()</code>). All new
+        file-touching tools inherit this boundary — do NOT loosen it in this
+        plan.
       </p>
+      <p><strong>Conventions for every &quot;add a tool&quot; step:</strong></p>
+      <ol>
+        <li>
+          Add the <code>async def _tool(...)</code> near related tools in
+          <code>agent_utils.py</code>.
+        </li>
+        <li>
+          Add a <code>register_tool(...)</code> line in the registration block
+          (after line ~985).
+        </li>
+        <li>
+          Add one line to the <code>TOOLS AVAILABLE</code> block in
+          <code>AGENT_SYSTEM_PROMPT</code> (before the <code>RULES:</code> line,
+          ~1034).
+        </li>
+        <li>Add the test to <code>tests/test_agent_tools.py</code>.</li>
+      </ol>
       <p>
-        <strong>Reference spec:</strong>
-        <code
-          >docs/superpowers/specs/2026-05-21-image-gallery-v2-design.md</code
-        >
+        Run the suite with:
+        <code>.venv/bin/python -m pytest tests/test_agent_tools.py -v</code>
       </p>
       <hr />
-      <h2>File Structure</h2>
-      <ul>
-        <li><strong>Modify only:</strong> <code>gemma-web/index.html</code></li>
-        <ul>
-          <li>
-            CSS block (<code>&lt;style&gt;</code>): bump
-            <code>.lightbox-overlay</code> z-index; add gallery card styles.
-          </li>
-          <li>
-            JS image-mode block (~line 2805–3020): IndexedDB helpers,
-            <code>_storeImageData</code> extension,
-            <code>_rehydrateImages</code>, <code>downloadImage</code>.
-          </li>
-          <li>
-            <code>showImageGallery</code> (~line 3128–3193): full rewrite + new
-            <code>renderGalleryGrid</code>.
-          </li>
-          <li>
-            Two existing download sites (chat-card handler ~line 5322, lightbox
-            Save ~line 5350): swap to <code>downloadImage</code>.
-          </li>
-        </ul>
-      </ul>
-      <p>No new files. No backend/API changes.</p>
-      <hr />
-      <h2>Task 1: Raise lightbox above the gallery modal</h2>
-      <p>
-        The gallery modal is <code>z-index:300</code>; the lightbox overlay is
-        <code>z-index:200</code>, so a lightbox opened from the gallery would
-        render *behind* it. Fix the layering first so later tasks are
-        verifiable.
-      </p>
+      <h2>Phase 1 — Quick Wins</h2>
+      <h3>
+        Task 1: <code>recall</code> tool + <code>/v1/rag/search</code> bridge
+        endpoint
+      </h3>
       <p><strong>Files:</strong></p>
       <ul>
-        <li>Modify: <code>gemma-web/index.html:1407</code></li>
+        <li>
+          Modify: <code>gemma_bridge.py</code> (add endpoint near other
+          <code>/v1/*</code> routes)
+        </li>
+        <li>
+          Modify: <code>agent_utils.py</code> (add <code>_recall</code>,
+          register, prompt line)
+        </li>
+        <li>Test: <code>tests/test_agent_tools.py</code></li>
       </ul>
       <ul>
-        <li>[ ] <strong>Step 1: Edit the z-index</strong></li>
+        <li>[ ] <strong>Step 1: Add the bridge endpoint</strong></li>
       </ul>
-      <p>Find (around line 1403–1412):</p>
-      <pre><code>      .lightbox-overlay {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.88);
-        z-index: 200;
-        display: none;
-        align-items: center;
-        justify-content: center;
-        padding: 24px;
-      }</code></pre>
-      <p>
-        Change <code>z-index: 200;</code> to <code>z-index: 400;</code> (above
-        the gallery modal&#x27;s 300).
-      </p>
+      <p>In <code>gemma_bridge.py</code>, add:</p>
+      <pre><code>@app.post(&quot;/v1/rag/search&quot;)
+async def rag_search(req: dict):
+    query = req.get(&quot;query&quot;, &quot;&quot;)
+    top_k = int(req.get(&quot;top_k&quot;, 5))
+    doc_ids = list(doc_store.keys())
+    if not doc_ids:
+        return {&quot;results&quot;: &quot;&quot;, &quot;count&quot;: 0}
+    chunks, _ = pdf_pipeline.retrieve_chunks(query, doc_ids, doc_store, top_k=top_k)
+    return {
+        &quot;results&quot;: pdf_pipeline.build_numbered_document_context(chunks),
+        &quot;count&quot;: len(chunks),
+    }</code></pre>
       <ul>
-        <li>[ ] <strong>Step 2: Verify formatting</strong></li>
+        <li>[ ] <strong>Step 2: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _recall
+
+
+@pytest.mark.asyncio
+async def test_recall_returns_results():
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {&quot;results&quot;: &quot;[1] (a.pdf): hi&quot;, &quot;count&quot;: 1}
+    with patch(&quot;requests.post&quot;, return_value=mock_resp) as mock_post:
+        out = await _recall(&quot;what is x&quot;)
+    assert &quot;[1]&quot; in out
+    assert mock_post.call_args.kwargs[&quot;json&quot;][&quot;query&quot;] == &quot;what is x&quot;
+
+
+@pytest.mark.asyncio
+async def test_recall_empty():
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = {&quot;results&quot;: &quot;&quot;, &quot;count&quot;: 0}
+    with patch(&quot;requests.post&quot;, return_value=mock_resp):
+        out = await _recall(&quot;nothing&quot;)
+    assert &quot;No relevant&quot; in out</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 3: Run test to verify it fails</strong></li>
       </ul>
       <p>
         Run:
         <code
-          >cd &quot;/Users/ojdavis/Claude Code/LocalLLM&quot; &amp;&amp; npx
-          prettier --check gemma-web/index.html</code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_recall_returns_results -v</code
         >
-        Expected: <code>All matched files use Prettier code style!</code>
+        Expected: FAIL with
+        <code>ImportError: cannot import name &#x27;_recall&#x27;</code>
       </p>
+      <ul>
+        <li>
+          [ ] <strong>Step 4: Implement <code>_recall</code></strong>
+        </li>
+      </ul>
+      <pre><code>async def _recall(query: str) -&gt; str:
+    try:
+        import requests as _requests
+
+        loop = asyncio.get_running_loop()
+
+        def _post():
+            return _requests.post(
+                &quot;http://localhost:9379/v1/rag/search&quot;,
+                json={&quot;query&quot;: query, &quot;top_k&quot;: 5},
+                timeout=30,
+            )
+
+        resp = await loop.run_in_executor(None, _post)
+        data = resp.json()
+        if data.get(&quot;count&quot;, 0) == 0:
+            return &quot;No relevant documents found in memory.&quot;
+        return data[&quot;results&quot;]
+    except Exception as e:
+        logger.error(&quot;recall failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;recall&quot;, &quot;safe&quot;, &quot;Semantic
+          search over ingested documents&quot;, _recall)</code
+        >
+      </p>
+      <p>System prompt line:</p>
+      <pre><code>  recall(query)                                  — semantic search over your ingested documents</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 5: Run tests + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k recall
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py gemma_bridge.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add recall tool + /v1/rag/search endpoint&quot;</code></pre>
+      <hr />
+      <h3>Task 2: <code>say</code> tool</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _say
+
+
+@pytest.mark.asyncio
+async def test_say_invokes_say_command():
+    with patch(&quot;subprocess.run&quot;) as mock_run:
+        out = await _say(&quot;hello there&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    assert mock_run.call_args.args[0] == [&quot;say&quot;, &quot;hello there&quot;]</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_say_invokes_say_command -v</code
+        >
+        Expected: FAIL
+        <code>ImportError: cannot import name &#x27;_say&#x27;</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _say(text: str) -&gt; str:
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run([&quot;say&quot;, text], check=True, capture_output=True),
+        )
+        return &quot;OK: spoken&quot;
+    except Exception as e:
+        logger.error(&quot;say failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;say&quot;, &quot;safe&quot;, &quot;Speak text
+          aloud via macOS say&quot;, _say)</code
+        >
+        Prompt line:
+        <code> say(text) — speak text aloud through the speakers</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k say -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add say (text-to-speech) tool&quot;</code></pre>
+      <hr />
+      <h3>Task 3: <code>screenshot</code> tool</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _screenshot
+
+
+@pytest.mark.asyncio
+async def test_screenshot_uses_screencapture(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with patch(&quot;subprocess.run&quot;) as mock_run:
+        out = await _screenshot(&quot;shot.png&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    assert mock_run.call_args.args[0][0] == &quot;screencapture&quot;
+    assert mock_run.call_args.args[0][1] == &quot;-x&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_screenshot_uses_screencapture -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _screenshot(path: str = &quot;&quot;) -&gt; str:
+    log_audit(f&quot;SCREENSHOT: {path}&quot;)
+    try:
+        if not path:
+            path = f&quot;screenshot_{datetime.now():%Y%m%d_%H%M%S}.png&quot;
+        p = validate_path(path, must_exist=False)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                [&quot;screencapture&quot;, &quot;-x&quot;, str(p)], check=True, capture_output=True
+            ),
+        )
+        return f&quot;OK: saved to {p}&quot;
+    except Exception as e:
+        logger.error(&quot;screenshot failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;screenshot&quot;, &quot;risky&quot;,
+          &quot;Capture the screen to a PNG file&quot;, _screenshot)</code
+        >
+        Prompt line:
+        <code>
+          screenshot(path) — capture the screen to a PNG (path optional)</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k screenshot
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add screenshot tool&quot;</code></pre>
+      <hr />
+      <h3>Task 4: <code>move_file</code> tool</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _move_file
+
+
+@pytest.mark.asyncio
+async def test_move_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;a.txt&quot;).write_text(&quot;hi&quot;)
+    out = await _move_file(&quot;a.txt&quot;, &quot;b.txt&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    assert (tmp_path / &quot;b.txt&quot;).read_text() == &quot;hi&quot;
+    assert not (tmp_path / &quot;a.txt&quot;).exists()</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py::test_move_file
+          -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _move_file(src: str, dst: str) -&gt; str:
+    log_audit(f&quot;MOVE_FILE: {src} -&gt; {dst}&quot;)
+    try:
+        s = validate_path(src)
+        d = validate_path(dst, must_exist=False)
+        import shutil as _shutil
+
+        _shutil.move(str(s), str(d))
+        return f&quot;OK: moved {s} -&gt; {d}&quot;
+    except Exception as e:
+        logger.error(&quot;move_file failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;move_file&quot;, &quot;risky&quot;, &quot;Move or
+          rename a file&quot;, _move_file)</code
+        >
+        Prompt line: <code> move_file(src, dst) — move or rename a file</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k move_file
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add move_file tool&quot;</code></pre>
+      <hr />
+      <h3>Task 5: <code>delete_file</code> tool (sends to Trash)</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _delete_file
+
+
+@pytest.mark.asyncio
+async def test_delete_file_uses_finder_trash(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;junk.txt&quot;).write_text(&quot;x&quot;)
+    with patch(&quot;subprocess.run&quot;) as mock_run:
+        out = await _delete_file(&quot;junk.txt&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    script = mock_run.call_args.args[0][2]
+    assert &quot;Finder&quot; in script and &quot;delete&quot; in script</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_delete_file_uses_finder_trash -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _delete_file(path: str) -&gt; str:
+    log_audit(f&quot;DELETE_FILE: {path}&quot;)
+    try:
+        p = validate_path(path)
+        script = f&#x27;tell application &quot;Finder&quot; to delete POSIX file &quot;{p}&quot;&#x27;
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                [&quot;osascript&quot;, &quot;-e&quot;, script], check=True, capture_output=True
+            ),
+        )
+        return f&quot;OK: moved to Trash: {p}&quot;
+    except Exception as e:
+        logger.error(&quot;delete_file failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;delete_file&quot;, &quot;risky&quot;, &quot;Move
+          a file to the Trash&quot;, _delete_file)</code
+        >
+        Prompt line:
+        <code> delete_file(path) — move a file to the Trash (recoverable)</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k delete_file
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add delete_file (Trash) tool&quot;</code></pre>
+      <hr />
+      <h3>Task 6: <code>read_csv</code> tool</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _read_csv
+
+
+@pytest.mark.asyncio
+async def test_read_csv(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;d.csv&quot;).write_text(&quot;a,b\n1,2\n3,4\n&quot;)
+    out = await _read_csv(&quot;d.csv&quot;)
+    assert &quot;a\tb&quot; in out
+    assert &quot;1\t2&quot; in out</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py::test_read_csv
+          -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _read_csv(path: str) -&gt; str:
+    try:
+        p = validate_path(path)
+        import csv
+
+        with open(p, newline=&quot;&quot;) as f:
+            rows = list(csv.reader(f))
+        lines = [&quot;\t&quot;.join(r) for r in rows[:200]]
+        suffix = &quot;\n(truncated at 200 rows)&quot; if len(rows) &gt; 200 else &quot;&quot;
+        return &quot;\n&quot;.join(lines) + suffix
+    except Exception as e:
+        logger.error(&quot;read_csv failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;read_csv&quot;, &quot;safe&quot;, &quot;Read a
+          CSV file as a table&quot;, _read_csv)</code
+        >
+        Prompt line:
+        <code> read_csv(path) — read a CSV file as a tab-separated table</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k read_csv
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add read_csv tool&quot;</code></pre>
+      <hr />
+      <h3>Task 7: <code>json_query</code> tool</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _json_query
+
+
+@pytest.mark.asyncio
+async def test_json_query_on_raw_text():
+    out = await _json_query(&#x27;{&quot;users&quot;: [{&quot;name&quot;: &quot;Ada&quot;}]}&#x27;, &quot;users[0].name&quot;)
+    assert &quot;Ada&quot; in out</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_json_query_on_raw_text -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _json_query(path_or_text: str, expr: str) -&gt; str:
+    try:
+        try:
+            p = validate_path(path_or_text)
+            data = json.loads(p.read_text())
+        except (FileNotFoundError, PermissionError, OSError):
+            data = json.loads(path_or_text)
+        cur = data
+        for part in expr.replace(&quot;[&quot;, &quot;.&quot;).replace(&quot;]&quot;, &quot;&quot;).split(&quot;.&quot;):
+            if part == &quot;&quot;:
+                continue
+            cur = cur[int(part)] if isinstance(cur, list) else cur[part]
+        return json.dumps(cur, indent=2)
+    except Exception as e:
+        logger.error(&quot;json_query failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;json_query&quot;, &quot;safe&quot;, &quot;Query
+          JSON with a dotted path&quot;, _json_query)</code
+        >
+        Prompt line:
+        <code>
+          json_query(path_or_text, expr) — extract a value from JSON, e.g.
+          &quot;users[0].name&quot;</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k json_query
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add json_query tool&quot;</code></pre>
+      <hr />
+      <h3>Task 8: <code>read_ics</code> tool</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _read_ics
+
+
+@pytest.mark.asyncio
+async def test_read_ics(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;c.ics&quot;).write_text(
+        &quot;BEGIN:VEVENT\nSUMMARY:Standup\nDTSTART:20260601T090000\n&quot;
+        &quot;DTEND:20260601T093000\nEND:VEVENT\n&quot;
+    )
+    out = await _read_ics(&quot;c.ics&quot;)
+    assert &quot;Standup&quot; in out</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py::test_read_ics
+          -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _read_ics(path: str) -&gt; str:
+    try:
+        p = validate_path(path)
+        events, cur = [], {}
+        for raw in p.read_text().splitlines():
+            line = raw.strip()
+            if line == &quot;BEGIN:VEVENT&quot;:
+                cur = {}
+            elif line == &quot;END:VEVENT&quot;:
+                events.append(cur)
+            elif &quot;:&quot; in line:
+                key, _, val = line.partition(&quot;:&quot;)
+                key = key.split(&quot;;&quot;)[0]
+                if key in (&quot;SUMMARY&quot;, &quot;DTSTART&quot;, &quot;DTEND&quot;, &quot;LOCATION&quot;):
+                    cur[key] = val
+        if not events:
+            return &quot;No events found.&quot;
+        out = []
+        for e in events:
+            line = (
+                f&quot;{e.get(&#x27;DTSTART&#x27;, &#x27;?&#x27;)} - {e.get(&#x27;DTEND&#x27;, &#x27;?&#x27;)}: &quot;
+                f&quot;{e.get(&#x27;SUMMARY&#x27;, &#x27;(no title)&#x27;)}&quot;
+            )
+            if e.get(&quot;LOCATION&quot;):
+                line += f&quot; @ {e[&#x27;LOCATION&#x27;]}&quot;
+            out.append(line)
+        return &quot;\n&quot;.join(out)
+    except Exception as e:
+        logger.error(&quot;read_ics failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;read_ics&quot;, &quot;safe&quot;, &quot;Parse
+          events from an .ics file&quot;, _read_ics)</code
+        >
+        Prompt line:
+        <code>
+          read_ics(path) — list events from a local .ics calendar file</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k read_ics
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add read_ics tool&quot;</code></pre>
+      <hr />
+      <h3>Task 9: <code>sqlite_exec</code> tool</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _sqlite_exec
+
+
+@pytest.mark.asyncio
+async def test_sqlite_exec_writes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import sqlite3
+
+    out1 = await _sqlite_exec(&quot;t.db&quot;, &quot;CREATE TABLE t (x INTEGER)&quot;)
+    assert out1.startswith(&quot;OK&quot;)
+    out2 = await _sqlite_exec(&quot;t.db&quot;, &quot;INSERT INTO t VALUES (1)&quot;)
+    assert out2.startswith(&quot;OK&quot;)
+    conn = sqlite3.connect(str(tmp_path / &quot;t.db&quot;))
+    assert conn.execute(&quot;SELECT COUNT(*) FROM t&quot;).fetchone()[0] == 1
+    conn.close()</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_sqlite_exec_writes -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _sqlite_exec(db_path: str, sql: str) -&gt; str:
+    log_audit(f&quot;SQLITE_EXEC: {db_path} - {sql[:200]}&quot;)
+    try:
+        p = validate_path(db_path, must_exist=False)
+        import sqlite3
+
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            conn = sqlite3.connect(str(p))
+            try:
+                cur = conn.execute(sql)
+                conn.commit()
+                return f&quot;OK: {cur.rowcount} row(s) affected&quot;
+            finally:
+                conn.close()
+
+        return await loop.run_in_executor(None, _run)
+    except Exception as e:
+        logger.error(&quot;sqlite_exec failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;sqlite_exec&quot;, &quot;risky&quot;, &quot;Run a
+          write statement on a SQLite DB&quot;, _sqlite_exec)</code
+        >
+        Prompt line:
+        <code>
+          sqlite_exec(db_path, sql) — run INSERT/UPDATE/DELETE/CREATE on a
+          SQLite DB</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k sqlite_exec
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add sqlite_exec tool&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 5: Phase 1 gate</strong></li>
+      </ul>
+      <p>
+        Run: <code>bash .git/hooks/pre-push</code> Expected: exits 0. If red,
+        fix before Phase 2.
+      </p>
+      <hr />
+      <h2>Phase 2 — macOS Personal Automation</h2>
+      <h3>
+        Task 10: <code>_osascript</code> helper + <code>calendar_list</code> +
+        <code>calendar_create</code>
+      </h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing tests</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _calendar_list, _calendar_create
+
+
+@pytest.mark.asyncio
+async def test_calendar_list_runs_osascript():
+    mock_res = MagicMock(stdout=&quot;Standup - date\n&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res) as mock_run:
+        out = await _calendar_list(3)
+    assert &quot;Standup&quot; in out
+    assert mock_run.call_args.args[0][0] == &quot;osascript&quot;
+
+
+@pytest.mark.asyncio
+async def test_calendar_create_builds_event():
+    mock_res = MagicMock(stdout=&quot;&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res) as mock_run:
+        out = await _calendar_create(&quot;Lunch&quot;, &quot;6/1/2026 12:00:00&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    assert &quot;make new event&quot; in mock_run.call_args.args[0][2]</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k
+          &quot;calendar&quot; -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement helper + tools</strong></li>
+      </ul>
+      <pre><code>async def _osascript(script: str) -&gt; str:
+    loop = asyncio.get_running_loop()
+
+    def _run():
+        r = subprocess.run(
+            [&quot;osascript&quot;, &quot;-e&quot;, script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return r.stdout.strip()
+
+    return await loop.run_in_executor(None, _run)
+
+
+async def _calendar_list(days: int = 7) -&gt; str:
+    try:
+        script = f&quot;&quot;&quot;
+        set output to &quot;&quot;
+        set startD to current date
+        set endD to startD + ({int(days)} * days)
+        tell application &quot;Calendar&quot;
+            repeat with c in calendars
+                repeat with e in (every event of c whose start date is greater than or equal to startD and start date is less than or equal to endD)
+                    set output to output &amp; (summary of e) &amp; &quot; - &quot; &amp; (start date of e as string) &amp; linefeed
+                end repeat
+            end repeat
+        end tell
+        return output
+        &quot;&quot;&quot;
+        out = await _osascript(script)
+        return out or &quot;No upcoming events.&quot;
+    except Exception as e:
+        logger.error(&quot;calendar_list failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;
+
+
+async def _calendar_create(
+    title: str, start: str, end: str = &quot;&quot;, notes: str = &quot;&quot;
+) -&gt; str:
+    log_audit(f&quot;CALENDAR_CREATE: {title} @ {start}&quot;)
+    try:
+        props = [f&#x27;summary:&quot;{title}&quot;&#x27;, f&#x27;start date:(date &quot;{start}&quot;)&#x27;]
+        props.append(f&#x27;end date:(date &quot;{end or start}&quot;)&#x27;)
+        if notes:
+            props.append(f&#x27;description:&quot;{notes}&quot;&#x27;)
+        script = f&quot;&quot;&quot;
+        tell application &quot;Calendar&quot;
+            tell calendar 1
+                make new event with properties {{{&quot;, &quot;.join(props)}}}
+            end tell
+        end tell
+        &quot;&quot;&quot;
+        await _osascript(script)
+        return f&quot;OK: created event &#x27;{title}&#x27;&quot;
+    except Exception as e:
+        logger.error(&quot;calendar_create failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>Register:</p>
+      <pre><code>register_tool(&quot;calendar_list&quot;, &quot;safe&quot;, &quot;List upcoming Calendar events&quot;, _calendar_list)
+register_tool(
+    &quot;calendar_create&quot;, &quot;risky&quot;, &quot;Create a Calendar event&quot;, _calendar_create
+)</code></pre>
+      <p>Prompt lines:</p>
+      <pre><code>  calendar_list(days)                            — list upcoming Calendar events (default 7 days)
+  calendar_create(title, start, end, notes)      — create a Calendar event; dates like &quot;6/1/2026 12:00:00&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k calendar
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add osascript helper + calendar tools&quot;</code></pre>
+      <hr />
+      <h3>
+        Task 11: <code>reminders_list</code> + <code>reminders_create</code>
+      </h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing tests</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _reminders_list, _reminders_create
+
+
+@pytest.mark.asyncio
+async def test_reminders_list():
+    mock_res = MagicMock(stdout=&quot;Buy milk\n&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res):
+        out = await _reminders_list()
+    assert &quot;Buy milk&quot; in out
+
+
+@pytest.mark.asyncio
+async def test_reminders_create():
+    mock_res = MagicMock(stdout=&quot;&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res) as mock_run:
+        out = await _reminders_create(&quot;Call mom&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    assert &quot;make new reminder&quot; in mock_run.call_args.args[0][2]</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k reminders
+          -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _reminders_list(list_name: str = &quot;&quot;) -&gt; str:
+    try:
+        target = f&#x27;list &quot;{list_name}&quot;&#x27; if list_name else &quot;default list&quot;
+        script = f&quot;&quot;&quot;
+        tell application &quot;Reminders&quot;
+            set output to &quot;&quot;
+            repeat with r in (reminders of {target} whose completed is false)
+                set output to output &amp; (name of r) &amp; linefeed
+            end repeat
+            return output
+        end tell
+        &quot;&quot;&quot;
+        out = await _osascript(script)
+        return out or &quot;No open reminders.&quot;
+    except Exception as e:
+        logger.error(&quot;reminders_list failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;
+
+
+async def _reminders_create(text: str, due: str = &quot;&quot;) -&gt; str:
+    log_audit(f&quot;REMINDERS_CREATE: {text}&quot;)
+    try:
+        props = [f&#x27;name:&quot;{text}&quot;&#x27;]
+        if due:
+            props.append(f&#x27;due date:(date &quot;{due}&quot;)&#x27;)
+        script = f&quot;&quot;&quot;
+        tell application &quot;Reminders&quot;
+            make new reminder with properties {{{&quot;, &quot;.join(props)}}}
+        end tell
+        &quot;&quot;&quot;
+        await _osascript(script)
+        return f&quot;OK: added reminder &#x27;{text}&#x27;&quot;
+    except Exception as e:
+        logger.error(&quot;reminders_create failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>Register:</p>
+      <pre><code>register_tool(&quot;reminders_list&quot;, &quot;safe&quot;, &quot;List open reminders&quot;, _reminders_list)
+register_tool(&quot;reminders_create&quot;, &quot;risky&quot;, &quot;Create a reminder&quot;, _reminders_create)</code></pre>
+      <p>Prompt lines:</p>
+      <pre><code>  reminders_list(list)                           — list open reminders (list name optional)
+  reminders_create(text, due)                    — add a reminder; due like &quot;6/1/2026 09:00:00&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k reminders
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add reminders tools&quot;</code></pre>
+      <hr />
+      <h3>Task 12: <code>notes_search</code> + <code>notes_create</code></h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing tests</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _notes_search, _notes_create
+
+
+@pytest.mark.asyncio
+async def test_notes_search():
+    mock_res = MagicMock(stdout=&quot;Grocery list\n&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res):
+        out = await _notes_search(&quot;grocery&quot;)
+    assert &quot;Grocery&quot; in out
+
+
+@pytest.mark.asyncio
+async def test_notes_create():
+    mock_res = MagicMock(stdout=&quot;&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res) as mock_run:
+        out = await _notes_create(&quot;Ideas&quot;, &quot;body text&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    assert &quot;make new note&quot; in mock_run.call_args.args[0][2]</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k notes
+          -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _notes_search(query: str) -&gt; str:
+    try:
+        script = f&quot;&quot;&quot;
+        tell application &quot;Notes&quot;
+            set output to &quot;&quot;
+            repeat with n in (notes whose name contains &quot;{query}&quot;)
+                set output to output &amp; (name of n) &amp; linefeed &amp; (plaintext of n) &amp; linefeed &amp; &quot;---&quot; &amp; linefeed
+            end repeat
+            return output
+        end tell
+        &quot;&quot;&quot;
+        out = await _osascript(script)
+        return out or &quot;No matching notes.&quot;
+    except Exception as e:
+        logger.error(&quot;notes_search failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;
+
+
+async def _notes_create(title: str, body: str) -&gt; str:
+    log_audit(f&quot;NOTES_CREATE: {title}&quot;)
+    try:
+        html_body = f&quot;&lt;div&gt;&lt;b&gt;{title}&lt;/b&gt;&lt;/div&gt;&lt;div&gt;{body}&lt;/div&gt;&quot;
+        script = f&quot;&quot;&quot;
+        tell application &quot;Notes&quot;
+            make new note at folder &quot;Notes&quot; with properties {{body:&quot;{html_body}&quot;}}
+        end tell
+        &quot;&quot;&quot;
+        await _osascript(script)
+        return f&quot;OK: created note &#x27;{title}&#x27;&quot;
+    except Exception as e:
+        logger.error(&quot;notes_create failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>Register:</p>
+      <pre><code>register_tool(&quot;notes_search&quot;, &quot;safe&quot;, &quot;Search Apple Notes&quot;, _notes_search)
+register_tool(&quot;notes_create&quot;, &quot;risky&quot;, &quot;Create an Apple Note&quot;, _notes_create)</code></pre>
+      <p>Prompt lines:</p>
+      <pre><code>  notes_search(query)                            — search Apple Notes by title and read matches
+  notes_create(title, body)                      — create a new Apple Note</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k notes
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add notes tools&quot;</code></pre>
+      <hr />
+      <h3>Task 13: <code>messages_read</code> + <code>send_message</code></h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing tests</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _messages_read, _send_message
+
+
+@pytest.mark.asyncio
+async def test_messages_read_queries_db():
+    with patch(&quot;agent_utils._messages_db_rows&quot;, return_value=[(&quot;Alice&quot;, &quot;hi&quot;)]):
+        out = await _messages_read(5)
+    assert &quot;Alice&quot; in out and &quot;hi&quot; in out
+
+
+@pytest.mark.asyncio
+async def test_send_message_builds_script():
+    mock_res = MagicMock(stdout=&quot;&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res) as mock_run:
+        out = await _send_message(&quot;+15551234567&quot;, &quot;yo&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    assert &quot;send&quot; in mock_run.call_args.args[0][2]</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify they fail</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k
+          &quot;messages or send_message&quot; -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <p>
+        Reading iMessages via AppleScript is unreliable, so read directly from
+        the local <code>chat.db</code> (read-only). A small helper isolates the
+        DB query so tests can patch it without a real database.
+      </p>
+      <pre><code>def _messages_db_rows(limit: int) -&gt; list[tuple[str, str]]:
+    import sqlite3
+
+    db = os.path.expanduser(&quot;~/Library/Messages/chat.db&quot;)
+    conn = sqlite3.connect(f&quot;file:{db}?mode=ro&quot;, uri=True)
+    try:
+        cur = conn.execute(
+            &quot;SELECT h.id, m.text FROM message m &quot;
+            &quot;JOIN handle h ON m.handle_id = h.ROWID &quot;
+            &quot;WHERE m.text IS NOT NULL ORDER BY m.date DESC LIMIT ?&quot;,
+            (limit,),
+        )
+        return cur.fetchall()
+    finally:
+        conn.close()
+
+
+async def _messages_read(limit: int = 20) -&gt; str:
+    log_audit(f&quot;MESSAGES_READ: limit={limit}&quot;)
+    try:
+        loop = asyncio.get_running_loop()
+        rows = await loop.run_in_executor(None, _messages_db_rows, int(limit))
+        if not rows:
+            return &quot;No messages found.&quot;
+        return &quot;\n&quot;.join(f&quot;{sender}: {text}&quot; for sender, text in rows)
+    except Exception as e:
+        logger.error(&quot;messages_read failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;
+
+
+async def _send_message(recipient: str, text: str) -&gt; str:
+    log_audit(f&quot;SEND_MESSAGE: to={recipient}&quot;)
+    try:
+        script = f&quot;&quot;&quot;
+        tell application &quot;Messages&quot;
+            set targetService to 1st service whose service type = iMessage
+            set targetBuddy to buddy &quot;{recipient}&quot; of targetService
+            send &quot;{text}&quot; to targetBuddy
+        end tell
+        &quot;&quot;&quot;
+        await _osascript(script)
+        return f&quot;OK: message sent to {recipient}&quot;
+    except Exception as e:
+        logger.error(&quot;send_message failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>Register:</p>
+      <pre><code>register_tool(&quot;messages_read&quot;, &quot;risky&quot;, &quot;Read recent iMessages&quot;, _messages_read)
+register_tool(&quot;send_message&quot;, &quot;risky&quot;, &quot;Send an iMessage&quot;, _send_message)</code></pre>
+      <p>Prompt lines:</p>
+      <pre><code>  messages_read(limit)                           — read your most recent iMessages
+  send_message(recipient, text)                  — send an iMessage to a phone/email</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k
+          &quot;messages or send_message&quot; -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add messages_read + send_message tools&quot;</code></pre>
+      <hr />
+      <h3>Task 14: <code>mail_compose</code> (draft only)</h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _mail_compose
+
+
+@pytest.mark.asyncio
+async def test_mail_compose_creates_draft():
+    mock_res = MagicMock(stdout=&quot;&quot;)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res) as mock_run:
+        out = await _mail_compose(&quot;a@b.com&quot;, &quot;Hi&quot;, &quot;Body&quot;)
+    assert out.startswith(&quot;OK&quot;)
+    script = mock_run.call_args.args[0][2]
+    assert &quot;make new outgoing message&quot; in script
+    assert &quot; send &quot; not in script  # draft only, never auto-send</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_mail_compose_creates_draft -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _mail_compose(to: str, subject: str, body: str) -&gt; str:
+    log_audit(f&quot;MAIL_COMPOSE: to={to} subject={subject}&quot;)
+    try:
+        script = f&quot;&quot;&quot;
+        tell application &quot;Mail&quot;
+            set msg to make new outgoing message with properties {{subject:&quot;{subject}&quot;, content:&quot;{body}&quot;, visible:true}}
+            tell msg
+                make new to recipient at end of to recipients with properties {{address:&quot;{to}&quot;}}
+            end tell
+        end tell
+        &quot;&quot;&quot;
+        await _osascript(script)
+        return f&quot;OK: drafted email to {to} (review and send manually)&quot;
+    except Exception as e:
+        logger.error(&quot;mail_compose failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;mail_compose&quot;, &quot;risky&quot;,
+          &quot;Draft an email (no auto-send)&quot;, _mail_compose)</code
+        >
+        Prompt line:
+        <code>
+          mail_compose(to, subject, body) — draft an email in Mail (you review
+          and send)</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k mail_compose
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add mail_compose tool&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 5: Phase 2 gate</strong></li>
+      </ul>
+      <p>
+        Run: <code>bash .git/hooks/pre-push</code> Expected: exits 0. Fix before
+        Phase 3.
+      </p>
+      <hr />
+      <h2>Phase 3 — Multimodal (lean-native)</h2>
+      <h3>
+        Task 15: add <code>mlx-whisper</code> dep + <code>transcribe</code>
+      </h3>
+      <p>
+        <strong>Files:</strong> Modify <code>requirements.txt</code>,
+        <code>agent_utils.py</code>; Test <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Add dependency</strong></li>
+      </ul>
+      <p>
+        In <code>requirements.txt</code>, after the
+        <code>mflux; sys_platform == &quot;darwin&quot;</code> line, add:
+      </p>
+      <pre><code>mlx-whisper; sys_platform == &quot;darwin&quot;</code></pre>
+      <p>
+        Then install:
+        <code
+          >.venv/bin/pip install &quot;mlx-whisper; sys_platform ==
+          &#x27;darwin&#x27;&quot;</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 2: Write the failing test</strong></li>
+      </ul>
+      <p>
+        The test patches <code>mlx_whisper.transcribe</code> via
+        <code>sys.modules</code> so it runs on any platform/CI without the real
+        package.
+      </p>
+      <pre><code>from agent_utils import _transcribe
+
+
+@pytest.mark.asyncio
+async def test_transcribe(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;a.wav&quot;).write_bytes(b&quot;RIFF&quot;)
+    fake = MagicMock()
+    fake.transcribe.return_value = {&quot;text&quot;: &quot;  hello world  &quot;}
+    with patch.dict(&quot;sys.modules&quot;, {&quot;mlx_whisper&quot;: fake}):
+        out = await _transcribe(&quot;a.wav&quot;)
+    assert out == &quot;hello world&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 3: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py::test_transcribe
+          -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Implement</strong></li>
+      </ul>
+      <pre><code>async def _transcribe(path: str) -&gt; str:
+    try:
+        p = validate_path(path)
+        import mlx_whisper
+
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            result = mlx_whisper.transcribe(
+                str(p), path_or_hf_repo=&quot;mlx-community/whisper-base-mlx&quot;
+            )
+            return result[&quot;text&quot;].strip()
+
+        return await loop.run_in_executor(None, _run)
+    except Exception as e:
+        logger.error(&quot;transcribe failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;transcribe&quot;, &quot;safe&quot;,
+          &quot;Transcribe an audio file to text&quot;, _transcribe)</code
+        >
+        Prompt line:
+        <code>
+          transcribe(path) — transcribe an audio file to text (on-device)</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 5: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k transcribe
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py requirements.txt tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add transcribe tool (mlx-whisper)&quot;</code></pre>
+      <hr />
+      <h3>Task 16: <code>describe_image</code></h3>
+      <p>
+        <strong>Files:</strong> Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <p>
+        <strong>Note:</strong> the <code>mlx_vlm</code> public API has shifted
+        across releases. Before implementing, confirm the installed API with
+        <code
+          >.venv/bin/python -c &quot;import mlx_vlm;
+          print(dir(mlx_vlm))&quot;</code
+        >
+        and check whether <code>image_pipeline.py</code> already wraps it. The
+        code below targets the <code>load</code>/<code>generate</code> API;
+        adjust call names to match the installed version if they differ.
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Write the failing test</strong></li>
+      </ul>
+      <pre><code>from agent_utils import _describe_image
+
+
+@pytest.mark.asyncio
+async def test_describe_image(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;p.png&quot;).write_bytes(b&quot;\x89PNG&quot;)
+    fake = MagicMock()
+    fake.load.return_value = (&quot;model&quot;, &quot;processor&quot;)
+    fake.generate.return_value = &quot;a cat on a mat&quot;
+    with patch.dict(&quot;sys.modules&quot;, {&quot;mlx_vlm&quot;: fake}):
+        out = await _describe_image(&quot;p.png&quot;)
+    assert &quot;cat&quot; in out</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run to verify it fails</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest
+          tests/test_agent_tools.py::test_describe_image -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement</strong></li>
+      </ul>
+      <pre><code>async def _describe_image(
+    path: str, prompt: str = &quot;Describe this image in detail.&quot;
+) -&gt; str:
+    try:
+        p = validate_path(path)
+        import mlx_vlm
+
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            model, processor = mlx_vlm.load(&quot;mlx-community/llava-1.5-7b-4bit&quot;)
+            return mlx_vlm.generate(
+                model, processor, prompt, [str(p)], verbose=False
+            )
+
+        return await loop.run_in_executor(None, _run)
+    except Exception as e:
+        logger.error(&quot;describe_image failed: %s&quot;, e)
+        return f&quot;ERROR: {e}&quot;</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;describe_image&quot;, &quot;safe&quot;,
+          &quot;Describe an image on-device&quot;, _describe_image)</code
+        >
+        Prompt line:
+        <code>
+          describe_image(path, prompt) — describe/answer questions about an
+          image (on-device)</code
+        >
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k
+          describe_image -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add describe_image tool (mlx-vlm)&quot;</code></pre>
+      <hr />
+      <h3>
+        Task 17: <code>ocr_image</code> (Vision framework via Swift helper)
+      </h3>
+      <p>
+        <strong>Files:</strong> Create <code>scripts/ocr_vision.swift</code>;
+        Modify <code>agent_utils.py</code>; Test
+        <code>tests/test_agent_tools.py</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 1: Create the Swift helper</strong></li>
+      </ul>
+      <p>Create <code>scripts/ocr_vision.swift</code>:</p>
+      <pre><code>import Vision
+import AppKit
+import Foundation
+
+let args = CommandLine.arguments
+guard args.count &gt; 1,
+      let image = NSImage(contentsOfFile: args[1]),
+      let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+else {
+    FileHandle.standardError.write(&quot;ERROR: cannot load image\n&quot;.data(using: .utf8)!)
+    exit(1)
+}
+
+let request = VNRecognizeTextRequest { req, _ in
+    let observations = req.results as? [VNRecognizedTextObservation] ?? []
+    let text = observations
+        .compactMap { $0.topCandidates(1).first?.string }
+        .joined(separator: &quot;\n&quot;)
+    print(text)
+}
+request.recognitionLevel = .accurate
+
+let handler = VNImageRequestHandler(cgImage: cg, options: [:])
+try? handler.perform([request])</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Write the failing tests</strong></li>
+      </ul>
+      <p>
+        The first test patches the OCR subprocess so it runs on CI. The second
+        forces the subprocess to fail and asserts the tool falls back to
+        <code>_describe_image</code>, which is patched.
+      </p>
+      <pre><code>from agent_utils import _ocr_image
+
+
+@pytest.mark.asyncio
+async def test_ocr_image_success(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;p.png&quot;).write_bytes(b&quot;\x89PNG&quot;)
+    mock_res = MagicMock(stdout=&quot;INVOICE 42&quot;, returncode=0)
+    with patch(&quot;subprocess.run&quot;, return_value=mock_res):
+        out = await _ocr_image(&quot;p.png&quot;)
+    assert &quot;INVOICE 42&quot; in out
+
+
+@pytest.mark.asyncio
+async def test_ocr_image_falls_back(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / &quot;p.png&quot;).write_bytes(b&quot;\x89PNG&quot;)
+    with patch(&quot;subprocess.run&quot;, side_effect=Exception(&quot;swift missing&quot;)):
+        with patch(
+            &quot;agent_utils._describe_image&quot;,
+            new=AsyncMock(return_value=&quot;fallback text&quot;),
+        ):
+            out = await _ocr_image(&quot;p.png&quot;)
+    assert &quot;fallback&quot; in out</code></pre>
+      <p>
+        Add <code>AsyncMock</code> to the imports at the top of the test file:
+        <code>from unittest.mock import AsyncMock, MagicMock, patch</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 3: Run to verify they fail</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k ocr_image
+          -v</code
+        >
+        Expected: FAIL <code>ImportError</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 4: Implement</strong></li>
+      </ul>
+      <pre><code>async def _ocr_image(path: str) -&gt; str:
+    try:
+        p = validate_path(path)
+        helper = Path(__file__).parent / &quot;scripts&quot; / &quot;ocr_vision.swift&quot;
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            r = subprocess.run(
+                [&quot;swift&quot;, str(helper), str(p)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return r.stdout.strip()
+
+        text = await loop.run_in_executor(None, _run)
+        return text or &quot;(no text found)&quot;
+    except Exception as e:
+        logger.warning(&quot;ocr_image native failed, falling back to VLM: %s&quot;, e)
+        return await _describe_image(
+            path, prompt=&quot;Transcribe all text visible in this image.&quot;
+        )</code></pre>
+      <p>
+        Register:
+        <code
+          >register_tool(&quot;ocr_image&quot;, &quot;safe&quot;, &quot;Extract
+          text from an image (OCR)&quot;, _ocr_image)</code
+        >
+        Prompt line:
+        <code> ocr_image(path) — extract text from an image via OCR</code>
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 5: Run + commit</strong></li>
+      </ul>
+      <p>
+        Run:
+        <code
+          >.venv/bin/python -m pytest tests/test_agent_tools.py -k ocr_image
+          -v</code
+        >
+        → PASS
+      </p>
+      <pre><code>git add agent_utils.py scripts/ocr_vision.swift tests/test_agent_tools.py
+git commit -m &quot;feat(agent): add ocr_image tool (Vision framework + VLM fallback)&quot;</code></pre>
+      <hr />
+      <h3>Task 18: Final gate + PROGRESS log</h3>
+      <p><strong>Files:</strong> Modify <code>PROGRESS.md</code></p>
+      <ul>
+        <li>[ ] <strong>Step 1: Update PROGRESS.md</strong></li>
+      </ul>
+      <p>
+        Add a new session entry to <code>PROGRESS.md</code> summarizing the tool
+        expansion (the ~22 new tools by phase, the new
+        <code>/v1/rag/search</code> endpoint, the new
+        <code>mlx-whisper</code> dependency, and the
+        <code>scripts/ocr_vision.swift</code> helper). Follow the existing
+        session-entry format already in the file.
+      </p>
+      <ul>
+        <li>[ ] <strong>Step 2: Full CI gate</strong></li>
+      </ul>
+      <p>Run: <code>bash .git/hooks/pre-push</code> Expected: exits 0.</p>
       <ul>
         <li>[ ] <strong>Step 3: Commit</strong></li>
       </ul>
-      <pre><code>git add gemma-web/index.html
-git commit -m &quot;fix(gallery): raise lightbox z-index above gallery modal&quot;</code></pre>
-      <hr />
-      <h2>Task 2: IndexedDB wrapper helpers</h2>
-      <p>
-        Add a small, dependency-free, promise-returning IndexedDB layer. Every
-        call is wrapped so failures (e.g. private browsing) degrade to no-ops —
-        the app keeps working session-only.
-      </p>
-      <p><strong>Files:</strong></p>
-      <ul>
-        <li>
-          Modify: <code>gemma-web/index.html</code> (insert after the
-          <code>_storeImageData</code> block, currently ending at line 2814)
-        </li>
-      </ul>
-      <ul>
-        <li>[ ] <strong>Step 1: Insert the IndexedDB helpers</strong></li>
-      </ul>
-      <p>Locate this existing block (lines ~2808–2814):</p>
-      <pre><code>      const _imageStore = new Map();
-      let _imageIdCounter = 0;
-      function _storeImageData(data) {
-        const id = String(++_imageIdCounter);
-        _imageStore.set(id, data);
-        return id;
-      }</code></pre>
-      <p>Immediately <strong>after</strong> it, insert:</p>
-      <pre><code>      // ── IndexedDB persistence for generated images ────────────────────
-      // Stores the same record shape _imageStore uses, keyed by id, plus a
-      // createdAt timestamp. All ops are best-effort: any failure (e.g.
-      // private browsing) degrades to session-only behavior.
-      const _IMG_DB_NAME = &quot;localllm_images&quot;;
-      const _IMG_STORE = &quot;images&quot;;
-      let _imgDBPromise = null;
-
-      function _imgDBOpen() {
-        if (_imgDBPromise) return _imgDBPromise;
-        _imgDBPromise = new Promise((resolve, reject) =&gt; {
-          if (!(&quot;indexedDB&quot; in window)) {
-            reject(new Error(&quot;no indexedDB&quot;));
-            return;
-          }
-          const req = indexedDB.open(_IMG_DB_NAME, 1);
-          req.onupgradeneeded = () =&gt; {
-            const db = req.result;
-            if (!db.objectStoreNames.contains(_IMG_STORE)) {
-              db.createObjectStore(_IMG_STORE, { keyPath: &quot;id&quot; });
-            }
-          };
-          req.onsuccess = () =&gt; resolve(req.result);
-          req.onerror = () =&gt; reject(req.error);
-        }).catch((err) =&gt; {
-          console.warn(&quot;[gallery] IndexedDB unavailable:&quot;, err);
-          return null;
-        });
-        return _imgDBPromise;
-      }
-
-      async function _imgDBPut(record) {
-        try {
-          const db = await _imgDBOpen();
-          if (!db) return;
-          await new Promise((resolve, reject) =&gt; {
-            const tx = db.transaction(_IMG_STORE, &quot;readwrite&quot;);
-            tx.objectStore(_IMG_STORE).put(record);
-            tx.oncomplete = resolve;
-            tx.onerror = () =&gt; reject(tx.error);
-          });
-        } catch (err) {
-          console.warn(&quot;[gallery] persist failed:&quot;, err);
-        }
-      }
-
-      async function _imgDBGetAll() {
-        try {
-          const db = await _imgDBOpen();
-          if (!db) return [];
-          return await new Promise((resolve, reject) =&gt; {
-            const tx = db.transaction(_IMG_STORE, &quot;readonly&quot;);
-            const req = tx.objectStore(_IMG_STORE).getAll();
-            req.onsuccess = () =&gt; resolve(req.result || []);
-            req.onerror = () =&gt; reject(req.error);
-          });
-        } catch (err) {
-          console.warn(&quot;[gallery] load failed:&quot;, err);
-          return [];
-        }
-      }
-
-      async function _imgDBDelete(id) {
-        try {
-          const db = await _imgDBOpen();
-          if (!db) return;
-          await new Promise((resolve, reject) =&gt; {
-            const tx = db.transaction(_IMG_STORE, &quot;readwrite&quot;);
-            tx.objectStore(_IMG_STORE).delete(id);
-            tx.oncomplete = resolve;
-            tx.onerror = () =&gt; reject(tx.error);
-          });
-        } catch (err) {
-          console.warn(&quot;[gallery] delete failed:&quot;, err);
-        }
-      }
-
-      async function _imgDBClear() {
-        try {
-          const db = await _imgDBOpen();
-          if (!db) return;
-          await new Promise((resolve, reject) =&gt; {
-            const tx = db.transaction(_IMG_STORE, &quot;readwrite&quot;);
-            tx.objectStore(_IMG_STORE).clear();
-            tx.oncomplete = resolve;
-            tx.onerror = () =&gt; reject(tx.error);
-          });
-        } catch (err) {
-          console.warn(&quot;[gallery] clear failed:&quot;, err);
-        }
-      }
-      // ── end IndexedDB persistence ─────────────────────────────────────</code></pre>
-      <ul>
-        <li>[ ] <strong>Step 2: Verify formatting</strong></li>
-      </ul>
-      <p>
-        Run:
-        <code
-          >cd &quot;/Users/ojdavis/Claude Code/LocalLLM&quot; &amp;&amp; npx
-          prettier --check gemma-web/index.html</code
-        >
-        Expected: <code>All matched files use Prettier code style!</code> (if it
-        reports issues, run
-        <code>npx prettier --write gemma-web/index.html</code> and re-check)
-      </p>
-      <ul>
-        <li>[ ] <strong>Step 3: Smoke-check in browser console</strong></li>
-      </ul>
-      <p>
-        With the app open at <code>http://localhost:3001</code>, in DevTools
-        console run:
-      </p>
-      <pre><code>_imgDBPut({ id: &quot;test&quot;, prompt: &quot;hi&quot;, createdAt: Date.now() }).then(() =&gt;
-  _imgDBGetAll().then((r) =&gt; console.log(&quot;rows:&quot;, r))
-);</code></pre>
-      <p>
-        Expected: logs <code>rows: [ { id: &quot;test&quot;, ... } ]</code>.
-        Then clean up: <code>_imgDBDelete(&quot;test&quot;)</code>.
-      </p>
-      <ul>
-        <li>[ ] <strong>Step 4: Commit</strong></li>
-      </ul>
-      <pre><code>git add gemma-web/index.html
-git commit -m &quot;feat(gallery): add IndexedDB persistence helpers for images&quot;</code></pre>
-      <hr />
-      <h2>Task 3: Persist on store + rehydrate on load</h2>
-      <p>
-        Extend <code>_storeImageData</code> so every generated image is stamped
-        with <code>id</code>/<code>createdAt</code>, written to IndexedDB, and
-        so <code>data.id</code> is available for downloads. Add
-        <code>_rehydrateImages()</code> and call it on startup so persisted
-        images repopulate <code>_imageStore</code> and the id counter never
-        collides.
-      </p>
-      <p><strong>Files:</strong></p>
-      <ul>
-        <li>
-          Modify: <code>gemma-web/index.html</code> (the
-          <code>_storeImageData</code> block at lines ~2810–2814, and add a
-          rehydrate call)
-        </li>
-      </ul>
-      <ul>
-        <li>
-          [ ] <strong>Step 1: Replace <code>_storeImageData</code></strong>
-        </li>
-      </ul>
-      <p>Find:</p>
-      <pre><code>      function _storeImageData(data) {
-        const id = String(++_imageIdCounter);
-        _imageStore.set(id, data);
-        return id;
-      }</code></pre>
-      <p>Replace with:</p>
-      <pre><code>      function _storeImageData(data) {
-        const id = String(++_imageIdCounter);
-        data.id = id;
-        if (!data.createdAt) data.createdAt = Date.now();
-        _imageStore.set(id, data);
-        _imgDBPut(data); // fire-and-forget; do not block generation UX
-        return id;
-      }</code></pre>
-      <ul>
-        <li>
-          [ ]
-          <strong
-            >Step 2: Add <code>_rehydrateImages</code> after the IndexedDB
-            block</strong
-          >
-        </li>
-      </ul>
-      <p>
-        Immediately after the
-        <code>// ── end IndexedDB persistence ──</code> comment added in Task 2,
-        insert:
-      </p>
-      <pre><code>      async function _rehydrateImages() {
-        const rows = await _imgDBGetAll();
-        let maxId = _imageIdCounter;
-        for (const row of rows) {
-          if (!row || row.id == null) continue;
-          _imageStore.set(String(row.id), row);
-          const n = parseInt(row.id, 10);
-          if (!Number.isNaN(n) &amp;&amp; n &gt; maxId) maxId = n;
-        }
-        _imageIdCounter = maxId;
-      }
-      _rehydrateImages();</code></pre>
-      <blockquote>
-        Placement matters: <code>_rehydrateImages</code> calls the Task 2
-        helpers, so it must sit *after* them. Keep the
-        <code>_storeImageData</code> change from Step 1 where the original
-        function was.
-      </blockquote>
-      <ul>
-        <li>[ ] <strong>Step 3: Verify formatting</strong></li>
-      </ul>
-      <p>
-        Run:
-        <code
-          >cd &quot;/Users/ojdavis/Claude Code/LocalLLM&quot; &amp;&amp; npx
-          prettier --check gemma-web/index.html</code
-        >
-        Expected: <code>All matched files use Prettier code style!</code>
-      </p>
-      <ul>
-        <li>
-          [ ]
-          <strong
-            >Step 4: Browser verification — persistence across reload</strong
-          >
-        </li>
-      </ul>
-      <ol>
-        <li>
-          Open <code>http://localhost:3001</code>, switch to Image mode,
-          generate one image.
-        </li>
-        <li>
-          Open the gallery (rail image button) — confirm the image appears.
-        </li>
-        <li><strong>Reload the page.</strong> Open the gallery again.</li>
-      </ol>
-      <p>
-        Expected: the image is still present (it was rehydrated from IndexedDB).
-      </p>
-      <ol>
-        <li>
-          In console: <code>_imageStore.size</code> should be ≥ 1 after reload,
-          and <code>_imageIdCounter</code> should equal the max stored id.
-        </li>
-      </ol>
-      <ul>
-        <li>[ ] <strong>Step 5: Commit</strong></li>
-      </ul>
-      <pre><code>git add gemma-web/index.html
-git commit -m &quot;feat(gallery): persist generated images and rehydrate on load&quot;</code></pre>
-      <hr />
-      <h2>
-        Task 4: Shared <code>downloadImage</code> helper + prompt-based
-        filenames
-      </h2>
-      <p>
-        Replace the three copies of the
-        <code>&lt;a download=&quot;generated.png&quot;&gt;</code> anchor trick
-        with one helper that names files from a prompt slug + id.
-      </p>
-      <p><strong>Files:</strong></p>
-      <ul>
-        <li>
-          Modify: <code>gemma-web/index.html</code> — add helper near the image
-          block; edit chat-card handler (~line 5322) and lightbox Save (~line
-          5350)
-        </li>
-      </ul>
-      <ul>
-        <li>[ ] <strong>Step 1: Add the helper</strong></li>
-      </ul>
-      <p>
-        Insert immediately after the <code>_rehydrateImages();</code> call added
-        in Task 3:
-      </p>
-      <pre><code>      function downloadImage(data) {
-        if (!data || !data.image_b64) return;
-        const slug =
-          (data.prompt || &quot;image&quot;)
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, &quot;-&quot;)
-            .replace(/^-+|-+$/g, &quot;&quot;)
-            .slice(0, 40) || &quot;image&quot;;
-        const idPart = data.id != null ? &quot;-&quot; + data.id : &quot;&quot;;
-        const a = document.createElement(&quot;a&quot;);
-        a.href = &quot;data:image/png;base64,&quot; + data.image_b64;
-        a.download = `localllm-${slug}${idPart}.png`;
-        a.click();
-      }</code></pre>
-      <ul>
-        <li>[ ] <strong>Step 2: Swap the chat-card Save handler</strong></li>
-      </ul>
-      <p>Find (around lines 5322–5326):</p>
-      <pre><code>        if (btn.textContent.includes(&quot;Save&quot;)) {
-          const a = document.createElement(&quot;a&quot;);
-          a.href = &quot;data:image/png;base64,&quot; + data.image_b64;
-          a.download = &quot;generated.png&quot;;
-          a.click();
-        } else if (btn.textContent.includes(&quot;Regenerate&quot;)) {</code></pre>
-      <p>Replace with:</p>
-      <pre><code>        if (btn.textContent.includes(&quot;Save&quot;)) {
-          downloadImage(data);
-        } else if (btn.textContent.includes(&quot;Regenerate&quot;)) {</code></pre>
-      <ul>
-        <li>[ ] <strong>Step 3: Swap the lightbox Save handler</strong></li>
-      </ul>
-      <p>Find (around lines 5349–5358):</p>
-      <pre><code>      document
-        .getElementById(&quot;lb-save-btn&quot;)
-        .addEventListener(&quot;click&quot;, function () {
-          const data = _imageStore.get(_lightboxImageId);
-          if (!data) return;
-          const a = document.createElement(&quot;a&quot;);
-          a.href = &quot;data:image/png;base64,&quot; + data.image_b64;
-          a.download = &quot;generated.png&quot;;
-          a.click();
-        });</code></pre>
-      <p>Replace with:</p>
-      <pre><code>      document
-        .getElementById(&quot;lb-save-btn&quot;)
-        .addEventListener(&quot;click&quot;, function () {
-          downloadImage(_imageStore.get(_lightboxImageId));
-        });</code></pre>
-      <ul>
-        <li>[ ] <strong>Step 4: Verify formatting</strong></li>
-      </ul>
-      <p>
-        Run:
-        <code
-          >cd &quot;/Users/ojdavis/Claude Code/LocalLLM&quot; &amp;&amp; npx
-          prettier --check gemma-web/index.html</code
-        >
-        Expected: <code>All matched files use Prettier code style!</code>
-      </p>
-      <ul>
-        <li>[ ] <strong>Step 5: Browser verification</strong></li>
-      </ul>
-      <p>
-        Generate an image with prompt &quot;a red fox&quot;. Click the chat-card
-        <strong>Save</strong> and the lightbox <strong>Save</strong>. Expected:
-        both download a file named like
-        <code>localllm-a-red-fox-&lt;id&gt;.png</code> (not
-        <code>generated.png</code>).
-      </p>
-      <ul>
-        <li>[ ] <strong>Step 6: Commit</strong></li>
-      </ul>
-      <pre><code>git add gemma-web/index.html
-git commit -m &quot;refactor(gallery): unify downloads into prompt-named downloadImage helper&quot;</code></pre>
-      <hr />
-      <h2>Task 5: Gallery card CSS</h2>
-      <p>
-        Add styles for the rewritten gallery: a 2-line-clamped prompt caption,
-        an action row, and a delete button. Reuse the existing
-        <code>.img-action-btn</code> look where possible.
-      </p>
-      <p><strong>Files:</strong></p>
-      <ul>
-        <li>
-          Modify: <code>gemma-web/index.html</code> — insert in the
-          <code>&lt;style&gt;</code> block right after the
-          <code>.img-action-btn:hover</code> rule (around line 995)
-        </li>
-      </ul>
-      <ul>
-        <li>[ ] <strong>Step 1: Insert gallery CSS</strong></li>
-      </ul>
-      <p>
-        After the existing <code>.img-action-btn:hover { ... }</code> rule, add:
-      </p>
-      <pre><code>      .gallery-card {
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        border-radius: 12px;
-        overflow: hidden;
-        width: 220px;
-        flex-shrink: 0;
-        display: flex;
-        flex-direction: column;
-        position: relative;
-      }
-      .gallery-card img {
-        width: 100%;
-        display: block;
-        cursor: zoom-in;
-      }
-      .gallery-card-prompt {
-        padding: 8px 10px;
-        font-size: 11px;
-        color: #c9c6e6;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-      .gallery-card-actions {
-        display: flex;
-        gap: 6px;
-        padding: 0 10px 10px;
-        margin-top: auto;
-      }
-      .gallery-card-actions .img-action-btn {
-        flex: 1;
-        font-size: 11px;
-      }
-      .gallery-delete-btn {
-        position: absolute;
-        top: 6px;
-        right: 6px;
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        border: none;
-        background: rgba(0, 0, 0, 0.6);
-        color: #fff;
-        cursor: pointer;
-        font-size: 13px;
-        line-height: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .gallery-delete-btn:hover {
-        background: #ef4444;
-      }
-      .gallery-toolbar-input {
-        flex: 1;
-        max-width: 320px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        border-radius: 8px;
-        padding: 6px 12px;
-        color: #f0eeff;
-        font-size: 13px;
-      }
-      .gallery-toolbar-btn {
-        background: none;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-        color: #9d9abf;
-        padding: 6px 14px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 13px;
-        white-space: nowrap;
-      }
-      .gallery-toolbar-btn:hover {
-        color: #f0eeff;
-        border-color: rgba(255, 255, 255, 0.4);
-      }</code></pre>
-      <ul>
-        <li>[ ] <strong>Step 2: Verify formatting</strong></li>
-      </ul>
-      <p>
-        Run:
-        <code
-          >cd &quot;/Users/ojdavis/Claude Code/LocalLLM&quot; &amp;&amp; npx
-          prettier --check gemma-web/index.html</code
-        >
-        Expected: <code>All matched files use Prettier code style!</code>
-      </p>
-      <ul>
-        <li>[ ] <strong>Step 3: Commit</strong></li>
-      </ul>
-      <pre><code>git add gemma-web/index.html
-git commit -m &quot;style(gallery): add gallery card and toolbar styles&quot;</code></pre>
-      <hr />
-      <h2>Task 6: Rewrite <code>showImageGallery</code></h2>
-      <p>
-        Replace the bare grid with: a header (title + count, search box, Clear
-        all, Close), and a <code>renderGalleryGrid()</code> that renders sorted,
-        filtered cards. Each card: thumbnail (click →
-        <code>openLightbox</code>), 2-line prompt, and Copy/Download/Delete
-        actions. The grid and modal are emptied with
-        <code>replaceChildren()</code> (safe — no markup strings).
-      </p>
-      <p><strong>Files:</strong></p>
-      <ul>
-        <li>
-          Modify: <code>gemma-web/index.html</code> — replace the entire
-          <code>showImageGallery</code> function (lines ~3128–3193)
-        </li>
-      </ul>
-      <ul>
-        <li>[ ] <strong>Step 1: Replace the whole function</strong></li>
-      </ul>
-      <p>
-        Find the block from <code>// --- Image Gallery ---</code> through the
-        end of <code>showImageGallery</code> (the closing <code>}</code> before
-        <code>// --- All Chats Modal Logic ---</code>, ~lines 3128–3193) and
-        replace it entirely with:
-      </p>
-      <pre><code>      // --- Image Gallery ---
-      let _galleryQuery = &quot;&quot;;
-
-      function showImageGallery() {
-        let modal = document.getElementById(&quot;image-gallery-modal&quot;);
-        if (!modal) {
-          modal = document.createElement(&quot;div&quot;);
-          modal.id = &quot;image-gallery-modal&quot;;
-          modal.style.cssText =
-            &quot;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.88);display:flex;flex-direction:column;overflow:hidden;&quot;;
-          document.body.appendChild(modal);
-        }
-        modal.style.display = &quot;flex&quot;;
-        _galleryQuery = &quot;&quot;;
-
-        const header = document.createElement(&quot;div&quot;);
-        header.style.cssText =
-          &quot;display:flex;align-items:center;gap:12px;padding:16px 24px;border-bottom:1px solid rgba(255,255,255,0.10);flex-shrink:0;&quot;;
-
-        const title = document.createElement(&quot;h2&quot;);
-        title.id = &quot;gallery-title&quot;;
-        title.style.cssText =
-          &quot;margin:0;font-size:16px;font-weight:700;color:#f0eeff;white-space:nowrap;&quot;;
-
-        const search = document.createElement(&quot;input&quot;);
-        search.type = &quot;text&quot;;
-        search.placeholder = &quot;Search prompts…&quot;;
-        search.className = &quot;gallery-toolbar-input&quot;;
-        search.addEventListener(&quot;input&quot;, (e) =&gt; {
-          _galleryQuery = e.target.value;
-          renderGalleryGrid();
-        });
-
-        const clearBtn = document.createElement(&quot;button&quot;);
-        clearBtn.textContent = &quot;Clear all&quot;;
-        clearBtn.className = &quot;gallery-toolbar-btn&quot;;
-        clearBtn.addEventListener(&quot;click&quot;, async () =&gt; {
-          if (_imageStore.size === 0) return;
-          if (
-            !confirm(&quot;Delete all images from the gallery? This cannot be undone.&quot;)
-          )
-            return;
-          _imageStore.clear();
-          await _imgDBClear();
-          renderGalleryGrid();
-        });
-
-        const closeBtn = document.createElement(&quot;button&quot;);
-        closeBtn.textContent = &quot;✕ Close&quot;;
-        closeBtn.className = &quot;gallery-toolbar-btn&quot;;
-        closeBtn.addEventListener(&quot;click&quot;, () =&gt; {
-          modal.style.display = &quot;none&quot;;
-        });
-
-        const spacer = document.createElement(&quot;div&quot;);
-        spacer.style.flex = &quot;1&quot;;
-
-        header.append(title, search, spacer, clearBtn, closeBtn);
-
-        const grid = document.createElement(&quot;div&quot;);
-        grid.id = &quot;gallery-grid&quot;;
-        grid.style.cssText =
-          &quot;flex:1;overflow-y:auto;padding:16px 24px;display:flex;flex-wrap:wrap;gap:16px;align-content:flex-start;&quot;;
-
-        modal.replaceChildren(header, grid);
-        renderGalleryGrid();
-      }
-
-      function renderGalleryGrid() {
-        const grid = document.getElementById(&quot;gallery-grid&quot;);
-        const title = document.getElementById(&quot;gallery-title&quot;);
-        if (!grid) return;
-
-        const q = _galleryQuery.trim().toLowerCase();
-        const entries = Array.from(_imageStore.values())
-          .filter((d) =&gt; !q || (d.prompt || &quot;&quot;).toLowerCase().includes(q))
-          .sort((a, b) =&gt; (b.createdAt || 0) - (a.createdAt || 0));
-
-        if (title) {
-          const total = _imageStore.size;
-          title.textContent =
-            total === 0
-              ? &quot;Image Gallery — No images yet&quot;
-              : `Image Gallery — ${entries.length}/${total} image${total === 1 ? &quot;&quot; : &quot;s&quot;}`;
-        }
-
-        grid.replaceChildren();
-
-        if (entries.length === 0) {
-          const empty = document.createElement(&quot;p&quot;);
-          empty.textContent =
-            _imageStore.size === 0
-              ? &quot;No images yet. Use Image mode to generate some.&quot;
-              : &quot;No images match your search.&quot;;
-          empty.style.cssText = &quot;color:#9d9abf;font-size:14px;padding:20px 0;&quot;;
-          grid.appendChild(empty);
-          return;
-        }
-
-        entries.forEach((data) =&gt; {
-          const card = document.createElement(&quot;div&quot;);
-          card.className = &quot;gallery-card&quot;;
-
-          const img = document.createElement(&quot;img&quot;);
-          img.src = &quot;data:image/png;base64,&quot; + data.image_b64;
-          img.alt = &quot;Generated: &quot; + (data.prompt || &quot;&quot;);
-          img.addEventListener(&quot;click&quot;, () =&gt; openLightbox(data.id));
-
-          const del = document.createElement(&quot;button&quot;);
-          del.className = &quot;gallery-delete-btn&quot;;
-          del.textContent = &quot;✕&quot;;
-          del.title = &quot;Delete&quot;;
-          del.addEventListener(&quot;click&quot;, async (e) =&gt; {
-            e.stopPropagation();
-            _imageStore.delete(data.id);
-            await _imgDBDelete(data.id);
-            renderGalleryGrid();
-          });
-
-          const prompt = document.createElement(&quot;div&quot;);
-          prompt.className = &quot;gallery-card-prompt&quot;;
-          prompt.textContent = data.prompt || &quot;No prompt&quot;;
-
-          const actions = document.createElement(&quot;div&quot;);
-          actions.className = &quot;gallery-card-actions&quot;;
-
-          const copyBtn = document.createElement(&quot;button&quot;);
-          copyBtn.className = &quot;img-action-btn&quot;;
-          copyBtn.type = &quot;button&quot;;
-          copyBtn.textContent = &quot;Copy prompt&quot;;
-          copyBtn.addEventListener(&quot;click&quot;, async (e) =&gt; {
-            e.stopPropagation();
-            try {
-              await navigator.clipboard.writeText(data.prompt || &quot;&quot;);
-              const prev = copyBtn.textContent;
-              copyBtn.textContent = &quot;Copied!&quot;;
-              setTimeout(() =&gt; (copyBtn.textContent = prev), 1200);
-            } catch (err) {
-              console.warn(&quot;[gallery] clipboard failed:&quot;, err);
-            }
-          });
-
-          const dlBtn = document.createElement(&quot;button&quot;);
-          dlBtn.className = &quot;img-action-btn&quot;;
-          dlBtn.type = &quot;button&quot;;
-          dlBtn.textContent = &quot;⬇ Download&quot;;
-          dlBtn.addEventListener(&quot;click&quot;, (e) =&gt; {
-            e.stopPropagation();
-            downloadImage(data);
-          });
-
-          actions.append(copyBtn, dlBtn);
-          card.append(del, img, prompt, actions);
-          grid.appendChild(card);
-        });
-      }</code></pre>
-      <ul>
-        <li>[ ] <strong>Step 2: Verify formatting</strong></li>
-      </ul>
-      <p>
-        Run:
-        <code
-          >cd &quot;/Users/ojdavis/Claude Code/LocalLLM&quot; &amp;&amp; npx
-          prettier --check gemma-web/index.html</code
-        >
-        Expected: <code>All matched files use Prettier code style!</code> (run
-        <code>--write</code> then re-check if needed)
-      </p>
-      <ul>
-        <li>
-          [ ]
-          <strong>Step 3: Browser verification — full gallery behavior</strong>
-        </li>
-      </ul>
-      <p>With the app at <code>http://localhost:3001</code>:</p>
-      <ol>
-        <li>Generate 2–3 images with distinct prompts.</li>
-        <li>Open the gallery (rail image button).</li>
-        <ul>
-          <li>
-            Each card shows thumbnail, 2-line prompt, Copy/Download buttons, and
-            a ✕ in the top-right.
-          </li>
-          <li>Cards are newest-first.</li>
-        </ul>
-        <li>
-          <strong>Click a thumbnail</strong> → the lightbox opens *on top of*
-          the gallery (full prompt + metadata visible). Close it → returns to
-          gallery.
-        </li>
-        <li>
-          <strong>Copy prompt</strong> → button flips to &quot;Copied!&quot;;
-          paste elsewhere confirms the full prompt.
-        </li>
-        <li>
-          <strong>⬇ Download</strong> → file named
-          <code>localllm-&lt;slug&gt;-&lt;id&gt;.png</code>.
-        </li>
-        <li>
-          <strong>Search</strong> → typing a word present in only one prompt
-          filters to it; title shows <code>N/total</code>.
-        </li>
-        <li>
-          <strong>Delete (✕)</strong> on one card → it disappears; reload page →
-          it stays gone (removed from IndexedDB).
-        </li>
-        <li>
-          <strong>Clear all</strong> → confirm dialog; accepting empties the
-          gallery; reload → still empty.
-        </li>
-      </ol>
-      <ul>
-        <li>[ ] <strong>Step 4: Commit</strong></li>
-      </ul>
-      <pre><code>git add gemma-web/index.html
-git commit -m &quot;feat(gallery): rewrite gallery with lightbox, search, copy, download, delete&quot;</code></pre>
-      <hr />
-      <h2>Task 7: Full gate + end-to-end verification</h2>
-      <p><strong>Files:</strong> none (verification only)</p>
-      <ul>
-        <li>[ ] <strong>Step 1: Run the full pre-push pipeline</strong></li>
-      </ul>
-      <p>
-        Run:
-        <code
-          >cd &quot;/Users/ojdavis/Claude Code/LocalLLM&quot; &amp;&amp; bash
-          .git/hooks/pre-push</code
-        >
-        Expected: exits 0 (ruff check, ruff format --check, prettier --check,
-        pytest all pass).
-      </p>
-      <ul>
-        <li>
-          [ ] <strong>Step 2: Restart bridge if backend was touched</strong>
-        </li>
-      </ul>
-      <p>
-        Not applicable — this change is frontend-only. The node proxy serves
-        <code>index.html</code> directly; a browser reload picks up changes. (No
-        <code>kickstart</code> needed.)
-      </p>
-      <ul>
-        <li>[ ] <strong>Step 3: End-to-end smoke</strong></li>
-      </ul>
-      <p>
-        In the browser: generate → reload → image persists in gallery → lightbox
-        → copy → download → delete → clear all. Confirm no unexpected console
-        errors (<code>[gallery]</code> warnings should not appear on a normal
-        run).
-      </p>
-      <ul>
-        <li>[ ] <strong>Step 4: Update PROGRESS.md</strong></li>
-      </ul>
-      <p>
-        Append a short session entry to <code>PROGRESS.md</code> describing the
-        gallery v2 work (persistence + gallery actions), matching the existing
-        log style. Then:
-      </p>
       <pre><code>git add PROGRESS.md
-git commit -m &quot;docs: log image gallery v2 (persistence + gallery actions)&quot;</code></pre>
-      <hr />
-      <h2>Self-Review (completed during planning)</h2>
+git commit -m &quot;docs: log agent tool registry expansion&quot;</code></pre>
       <ul>
         <li>
-          <strong>Spec coverage:</strong> persistence (Tasks 2–3), download from
-          gallery (Tasks 4, 6), view prompt / click-to-lightbox (Task 6 + reused
-          lightbox), copy prompt (Task 6), search (Task 6), delete single +
-          clear all (Task 6), graceful degradation (Task 2 try/catch),
-          prompt-based filenames (Task 4), z-index fix (Task 1). All spec
-          sections map to a task.
-        </li>
-        <li>
-          <strong>Type consistency:</strong> records carry <code>id</code> and
-          <code>createdAt</code> (set in <code>_storeImageData</code>, Task 3);
-          <code>downloadImage(data)</code> reads
-          <code>data.id</code
-          >/<code>data.image_b64</code>/<code>data.prompt</code>; gallery reads
-          the same fields and <code>_imageStore.values()</code>.
-          <code>openLightbox(data.id)</code> matches the existing signature
-          (<code>openLightbox(imageId)</code> reads
-          <code>_imageStore.get(imageId)</code>).
-        </li>
-        <li>
-          <strong>No placeholders:</strong> every code step contains full code;
-          verification steps give concrete expected output.
+          [ ]
+          <strong>Step 4: Manual smoke test (on the Mac, outside CI)</strong>
         </li>
       </ul>
-      <pre><code></code></pre>
+      <p>
+        Restart the bridge so it serves the new endpoint and tools (per the
+        runtime note, it is a launchd service):
+      </p>
+      <pre><code>launchctl kickstart -k gui/$(id -u)/com.gemini.litert</code></pre>
+      <p>
+        Then exercise a few tools through the agent UI:
+        <code>say(&quot;test&quot;)</code>, <code>screenshot()</code>,
+        <code>calendar_list(7)</code>, and
+        <code>recall(&quot;…&quot;)</code> after ingesting a doc. Confirm risky
+        tools surface the confirm prompt before running.
+      </p>
+      <hr />
+      <h2>Self-Review Notes</h2>
+      <ul>
+        <li>
+          <strong>Spec coverage:</strong> all 22 tools from the design map to
+          Tasks 1–17; security (Trash delete, draft-only mail, risky gating),
+          testing (mocked OS/HTTP), and CI gate are covered in cross-cutting
+          steps and the per-phase gates.
+        </li>
+        <li>
+          <strong>Sandbox:</strong> every file-path tool uses
+          <code>validate_path</code>, preserving the project-root boundary.
+        </li>
+        <li>
+          <strong>Type consistency:</strong> <code>_osascript</code> (Task 10)
+          is reused by Tasks 10–14; <code>_describe_image</code> (Task 16) is
+          reused by <code>_ocr_image</code> (Task 17) — both defined before use
+          in task order.
+        </li>
+        <li>
+          <strong>Known risk:</strong> AppleScript string interpolation does not
+          escape embedded quotes; a title/body containing a
+          <code>&quot;</code> will break the script. Acceptable for v1; a future
+          hardening pass can escape inputs.
+        </li>
+      </ul>
     </div>
   </body>
 </html>

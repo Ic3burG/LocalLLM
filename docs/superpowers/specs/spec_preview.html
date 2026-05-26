@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Image Gallery v2 — Design</title>
+    <title>Agent Tool Registry Expansion</title>
     <style>
       * {
         box-sizing: border-box;
@@ -112,278 +112,227 @@
   </head>
   <body>
     <div class="container">
-      <h1>Image Gallery v2 — Design</h1>
+      <h1>Agent Tool Registry Expansion</h1>
       <p>
-        <strong>Date:</strong> 2026-05-21 <strong>Status:</strong> Approved
-        (pending spec review) <strong>Area:</strong>
-        <code>gemma-web/index.html</code> (single-file frontend)
+        Expand the agent&#x27;s tool registry with ~22 new tools across five
+        areas: semantic recall, macOS personal automation, on-device audio,
+        on-device vision, and a set of smaller data/file fill-ins. Delivered as
+        <strong>one spec, built in three phases</strong> so each batch can be
+        verified before the next.
       </p>
-      <h2>Problem</h2>
+      <hr />
+      <h2>Shared Pattern</h2>
       <p>
-        The image gallery (<code>showImageGallery</code>, ~line 3129) is a bare
-        grid of thumbnails with one-line truncated captions and
-        <strong>no interactivity</strong> — no click handler, no download, no
-        way to read the full prompt. Meanwhile, images in the chat stream
-        already have rich tooling (Save / Regenerate / Edit-prompt buttons and a
-        full-screen lightbox showing the full prompt + metadata), so the gallery
-        is the poor cousin.
-      </p>
-      <p>
-        Separately, generated images live only in an in-memory
-        <code>Map</code> (<code>_imageStore</code>, line 2808) that is wiped on
-        page reload. So &quot;previously generated&quot; today means only
-        &quot;generated since the last page load.&quot;
-      </p>
-      <h2>Goals</h2>
-      <ol>
-        <li>Persist generated images across page reloads.</li>
-        <li>Let users <strong>download</strong> images from the gallery.</li>
-        <li>
-          Let users <strong>see the full prompt</strong> for each image from the
-          gallery.
-        </li>
-        <li>
-          Add quality-of-life features: click-to-lightbox, copy-prompt,
-          search/filter
-        </li>
-      </ol>
-      <p>by prompt, and delete (single + clear-all).</p>
-      <h2>Non-Goals</h2>
-      <ul>
-        <li>Server-side image storage. Persistence stays client-side.</li>
-        <li>Editing/inpainting images. Out of scope.</li>
-        <li>Cross-device sync. IndexedDB is per-browser-profile only.</li>
-      </ul>
-      <h2>Storage Decision: IndexedDB (not localStorage)</h2>
-      <p>
-        A 512×512 PNG is ~400–900 KB; base64 inflates it another ~33%.
-        localStorage&#x27;s total budget is ~5 MB <strong>and</strong>
-        <code>gemma_chats</code> already occupies it, so localStorage would fit
-        only ~5 images before risking quota errors that corrupt chat history.
-      </p>
-      <p>
-        IndexedDB has a much larger quota (hundreds of MB) and is designed for
-        binary/ large data. It is the correct foundation. We store the
-        <strong>same record shape</strong> <code>_imageStore</code> already
-        uses, to minimize churn:
-      </p>
-      <pre><code>store: &quot;images&quot; (keyPath: &quot;id&quot;)
-record: {
-  id,            // string, same id scheme as _imageIdCounter
-  prompt,
-  image_b64,     // kept as base64 string (consistency with existing render path)
-  width, height,
-  steps,
-  elapsed_ms,
-  style,
-  size,
-  createdAt,     // Date.now() — new field, used for sort order
-}</code></pre>
-      <p>
-        We keep <code>image_b64</code> as a string (rather than a Blob) because
-        every render path already does
-        <code>&quot;data:image/png;base64,&quot; + image_b64</code>; switching
-        to Blobs would ripple through unrelated code for no real benefit at
-        these volumes.
-      </p>
-      <h3>Graceful degradation</h3>
-      <p>
-        All IndexedDB calls are wrapped so that if the API is unavailable or
-        throws (e.g. private browsing), the app
-        <strong>silently falls back to session-only behavior</strong> — the
-        in-memory <code>Map</code> still works, nothing hard-fails, errors are
-        <code>console.warn</code>-ed.
-      </p>
-      <h2>Architecture</h2>
-      <h3>New module: IndexedDB wrapper</h3>
-      <p>
-        A small set of promise-returning helpers near the image-mode state
-        block:
+        Every new tool follows the existing mold, so there are no new
+        abstractions:
       </p>
       <ul>
         <li>
-          <code>_imgDBOpen()</code> → opens/creates DB +
-          <code>images</code> store (memoized).
+          <code>async def _name(...) -&gt; str</code> returning
+          <code>OK: …</code> / <code>ERROR: …</code>.
         </li>
-        <li><code>_imgDBPut(record)</code> → write one record.</li>
-        <li><code>_imgDBGetAll()</code> → read all records.</li>
-        <li><code>_imgDBDelete(id)</code> → delete one record.</li>
-        <li><code>_imgDBClear()</code> → clear the store.</li>
+        <li>
+          Heavy dependencies are
+          <strong>imported lazily inside the function</strong>, so a missing
+        </li>
       </ul>
-      <p>
-        Each is a thin <code>try/catch</code> wrapper; failures resolve to a
-        no-op / empty result.
-      </p>
-      <h3>Generate flow (minimal change)</h3>
-      <p>
-        <code>appendImageCard</code> (line 2861) keeps calling
-        <code>_storeImageData(data)</code> (the in-memory Map remains the fast
-        cache that lightbox/save handlers read from). We extend
-        <code>_storeImageData</code> to also stamp <code>createdAt</code> and
-        fire <code>_imgDBPut</code> (fire-and-forget; not awaited so generation
-        UX is unaffected).
-      </p>
-      <h3>Page-load rehydration</h3>
-      <p>
-        On startup, after the Map is declared, call an async
-        <code>_rehydrateImages()</code> that:
-      </p>
-      <ol>
-        <li>
-          <code>_imgDBGetAll()</code> → load records into
-          <code>_imageStore</code>.
-        </li>
-        <li>
-          Set <code>_imageIdCounter</code> to the max numeric id seen, so new
-          ids never collide
-        </li>
-      </ol>
-      <p>with persisted ones.</p>
-      <p>
-        Because <code>openLightbox</code>, the Save/Regenerate/Edit handlers,
-        and the gallery all read from <code>_imageStore</code>, persisted images
-        work in every existing code path with no further changes.
-      </p>
-      <h3>Shared download helper (targeted dedup)</h3>
-      <p>
-        There are currently three copies of the
-        <code>&lt;a download=&quot;generated.png&quot;&gt;</code> anchor trick
-        (chat-card Save line ~5322, lightbox Save line ~5350, and we need a
-        third for the gallery). Replace them with one helper:
-      </p>
-      <pre><code>function downloadImage(data) {
-  const slug = (data.prompt || &quot;image&quot;)
-    .toLowerCase().replace(/[^a-z0-9]+/g, &quot;-&quot;)
-    .replace(/^-+|-+$/g, &quot;&quot;).slice(0, 40) || &quot;image&quot;;
-  const a = document.createElement(&quot;a&quot;);
-  a.href = &quot;data:image/png;base64,&quot; + data.image_b64;
-  a.download = `localllm-${slug}-${data.id ?? &quot;&quot;}.png`.replace(/-+\.png$/, &quot;.png&quot;);
-  a.click();
-}</code></pre>
-      <p>
-        This upgrades all download paths (chat card, lightbox, gallery) to
-        descriptive filenames like <code>localllm-a-red-fox-7.png</code> instead
-        of <code>generated.png</code>. (Requires that records carry their
-        <code>id</code>; we add <code>id</code> into the stored
-        <code>data</code>.)
-      </p>
-      <h3>Gallery modal rewrite (<code>showImageGallery</code>)</h3>
-      <p>
-        Rebuilt to render from <code>_imageStore</code>, sorted by
-        <code>createdAt</code> descending (newest first). Structure:
-      </p>
-      <p>
-        <strong>Header:</strong> title + image count, a
-        <strong>search input</strong> (filters cards by prompt substring,
-        case-insensitive — mirrors All-Chats search at line 3213), a
-        <strong>Clear all</strong> button, and the existing Close button.
-      </p>
-      <p><strong>Grid card</strong> (per image):</p>
+      <p>optional dep only breaks that one tool.</p>
       <ul>
         <li>
-          Thumbnail — <code>click → openLightbox(id)</code> (delivers full
-          prompt + metadata +
+          File arguments go through <code>validate_path()</code>; risky actions
+          call
         </li>
       </ul>
-      <p>Save/Regenerate/Edit, all already built).</p>
+      <p><code>log_audit()</code>.</p>
       <ul>
+        <li>Blocking work is offloaded with <code>run_in_executor</code>.</li>
         <li>
-          Caption: prompt (clamped to ~2 lines, not single-line truncate).
-        </li>
-        <li>Action row:</li>
-        <ul>
-          <li>
-            <strong>Copy prompt</strong> →
-            <code>navigator.clipboard.writeText(data.prompt)</code>, with a
-            brief
-          </li>
-        </ul>
-      </ul>
-      <p>&quot;Copied!&quot; affordance.</p>
-      <ul>
-        <li><strong>Download</strong> → <code>downloadImage(data)</code>.</li>
-        <li>
-          <strong>Delete (✕)</strong> → removes from <code>_imageStore</code> +
-          <code>_imgDBDelete(id)</code>, re-renders.
+          Each tool is wired up with <strong>three edits</strong>: the
+          <code>async def</code>, a
         </li>
       </ul>
       <p>
-        Single click, <strong>no confirm</strong> (low-stakes per-item action).
+        <code>register_tool(...)</code> line, and one entry in the
+        <code>TOOLS AVAILABLE</code> block of the system prompt (the model only
+        &quot;sees&quot; a tool that is listed there).
       </p>
       <p>
-        <strong>Clear all</strong> → <code>confirm(...)</code> (mirrors
-        <code>bulkDelete</code> at line 3302), then
-        <code>_imageStore.clear()</code> + <code>_imgDBClear()</code> +
-        re-render.
+        The risk gate is automatic: any tool registered as
+        <code>risky</code> triggers an SSE <code>confirm_request</code> and
+        blocks for your approval (up to 300s) before running. No extra plumbing
+        — write/send/delete tools just set <code>risk=&quot;risky&quot;</code>.
       </p>
-      <p>
-        <strong>Search</strong> is re-render-on-input: keep a module-scoped
-        <code>_galleryQuery</code> string and a
-        <code>renderGalleryGrid()</code> that filters before building cards
-        (same shape as <code>renderAllChats</code>).
-      </p>
-      <h3>Z-index note</h3>
-      <p>
-        The gallery modal is <code>z-index:300</code>. Implementation must
-        confirm the <code>lightbox-overlay</code> sits
-        <strong>above</strong> the gallery (so clicking a gallery thumbnail
-        shows the lightbox on top, and closing it returns to the gallery). If
-        not, adjust the lightbox overlay&#x27;s z-index.
-      </p>
-      <h2>Error Handling</h2>
+      <hr />
+      <h2>Phase 1 — Quick Wins (zero or one new dependency)</h2>
       <ul>
         <li>
-          IndexedDB open/read/write/delete failures: caught,
-          <code>console.warn</code>, degrade to
-        </li>
-      </ul>
-      <p>session-only. Never throw into UI flow.</p>
-      <ul>
-        <li>
-          <code>navigator.clipboard</code> may be unavailable on insecure
-          origins: wrap in
+          <strong><code>recall(query)</code></strong> — safe. Semantic search
+          over already-ingested documents.
         </li>
       </ul>
       <p>
-        <code>try/catch</code>; on failure, no crash (optionally fall back to a
-        hidden textarea + <code>execCommand</code>, but only if trivial —
-        otherwise just warn).
+        Adds a bridge endpoint <code>/v1/rag/search</code> backed by
+        <code>pdf_pipeline.retrieve_chunks</code>; the tool POSTs to it exactly
+        like <code>generate_image</code> already does, avoiding a circular
+        import.
       </p>
-      <h2>Testing &amp; Verification</h2>
       <ul>
         <li>
-          No JS unit-test harness exists; the repo&#x27;s pytest suite is
-          backend-only.
+          <strong><code>say(text)</code></strong> — safe. Text-to-speech via the
+          macOS <code>say</code> command.
         </li>
-        <li>Verification per <code>CLAUDE.md</code> Definition of Done:</li>
-        <ol>
-          <li>
-            <code>bash .git/hooks/pre-push</code> must exit 0 (prettier + ruff +
-            pytest unaffected,
-          </li>
-        </ol>
-      </ul>
-      <p>but formatting of <code>index.html</code> must pass prettier).</p>
-      <ol>
         <li>
-          Manual browser sanity check of: generate → reload → image still in
-          gallery;
+          <strong><code>screenshot(path?)</code></strong> — risky. Capture the
+          screen via <code>screencapture</code>.
         </li>
-      </ol>
+        <li>
+          <strong><code>move_file(src, dst)</code></strong> — risky. Move/rename
+          via <code>shutil</code> (covers rename).
+        </li>
+        <li>
+          <strong><code>delete_file(path)</code></strong> — risky. Sends the
+          file to <strong>Trash</strong>, not a hard
+        </li>
+      </ul>
+      <p>remove, so it stays recoverable.</p>
+      <ul>
+        <li>
+          <strong><code>read_csv(path)</code></strong> — safe. Parse CSV to a
+          tab-separated table (same output
+        </li>
+      </ul>
+      <p>shape as <code>sqlite_query</code>).</p>
+      <ul>
+        <li>
+          <strong><code>json_query(path_or_text, expr)</code></strong> — safe.
+          jq-style dotted-path lookups
+        </li>
+      </ul>
+      <p>over JSON without writing Python each time.</p>
+      <ul>
+        <li>
+          <strong><code>read_ics(path)</code></strong> — safe. Parse events from
+          a local <code>.ics</code> file.
+        </li>
+        <li>
+          <strong><code>sqlite_exec(db_path, sql)</code></strong> — risky. Run
+          non-SELECT statements
+        </li>
+      </ul>
       <p>
-        click thumbnail → lightbox; copy prompt; download (descriptive
-        filename); delete one; clear all; search filter. Can be driven via
-        Claude-in-Chrome.
+        (INSERT/UPDATE/DELETE/CREATE), expanding today&#x27;s read-only
+        boundary.
       </p>
-      <h2>Rollout / Risk</h2>
+      <hr />
+      <h2>
+        Phase 2 — macOS Personal Automation (all via <code>osascript</code>)
+      </h2>
       <ul>
-        <li>Pure additive frontend change; no backend or API change.</li>
         <li>
-          Worst case (IndexedDB blocked) reverts to today&#x27;s session-only
-          behavior.
+          <strong><code>calendar_list(days=7)</code></strong> — safe. List
+          upcoming events.
         </li>
-        <li>No existing feature removed (honors Feature Integrity mandate).</li>
+        <li>
+          <strong
+            ><code>calendar_create(title, start, end?, notes?)</code></strong
+          >
+          — risky. Create an event.
+        </li>
+        <li>
+          <strong><code>reminders_list(list?)</code></strong> — safe. List
+          reminders.
+        </li>
+        <li>
+          <strong><code>reminders_create(text, due?)</code></strong> — risky.
+          Add a reminder.
+        </li>
+        <li>
+          <strong><code>notes_search(query)</code></strong> — safe. Search and
+          read Apple Notes.
+        </li>
+        <li>
+          <strong><code>notes_create(title, body)</code></strong> — risky.
+          Create a note.
+        </li>
+        <li>
+          <strong><code>messages_read(limit=20)</code></strong> — risky. Read
+          recent iMessages (privacy
+        </li>
       </ul>
+      <p>sensitive, so gated even though it only reads).</p>
+      <ul>
+        <li>
+          <strong><code>send_message(recipient, text)</code></strong> — risky.
+          Send an iMessage.
+        </li>
+        <li>
+          <strong><code>mail_compose(to, subject, body)</code></strong> — risky.
+          Creates a <strong>draft</strong> — never
+        </li>
+      </ul>
+      <p>auto-sends — so a human always hits send.</p>
+      <hr />
+      <h2>Phase 3 — Multimodal (lean-native)</h2>
+      <ul>
+        <li>
+          <strong><code>transcribe(path)</code></strong> — safe. Speech-to-text
+          via <code>mlx-whisper</code> (the one new
+        </li>
+      </ul>
+      <p>darwin-only dependency this work adds).</p>
+      <ul>
+        <li>
+          <strong><code>describe_image(path, prompt?)</code></strong> — safe.
+          Vision description via
+        </li>
+      </ul>
+      <p>
+        <code>mlx-vlm</code>, which is <strong>already shipped</strong> in
+        requirements.
+      </p>
+      <ul>
+        <li>
+          <strong><code>ocr_image(path)</code></strong> — safe. Text extraction
+          via the macOS Vision framework
+        </li>
+      </ul>
+      <p>
+        through a small Swift helper (no new Python dep). If the helper fails,
+        it falls back to <code>describe_image</code>.
+      </p>
+      <hr />
+      <h2>Cross-Cutting Concerns</h2>
+      <h3>Security</h3>
+      <p>
+        All new file / DB / send / delete tools pass through
+        <code>validate_path</code> + <code>log_audit</code> and are registered
+        <code>risky</code>, so they are auto-gated. Two extra defense-in-depth
+        choices: <code>delete_file</code> uses Trash, and
+        <code>mail_compose</code> only drafts.
+      </p>
+      <h3>Testing</h3>
+      <p>
+        Unit tests stub the OS calls and assert argument validation and error
+        paths — no live Calendar, Messages, or model calls in CI. The osascript,
+        audio, and vision live paths are darwin-only and excluded from the CI
+        lane, mirroring how the existing <code>mlx</code> / GPU tests are
+        already handled.
+      </p>
+      <h3>CI Gate</h3>
+      <p>
+        <code>bash .git/hooks/pre-push</code> must exit 0 before any phase is
+        called done, per the project mandate. Each phase is verified green
+        before the next begins.
+      </p>
+      <hr />
+      <h2>Known Design Risk</h2>
+      <p>
+        <code>ocr_image</code> relies on a tiny compiled Swift snippet against
+        the Vision framework. If that proves fiddly on this machine, the
+        fallback is routing OCR through <code>mlx-vlm</code> (the same model as
+        <code>describe_image</code>). Vision-native is attempted first because
+        it is faster and lighter.
+      </p>
     </div>
   </body>
 </html>
