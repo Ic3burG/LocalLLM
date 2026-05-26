@@ -701,6 +701,19 @@ async def _notify(title: str, message: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _say(text: str) -> str:
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(["say", text], check=True, capture_output=True),
+        )
+        return "OK: spoken"
+    except Exception as e:
+        logger.error("say failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _system_info() -> str:
     try:
         import psutil
@@ -989,6 +1002,7 @@ register_tool(
     "http_request", "risky", "Make an HTTP request (GET/POST/PUT/DELETE)", _http_request
 )
 register_tool("notify", "safe", "Send a macOS system notification", _notify)
+register_tool("say", "safe", "Speak text aloud via macOS say", _say)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1049,6 +1063,7 @@ TOOLS AVAILABLE:
   write_excel(path, spec)                       — create an Excel file from a JSON spec dict (sheets, cells, merges, charts)
   http_request(method, url, headers, body)       — make an HTTP request; headers is JSON string
   notify(title, message)                         — send a macOS system notification
+  say(text)                                      — speak text aloud through the speakers
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files

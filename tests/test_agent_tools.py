@@ -3,7 +3,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agent_utils import _generate_image, _google_search, _recall, _web_fetch
+from agent_utils import (
+    _generate_image,
+    _google_search,
+    _recall,
+    _say,
+    _web_fetch,
+)
 
 
 @pytest.mark.asyncio
@@ -142,6 +148,14 @@ async def test_generate_image_tool_returns_image_marker():
     assert parsed["image_b64"] == "iVBORw0KGgo="
     assert parsed["width"] == 512
     assert parsed["prompt"] == "a sunset"
+
+
+@pytest.mark.asyncio
+async def test_say_invokes_say_command():
+    with patch("subprocess.run") as mock_run:
+        out = await _say("hello there")
+    assert out.startswith("OK")
+    assert mock_run.call_args.args[0] == ["say", "hello there"]
 
 
 @pytest.mark.asyncio
