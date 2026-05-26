@@ -726,7 +726,8 @@ async def _move_file(src: str, dst: str) -> str:
         d = validate_path(dst, must_exist=False)
         import shutil as _shutil
 
-        _shutil.move(str(s), str(d))
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, _shutil.move, str(s), str(d))
         return f"OK: moved {s} -> {d}"
     except Exception as e:
         logger.error("move_file failed: %s", e)
@@ -848,7 +849,11 @@ async def _sqlite_exec(db_path: str, sql: str) -> str:
             try:
                 cur = conn.execute(sql)
                 conn.commit()
-                return f"OK: {cur.rowcount} row(s) affected"
+                return (
+                    "OK: done"
+                    if cur.rowcount == -1
+                    else f"OK: {cur.rowcount} row(s) affected"
+                )
             finally:
                 conn.close()
 

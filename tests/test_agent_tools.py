@@ -241,9 +241,9 @@ async def test_sqlite_exec_writes(tmp_path, monkeypatch):
     import sqlite3
 
     out1 = await _sqlite_exec("t.db", "CREATE TABLE t (x INTEGER)")
-    assert out1.startswith("OK")
+    assert out1 == "OK: done"
     out2 = await _sqlite_exec("t.db", "INSERT INTO t VALUES (1)")
-    assert out2.startswith("OK")
+    assert out2 == "OK: 1 row(s) affected"
     conn = sqlite3.connect(str(tmp_path / "t.db"))
     assert conn.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 1
     conn.close()
