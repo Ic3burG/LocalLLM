@@ -835,6 +835,38 @@ async def _diff_files(path_a: str, path_b: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _read_ics(path: str) -> str:
+    try:
+        p = validate_path(path)
+        events, cur = [], {}
+        for raw in p.read_text().splitlines():
+            line = raw.strip()
+            if line == "BEGIN:VEVENT":
+                cur = {}
+            elif line == "END:VEVENT":
+                events.append(cur)
+            elif ":" in line:
+                key, _, val = line.partition(":")
+                key = key.split(";")[0]
+                if key in ("SUMMARY", "DTSTART", "DTEND", "LOCATION"):
+                    cur[key] = val
+        if not events:
+            return "No events found."
+        out = []
+        for e in events:
+            line = (
+                f"{e.get('DTSTART', '?')} - {e.get('DTEND', '?')}: "
+                f"{e.get('SUMMARY', '(no title)')}"
+            )
+            if e.get("LOCATION"):
+                line += f" @ {e['LOCATION']}"
+            out.append(line)
+        return "\n".join(out)
+    except Exception as e:
+        logger.error("read_ics failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _json_query(path_or_text: str, expr: str) -> str:
     try:
         try:
@@ -1092,6 +1124,7 @@ register_tool("move_file", "risky", "Move or rename a file", _move_file)
 register_tool("delete_file", "risky", "Move a file to the Trash", _delete_file)
 register_tool("read_csv", "safe", "Read a CSV file as a table", _read_csv)
 register_tool("json_query", "safe", "Query JSON with a dotted path", _json_query)
+register_tool("read_ics", "safe", "Parse events from an .ics file", _read_ics)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1158,6 +1191,7 @@ TOOLS AVAILABLE:
   delete_file(path)                              — move a file to the Trash (recoverable)
   read_csv(path)                                 — read a CSV file as a tab-separated table
   json_query(path_or_text, expr)                 — extract a value from JSON, e.g. "users[0].name"
+  read_ics(path)                                 — list events from a local .ics calendar file
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files

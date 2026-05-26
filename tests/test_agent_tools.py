@@ -10,6 +10,7 @@ from agent_utils import (
     _json_query,
     _move_file,
     _read_csv,
+    _read_ics,
     _recall,
     _say,
     _screenshot,
@@ -130,6 +131,17 @@ async def test_recall_http_error():
     with patch("requests.post", return_value=mock_resp):
         out = await _recall("boom")
     assert out.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_read_ics(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "c.ics").write_text(
+        "BEGIN:VEVENT\nSUMMARY:Standup\nDTSTART:20260601T090000\n"
+        "DTEND:20260601T093000\nEND:VEVENT\n"
+    )
+    out = await _read_ics("c.ics")
+    assert "Standup" in out
 
 
 @pytest.mark.asyncio
