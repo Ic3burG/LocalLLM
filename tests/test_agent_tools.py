@@ -4,6 +4,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent_utils import (
+    _calendar_create,
+    _calendar_list,
     _delete_file,
     _generate_image,
     _google_search,
@@ -247,3 +249,21 @@ async def test_sqlite_exec_writes(tmp_path, monkeypatch):
     conn = sqlite3.connect(str(tmp_path / "t.db"))
     assert conn.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 1
     conn.close()
+
+
+@pytest.mark.asyncio
+async def test_calendar_list_runs_osascript():
+    mock_res = MagicMock(stdout="Standup - date\n")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _calendar_list(3)
+    assert "Standup" in out
+    assert mock_run.call_args.args[0][0] == "osascript"
+
+
+@pytest.mark.asyncio
+async def test_calendar_create_builds_event():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _calendar_create("Lunch", "6/1/2026 12:00:00")
+    assert out.startswith("OK")
+    assert "make new event" in mock_run.call_args.args[0][2]

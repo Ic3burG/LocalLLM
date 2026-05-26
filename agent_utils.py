@@ -967,6 +967,66 @@ async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) ->
         return f"ERROR: {e}"
 
 
+async def _osascript(script: str) -> str:
+    loop = asyncio.get_running_loop()
+
+    def _run():
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return r.stdout.strip()
+
+    return await loop.run_in_executor(None, _run)
+
+
+async def _calendar_list(days: int = 7) -> str:
+    try:
+        script = f"""
+        set output to ""
+        set startD to current date
+        set endD to startD + ({int(days)} * days)
+        tell application "Calendar"
+            repeat with c in calendars
+                repeat with e in (every event of c whose start date is greater than or equal to startD and start date is less than or equal to endD)
+                    set output to output & (summary of e) & " - " & (start date of e as string) & linefeed
+                end repeat
+            end repeat
+        end tell
+        return output
+        """
+        out = await _osascript(script)
+        return out or "No upcoming events."
+    except Exception as e:
+        logger.error("calendar_list failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _calendar_create(
+    title: str, start: str, end: str = "", notes: str = ""
+) -> str:
+    log_audit(f"CALENDAR_CREATE: {title} @ {start}")
+    try:
+        props = [f'summary:"{title}"', f'start date:(date "{start}")']
+        props.append(f'end date:(date "{end or start}")')
+        if notes:
+            props.append(f'description:"{notes}"')
+        script = f"""
+        tell application "Calendar"
+            tell calendar 1
+                make new event with properties {{{", ".join(props)}}}
+            end tell
+        end tell
+        """
+        await _osascript(script)
+        return f"OK: created event '{title}'"
+    except Exception as e:
+        logger.error("calendar_create failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _recall(query: str) -> str:
     try:
         import requests as _requests
@@ -1181,6 +1241,8 @@ register_tool("aws_run", "risky", "Run an AWS CLI command (aws)", _aws_run)
 register_tool(
     "hf_run", "risky", "Run a Hugging Face CLI command (huggingface-cli)", _hf_run
 )
+register_tool("calendar_list", "safe", "List upcoming Calendar events", _calendar_list)
+register_tool("calendar_create", "risky", "Create a Calendar event", _calendar_create)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here
 # because they depend on the scheduler in agent.py.
@@ -1239,6 +1301,8 @@ TOOLS AVAILABLE:
   list_scheduled_tasks()                         — list in-app scheduled tasks
   create_scheduled_task(name, schedule, prompt)  — create a scheduled task
   recall(query)                                  — semantic search over your ingested documents
+  calendar_list(days)                            — list upcoming Calendar events (default 7 days)
+  calendar_create(title, start, end, notes)      — create a Calendar event; dates like "6/1/2026 12:00:00"
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.
