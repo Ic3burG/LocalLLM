@@ -701,6 +701,24 @@ async def _notify(title: str, message: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _delete_file(path: str) -> str:
+    log_audit(f"DELETE_FILE: {path}")
+    try:
+        p = validate_path(path)
+        script = f'tell application "Finder" to delete POSIX file "{p}"'
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                ["osascript", "-e", script], check=True, capture_output=True
+            ),
+        )
+        return f"OK: moved to Trash: {p}"
+    except Exception as e:
+        logger.error("delete_file failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _move_file(src: str, dst: str) -> str:
     log_audit(f"MOVE_FILE: {src} -> {dst}")
     try:
@@ -1038,6 +1056,7 @@ register_tool("notify", "safe", "Send a macOS system notification", _notify)
 register_tool("say", "safe", "Speak text aloud via macOS say", _say)
 register_tool("screenshot", "risky", "Capture the screen to a PNG file", _screenshot)
 register_tool("move_file", "risky", "Move or rename a file", _move_file)
+register_tool("delete_file", "risky", "Move a file to the Trash", _delete_file)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1101,6 +1120,7 @@ TOOLS AVAILABLE:
   say(text)                                      — speak text aloud through the speakers
   screenshot(path)                               — capture the screen to a PNG (path optional)
   move_file(src, dst)                            — move or rename a file
+  delete_file(path)                              — move a file to the Trash (recoverable)
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files

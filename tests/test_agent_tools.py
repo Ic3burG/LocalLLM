@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from agent_utils import (
+    _delete_file,
     _generate_image,
     _google_search,
     _move_file,
@@ -127,6 +128,17 @@ async def test_recall_http_error():
     with patch("requests.post", return_value=mock_resp):
         out = await _recall("boom")
     assert out.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_delete_file_uses_finder_trash(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "junk.txt").write_text("x")
+    with patch("subprocess.run") as mock_run:
+        out = await _delete_file("junk.txt")
+    assert out.startswith("OK")
+    script = mock_run.call_args.args[0][2]
+    assert "Finder" in script and "delete" in script
 
 
 @pytest.mark.asyncio
