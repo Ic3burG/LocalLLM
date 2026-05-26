@@ -835,6 +835,29 @@ async def _diff_files(path_a: str, path_b: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _sqlite_exec(db_path: str, sql: str) -> str:
+    log_audit(f"SQLITE_EXEC: {db_path} - {sql[:200]}")
+    try:
+        p = validate_path(db_path, must_exist=False)
+        import sqlite3
+
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            conn = sqlite3.connect(str(p))
+            try:
+                cur = conn.execute(sql)
+                conn.commit()
+                return f"OK: {cur.rowcount} row(s) affected"
+            finally:
+                conn.close()
+
+        return await loop.run_in_executor(None, _run)
+    except Exception as e:
+        logger.error("sqlite_exec failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _read_ics(path: str) -> str:
     try:
         p = validate_path(path)
@@ -1125,6 +1148,9 @@ register_tool("delete_file", "risky", "Move a file to the Trash", _delete_file)
 register_tool("read_csv", "safe", "Read a CSV file as a table", _read_csv)
 register_tool("json_query", "safe", "Query JSON with a dotted path", _json_query)
 register_tool("read_ics", "safe", "Parse events from an .ics file", _read_ics)
+register_tool(
+    "sqlite_exec", "risky", "Run a write statement on a SQLite DB", _sqlite_exec
+)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1192,6 +1218,7 @@ TOOLS AVAILABLE:
   read_csv(path)                                 — read a CSV file as a tab-separated table
   json_query(path_or_text, expr)                 — extract a value from JSON, e.g. "users[0].name"
   read_ics(path)                                 — list events from a local .ics calendar file
+  sqlite_exec(db_path, sql)                      — run INSERT/UPDATE/DELETE/CREATE on a SQLite DB
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files

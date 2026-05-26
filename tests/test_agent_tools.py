@@ -14,6 +14,7 @@ from agent_utils import (
     _recall,
     _say,
     _screenshot,
+    _sqlite_exec,
     _web_fetch,
 )
 
@@ -232,3 +233,17 @@ async def test_generate_image_tool_handles_error():
 
     assert "model_not_found" in result
     assert result.startswith("ERROR:")
+
+
+@pytest.mark.asyncio
+async def test_sqlite_exec_writes(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import sqlite3
+
+    out1 = await _sqlite_exec("t.db", "CREATE TABLE t (x INTEGER)")
+    assert out1.startswith("OK")
+    out2 = await _sqlite_exec("t.db", "INSERT INTO t VALUES (1)")
+    assert out2.startswith("OK")
+    conn = sqlite3.connect(str(tmp_path / "t.db"))
+    assert conn.execute("SELECT COUNT(*) FROM t").fetchone()[0] == 1
+    conn.close()
