@@ -701,6 +701,25 @@ async def _notify(title: str, message: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _screenshot(path: str = "") -> str:
+    log_audit(f"SCREENSHOT: {path}")
+    try:
+        if not path:
+            path = f"screenshot_{datetime.now():%Y%m%d_%H%M%S}.png"
+        p = validate_path(path, must_exist=False)
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                ["screencapture", "-x", str(p)], check=True, capture_output=True
+            ),
+        )
+        return f"OK: saved to {p}"
+    except Exception as e:
+        logger.error("screenshot failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _say(text: str) -> str:
     try:
         loop = asyncio.get_running_loop()
@@ -1003,6 +1022,7 @@ register_tool(
 )
 register_tool("notify", "safe", "Send a macOS system notification", _notify)
 register_tool("say", "safe", "Speak text aloud via macOS say", _say)
+register_tool("screenshot", "risky", "Capture the screen to a PNG file", _screenshot)
 register_tool("system_info", "safe", "Get CPU, RAM, and disk usage", _system_info)
 register_tool(
     "sqlite_query",
@@ -1064,6 +1084,7 @@ TOOLS AVAILABLE:
   http_request(method, url, headers, body)       — make an HTTP request; headers is JSON string
   notify(title, message)                         — send a macOS system notification
   say(text)                                      — speak text aloud through the speakers
+  screenshot(path)                               — capture the screen to a PNG (path optional)
   system_info()                                  — get CPU, RAM, and disk usage
   sqlite_query(db_path, sql)                     — run a SELECT query on a local SQLite DB
   diff_files(path_a, path_b)                     — show a unified diff of two files

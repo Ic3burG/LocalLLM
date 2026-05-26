@@ -8,6 +8,7 @@ from agent_utils import (
     _google_search,
     _recall,
     _say,
+    _screenshot,
     _web_fetch,
 )
 
@@ -125,6 +126,16 @@ async def test_recall_http_error():
     with patch("requests.post", return_value=mock_resp):
         out = await _recall("boom")
     assert out.startswith("ERROR")
+
+
+@pytest.mark.asyncio
+async def test_screenshot_uses_screencapture(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with patch("subprocess.run") as mock_run:
+        out = await _screenshot("shot.png")
+    assert out.startswith("OK")
+    assert mock_run.call_args.args[0][0] == "screencapture"
+    assert mock_run.call_args.args[0][1] == "-x"
 
 
 @pytest.mark.asyncio
