@@ -1295,6 +1295,53 @@ async def _transcribe(path: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _describe_image(
+    path: str, prompt: str = "Describe this image in detail."
+) -> str:
+    try:
+        p = validate_path(path)
+        import mlx_vlm
+
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            model, processor = mlx_vlm.load("mlx-community/llava-1.5-7b-4bit")
+            formatted = mlx_vlm.apply_chat_template(
+                processor, model.config, prompt, num_images=1
+            )
+            result = mlx_vlm.generate(model, processor, formatted, image=str(p))
+            return result.text.strip()
+
+        return await loop.run_in_executor(None, _run)
+    except Exception as e:
+        logger.error("describe_image failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _ocr_image(path: str) -> str:
+    try:
+        p = validate_path(path)
+        helper = Path(__file__).parent / "scripts" / "ocr_vision.swift"
+        loop = asyncio.get_running_loop()
+
+        def _run():
+            r = subprocess.run(
+                ["swift", str(helper), str(p)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return r.stdout.strip()
+
+        text = await loop.run_in_executor(None, _run)
+        return text or "(no text found)"
+    except Exception as e:
+        logger.warning("ocr_image native failed, falling back to VLM: %s", e)
+        return await _describe_image(
+            path, prompt="Transcribe all text visible in this image."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Tool registry
 # ---------------------------------------------------------------------------
@@ -1416,6 +1463,8 @@ register_tool("messages_read", "risky", "Read recent iMessages", _messages_read)
 register_tool("send_message", "risky", "Send an iMessage", _send_message)
 register_tool("mail_compose", "risky", "Draft an email (no auto-send)", _mail_compose)
 register_tool("transcribe", "safe", "Transcribe an audio file to text", _transcribe)
+register_tool("describe_image", "safe", "Describe an image on-device", _describe_image)
+register_tool("ocr_image", "safe", "Extract text from an image (OCR)", _ocr_image)
 
 # Note: create_scheduled_task and list_scheduled_tasks are omitted from here
 # because they depend on the scheduler in agent.py.
@@ -1484,6 +1533,8 @@ TOOLS AVAILABLE:
   send_message(recipient, text)                  — send an iMessage to a phone/email
   mail_compose(to, subject, body)                — draft an email in Mail (you review and send)
   transcribe(path)                               — transcribe an audio file to text (on-device)
+  describe_image(path, prompt)                   — describe/answer questions about an image (on-device)
+  ocr_image(path)                                — extract text from an image via OCR
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.

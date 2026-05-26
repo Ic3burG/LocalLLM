@@ -1,5 +1,5 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -7,6 +7,7 @@ from agent_utils import (
     _calendar_create,
     _calendar_list,
     _delete_file,
+    _describe_image,
     _generate_image,
     _google_search,
     _json_query,
@@ -15,6 +16,7 @@ from agent_utils import (
     _move_file,
     _notes_create,
     _notes_search,
+    _ocr_image,
     _read_csv,
     _read_ics,
     _recall,
@@ -367,3 +369,38 @@ async def test_transcribe(tmp_path, monkeypatch):
     with patch.dict("sys.modules", {"mlx_whisper": fake}):
         out = await _transcribe("a.wav")
     assert out == "hello world"
+
+
+@pytest.mark.asyncio
+async def test_describe_image(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "p.png").write_bytes(b"\x89PNG")
+    fake = MagicMock()
+    fake.load.return_value = (MagicMock(), MagicMock())
+    fake.generate.return_value = MagicMock(text="a cat on a mat")
+    with patch.dict("sys.modules", {"mlx_vlm": fake}):
+        out = await _describe_image("p.png")
+    assert "cat" in out
+
+
+@pytest.mark.asyncio
+async def test_ocr_image_success(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "p.png").write_bytes(b"\x89PNG")
+    mock_res = MagicMock(stdout="INVOICE 42", returncode=0)
+    with patch("subprocess.run", return_value=mock_res):
+        out = await _ocr_image("p.png")
+    assert "INVOICE 42" in out
+
+
+@pytest.mark.asyncio
+async def test_ocr_image_falls_back(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "p.png").write_bytes(b"\x89PNG")
+    with patch("subprocess.run", side_effect=Exception("swift missing")):
+        with patch(
+            "agent_utils._describe_image",
+            new=AsyncMock(return_value="fallback text"),
+        ):
+            out = await _ocr_image("p.png")
+    assert "fallback" in out
