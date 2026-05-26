@@ -969,7 +969,13 @@ async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) ->
 
 def _as_str(value: str) -> str:
     """Escape a value for safe embedding in an AppleScript string literal."""
-    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
 
 async def _osascript(script: str) -> str:

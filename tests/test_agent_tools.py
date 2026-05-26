@@ -361,6 +361,15 @@ async def test_notes_search_escapes_quotes():
 
 
 @pytest.mark.asyncio
+async def test_send_message_escapes_newline():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        await _send_message("+15551234567", "line1\nline2")
+    script = mock_run.call_args.args[0][2]
+    assert "line1\\nline2" in script
+
+
+@pytest.mark.asyncio
 async def test_transcribe(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "a.wav").write_bytes(b"RIFF")
