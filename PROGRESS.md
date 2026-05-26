@@ -1278,7 +1278,65 @@ made images persistent and turned the gallery into a real workspace.
 
 ---
 
-## 📈 Current Status (as of May 21, 2026)
+## 🧰 Agent Tool Registry Expansion — May 26, 2026
+
+Added **21 new agent tools** (registry grew 37 → 58), built in three phases via
+subagent-driven development with per-phase spec + code-quality review gates.
+Every file-touching tool inherits the existing `validate_path` project-root
+sandbox; every write/send/delete tool is registered `risky` and so auto-fires
+the SSE confirmation gate.
+
+### Phase 1 — quick wins
+
+- `recall(query)` — semantic search over ingested documents, backed by a new
+  `POST /v1/rag/search` bridge endpoint (offloads embedding to a thread, reads
+  the in-memory `doc_store`).
+- `say`, `screenshot`, `move_file`, `delete_file` (→ Trash, recoverable),
+  `read_csv`, `json_query`, `read_ics`, `sqlite_exec` (write statements;
+  complements the existing read-only `sqlite_query`).
+
+### Phase 2 — macOS personal automation (all via a shared `_osascript` helper)
+
+- `calendar_list` / `calendar_create`, `reminders_list` / `reminders_create`,
+  `notes_search` / `notes_create`, `messages_read` (reads `chat.db` read-only)
+  / `send_message`, and `mail_compose` (draft-only — never auto-sends).
+- Hardening: all user strings interpolated into AppleScript are escaped via
+  `_as_str` (closes an injection path that bypassed the risky gate on the
+  `safe` list/search tools); `_osascript` surfaces `osascript` stderr on
+  failure instead of swallowing it.
+
+### Phase 3 — on-device multimodal (lean-native)
+
+- `transcribe(path)` — speech-to-text via `mlx-whisper` (new darwin-only dep).
+- `describe_image(path, prompt)` — vision via the already-shipped `mlx-vlm`.
+- `ocr_image(path)` — macOS Vision framework through `scripts/ocr_vision.swift`
+  (no new Python dep); falls back to `describe_image` if the Swift helper
+  exits non-zero.
+
+### Testing
+
+- 26 new unit tests in `tests/test_agent_tools.py`; suite 160 → 186 passing.
+  ML packages (`mlx_whisper`/`mlx_vlm`) and all `osascript`/`subprocess` calls
+  are mocked, so the new tools run in CI without macOS hardware or models.
+
+### Next steps / where we left off
+
+- **Manual smoke test on the Mac (not yet done):** restart the bridge
+  (`launchctl kickstart -k gui/$(id -u)/com.gemini.litert`) so it serves
+  `/v1/rag/search` and the new tools, then exercise a few through the agent UI —
+  `say`, `screenshot`, `calendar_list`, and `recall` after ingesting a doc —
+  and confirm the risky tools surface the confirm prompt. Calendar / Reminders /
+  Notes / Messages / Mail need their macOS Automation permissions granted on
+  first use.
+- Spec/plan live at
+  `docs/superpowers/specs/2026-05-26-agent-tools-expansion-design.md` and
+  `docs/superpowers/plans/2026-05-26-agent-tools-expansion.md`.
+- Possible follow-up flagged in review: cache the `mlx-vlm` model between
+  `describe_image` / `ocr_image` calls (currently reloaded per call).
+
+---
+
+## 📈 Current Status (as of May 26, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
   Both managed by repaired launchd plists; can be reinstalled via
@@ -1286,7 +1344,9 @@ made images persistent and turned the gallery into a real workspace.
 - **Models:** Gemma 4 E4B, Gemma 4 E26B, Gemma 4 31B (all vision-capable via
   mlx_vlm); Phi-4 Mini, DeepSeek V4 Mini (text-only via mlx_lm);
   FLUX.1-schnell (image generation).
-- **Tools:** 37 registered tools.
+- **Tools:** 58 registered tools (incl. semantic `recall`, macOS Calendar /
+  Reminders / Notes / Messages / Mail automation, and on-device `transcribe` /
+  `describe_image` / `ocr_image`).
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
 - **UI:** Glass/gradient aesthetic; persistent flex sidebar (rail | sidebar |
   main, no overlay); kebab "⋯" on every chat row for Star / Rename / Delete;
@@ -1299,6 +1359,6 @@ made images persistent and turned the gallery into a real workspace.
   preview, click to open URL or RAG chunk modal; `📎 N sources` fallback footer).
 - **No known broken features.** (The previously open New Chat bug is fixed
   via the architectural pivot above.)
-- **Integrity:** 160 tests passing; local **Git Hooks** (self-healing
+- **Integrity:** 186 tests passing; local **Git Hooks** (self-healing
   pre-commit + CI-mirror pre-push) enforced; `CLAUDE.md` mandate auto-loaded
   every session; CI green on every push to `main`.
