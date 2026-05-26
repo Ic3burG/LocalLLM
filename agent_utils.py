@@ -967,17 +967,25 @@ async def _generate_image(prompt: str, size: str = "512x512", steps: int = 4) ->
         return f"ERROR: {e}"
 
 
+def _as_str(value: str) -> str:
+    """Escape a value for safe embedding in an AppleScript string literal."""
+    return str(value).replace("\\", "\\\\").replace('"', '\\"')
+
+
 async def _osascript(script: str) -> str:
     loop = asyncio.get_running_loop()
 
     def _run():
-        r = subprocess.run(
-            ["osascript", "-e", script],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        return r.stdout.strip()
+        try:
+            r = subprocess.run(
+                ["osascript", "-e", script],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            return r.stdout.strip()
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(e.stderr.strip() or str(e)) from e
 
     return await loop.run_in_executor(None, _run)
 
@@ -1009,10 +1017,10 @@ async def _calendar_create(
 ) -> str:
     log_audit(f"CALENDAR_CREATE: {title} @ {start}")
     try:
-        props = [f'summary:"{title}"', f'start date:(date "{start}")']
-        props.append(f'end date:(date "{end or start}")')
+        props = [f'summary:"{_as_str(title)}"', f'start date:(date "{_as_str(start)}")']
+        props.append(f'end date:(date "{_as_str(end or start)}")')
         if notes:
-            props.append(f'description:"{notes}"')
+            props.append(f'description:"{_as_str(notes)}"')
         script = f"""
         tell application "Calendar"
             tell calendar 1
@@ -1029,7 +1037,7 @@ async def _calendar_create(
 
 async def _reminders_list(list_name: str = "") -> str:
     try:
-        target = f'list "{list_name}"' if list_name else "default list"
+        target = f'list "{_as_str(list_name)}"' if list_name else "default list"
         script = f"""
         tell application "Reminders"
             set output to ""
@@ -1049,9 +1057,9 @@ async def _reminders_list(list_name: str = "") -> str:
 async def _reminders_create(text: str, due: str = "") -> str:
     log_audit(f"REMINDERS_CREATE: {text}")
     try:
-        props = [f'name:"{text}"']
+        props = [f'name:"{_as_str(text)}"']
         if due:
-            props.append(f'due date:(date "{due}")')
+            props.append(f'due date:(date "{_as_str(due)}")')
         script = f"""
         tell application "Reminders"
             make new reminder with properties {{{", ".join(props)}}}
@@ -1069,7 +1077,7 @@ async def _notes_search(query: str) -> str:
         script = f"""
         tell application "Notes"
             set output to ""
-            repeat with n in (notes whose name contains "{query}")
+            repeat with n in (notes whose name contains "{_as_str(query)}")
                 set output to output & (name of n) & linefeed & (plaintext of n) & linefeed & "---" & linefeed
             end repeat
             return output
@@ -1085,7 +1093,9 @@ async def _notes_search(query: str) -> str:
 async def _notes_create(title: str, body: str) -> str:
     log_audit(f"NOTES_CREATE: {title}")
     try:
-        html_body = f"<div><b>{title}</b></div><div>{body}</div>"
+        t = _as_str(title)
+        b = _as_str(body)
+        html_body = f"<div><b>{t}</b></div><div>{b}</div>"
         script = f"""
         tell application "Notes"
             make new note at folder "Notes" with properties {{body:"{html_body}"}}
@@ -1134,8 +1144,8 @@ async def _send_message(recipient: str, text: str) -> str:
         script = f"""
         tell application "Messages"
             set targetService to 1st service whose service type = iMessage
-            set targetBuddy to buddy "{recipient}" of targetService
-            send "{text}" to targetBuddy
+            set targetBuddy to buddy "{_as_str(recipient)}" of targetService
+            send "{_as_str(text)}" to targetBuddy
         end tell
         """
         await _osascript(script)
@@ -1150,9 +1160,9 @@ async def _mail_compose(to: str, subject: str, body: str) -> str:
     try:
         script = f"""
         tell application "Mail"
-            set msg to make new outgoing message with properties {{subject:"{subject}", content:"{body}", visible:true}}
+            set msg to make new outgoing message with properties {{subject:"{_as_str(subject)}", content:"{_as_str(body)}", visible:true}}
             tell msg
-                make new to recipient at end of to recipients with properties {{address:"{to}"}}
+                make new to recipient at end of to recipients with properties {{address:"{_as_str(to)}"}}
             end tell
         end tell
         """

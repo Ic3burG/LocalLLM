@@ -335,3 +335,23 @@ async def test_mail_compose_creates_draft():
     script = mock_run.call_args.args[0][2]
     assert "make new outgoing message" in script
     assert " send " not in script  # draft only, never auto-send
+
+
+@pytest.mark.asyncio
+async def test_osascript_error_surfaces_stderr():
+    import subprocess as _sp
+
+    err = _sp.CalledProcessError(1, "osascript", stderr="execution error: boom")
+    with patch("subprocess.run", side_effect=err):
+        out = await _calendar_list(1)
+    assert out.startswith("ERROR")
+    assert "boom" in out
+
+
+@pytest.mark.asyncio
+async def test_notes_search_escapes_quotes():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        await _notes_search('a"b')
+    script = mock_run.call_args.args[0][2]
+    assert 'a\\"b' in script
