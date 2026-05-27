@@ -57,3 +57,14 @@ def test_write_user_memory_handles_empty(tmp_path):
     target = tmp_path / "USER_MEMORY.md"
     contents = _run(str(target), "")
     assert contents == "\n"
+
+
+def test_write_user_memory_redacts_secrets(tmp_path):
+    target = tmp_path / "USER_MEMORY.md"
+    contents = _run(
+        str(target),
+        "# User Memory\n\n- verification code is 482913\n- day rate is $700",
+    )
+    assert "482913" not in contents  # secret redacted
+    assert "[REDACTED]" in contents
+    assert "$700" in contents  # benign context preserved

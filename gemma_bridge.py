@@ -37,6 +37,7 @@ from inference_engine import (
     run_inference,
 )
 from logging_config import setup_logging, task_id_var
+from secrets_filter import redact_secrets
 
 setup_logging()
 logger = logging.getLogger("gemma_bridge")
@@ -157,7 +158,10 @@ def write_user_memory(content: str):
     prettier --check stays green; otherwise the file ends without a newline
     and CI fails on every run that observes it.
     """
-    normalized = (content or "").rstrip("\n") + "\n"
+    # Guard: strip any credentials/secrets the learner may have captured before
+    # they are persisted to a file that can be synced or committed.
+    safe = redact_secrets(content or "")
+    normalized = safe.rstrip("\n") + "\n"
     with open(MEMORY_FILE, "w") as f:
         f.write(normalized)
 
@@ -227,7 +231,8 @@ INSTRUCTIONS:
 2. If new information exists, integrate it into the appropriate section of the Memory File.
 3. Keep the same Markdown format. Use only H1, H3, and list items.
 4. If no meaningful new info is found, output the EXACT same Memory File.
-5. Output ONLY the updated Markdown content. Do NOT include any reasoning, thoughts, or preamble.
+5. NEVER record secrets or credentials — passwords, API keys/tokens, private keys, one-time/verification codes, SSNs, or full card numbers. Omit them entirely.
+6. Output ONLY the updated Markdown content. Do NOT include any reasoning, thoughts, or preamble.
 """
 
         raw_content = await run_inference(
