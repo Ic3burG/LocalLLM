@@ -287,7 +287,7 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
                 )
                 telemetry.record_complete(loop_id, "success")
                 return clean_response
-            kind, name_or_msg, args = parsed
+            kind, name_or_msg, args, kwargs = parsed
             if kind == "done":
                 telemetry.record_complete(loop_id, "success")
                 return name_or_msg
@@ -304,7 +304,7 @@ async def _react_loop_internal(messages: list, model_id: str = "gemma4-e4b") -> 
 
             telemetry.record_tool_use(name_or_msg)
             try:
-                result = await tool.fn(*args)
+                result = await tool.fn(*args, **kwargs)
             except Exception as e:
                 logger.error(
                     "tool execution failed",
@@ -548,7 +548,7 @@ async def react_loop_sse(
                 await trigger_memory_update(last_user_msg, clean_response)
                 return
 
-            kind, name_or_msg, args = parsed
+            kind, name_or_msg, args, kwargs = parsed
             if kind == "done":
                 logger.info(
                     "DONE marker found, sending done event",
@@ -600,7 +600,7 @@ async def react_loop_sse(
             telemetry.record_tool_use(name_or_msg)
             t0 = time.monotonic()
             try:
-                result = await tool.fn(*args)
+                result = await tool.fn(*args, **kwargs)
             except Exception as e:
                 logger.error(
                     "tool execution failed",

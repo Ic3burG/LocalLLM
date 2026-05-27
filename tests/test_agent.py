@@ -228,21 +228,21 @@ def test_parse_tool_call_single_arg():
     import agent
 
     result = agent.parse_model_output('TOOL: read_file("~/notes.md")')
-    assert result == ("tool", "read_file", ["~/notes.md"])
+    assert result == ("tool", "read_file", ["~/notes.md"], {})
 
 
 def test_parse_tool_call_two_args():
     import agent
 
     result = agent.parse_model_output('TOOL: write_file("~/out.txt", "hello world")')
-    assert result == ("tool", "write_file", ["~/out.txt", "hello world"])
+    assert result == ("tool", "write_file", ["~/out.txt", "hello world"], {})
 
 
 def test_parse_done():
     import agent
 
     result = agent.parse_model_output("DONE: Summarised 5 files")
-    assert result == ("done", "Summarised 5 files", [])
+    assert result == ("done", "Summarised 5 files", [], {})
 
 
 def test_parse_no_match_returns_none():
@@ -256,21 +256,44 @@ def test_parse_tool_no_args():
     import agent
 
     result = agent.parse_model_output("TOOL: list_crons()")
-    assert result == ("tool", "list_crons", [])
+    assert result == ("tool", "list_crons", [], {})
 
 
 def test_parse_native_gemma_format_single_arg():
     import agent
 
     result = agent.parse_model_output('<|tool_call>call:shell("ls ~")<tool_call|>')
-    assert result == ("tool", "shell", ["ls ~"])
+    assert result == ("tool", "shell", ["ls ~"], {})
 
 
 def test_parse_native_gemma_format_no_args():
     import agent
 
     result = agent.parse_model_output("<|tool_call>call:list_crons()<tool_call|>")
-    assert result == ("tool", "list_crons", [])
+    assert result == ("tool", "list_crons", [], {})
+
+
+def test_parse_tool_call_keyword_arg():
+    import agent
+
+    result = agent.parse_model_output("TOOL: calendar_list(days=1)")
+    assert result == ("tool", "calendar_list", [], {"days": 1})
+
+
+def test_parse_tool_call_mixed_args_and_kwargs():
+    import agent
+
+    result = agent.parse_model_output('TOOL: notes_create(title="A", body="B")')
+    assert result == ("tool", "notes_create", [], {"title": "A", "body": "B"})
+
+
+def test_parse_native_keyword_arg():
+    import agent
+
+    result = agent.parse_model_output(
+        "<|tool_call>call:messages_read(limit=20)<tool_call|>"
+    )
+    assert result == ("tool", "messages_read", [], {"limit": 20})
 
 
 # ── ReAct loop tests ──────────────────────────────────────

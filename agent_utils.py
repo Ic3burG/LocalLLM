@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import io
 import json
@@ -1141,6 +1142,13 @@ async def _messages_read(limit: int = 20) -> str:
         return "\n".join(f"{sender}: {text}" for sender, text in rows)
     except Exception as e:
         logger.error("messages_read failed: %s", e)
+        if "unable to open database" in str(e).lower():
+            return (
+                "ERROR: cannot open the Messages database. macOS blocks it "
+                "until the bridge has Full Disk Access — grant it under System "
+                "Settings → Privacy & Security → Full Disk Access (add the "
+                "bridge's Python/launchd process), then restart the bridge."
+            )
         return f"ERROR: {e}"
 
 
@@ -1591,8 +1599,58 @@ def strip_thinking_blocks(text: str) -> str:
     return text.strip()
 
 
-def parse_model_output(text: str) -> tuple[str, str, list] | None:
-    """Return (type, tool_or_message, args) or None if neither TOOL nor DONE found."""
+def _arg_literal(node: ast.AST) -> Any:
+    """Best-effort convert an AST arg node to a Python value.
+
+    Falls back to the raw source (or bare name) for non-literal values like an
+    unquoted word, e.g. send_message(recipient=mom) -> "mom".
+    """
+    try:
+        return ast.literal_eval(node)
+    except (ValueError, SyntaxError):
+        if isinstance(node, ast.Name):
+            return node.id
+        try:
+            return ast.unparse(node)
+        except Exception:
+            return ""
+
+
+def _parse_tool_args(raw_args: str) -> tuple[list, dict]:
+    """Parse a tool-call argument string into (positional, keyword) arguments.
+
+    Handles the model's natural call styles: quoted positional args, numeric
+    literals, and keyword=value pairs (e.g. calendar_list(days=1),
+    notes_create(title="A", body="B")). Parsing the args as a Python call
+    expression (via ast, never executed) also correctly handles quotes
+    containing commas, single quotes, etc.
+    """
+    raw_args = raw_args.strip()
+    if not raw_args:
+        return [], {}
+    try:
+        call = ast.parse(f"_f({raw_args})", mode="eval").body
+        if isinstance(call, ast.Call):
+            args = [_arg_literal(a) for a in call.args]
+            kwargs = {kw.arg: _arg_literal(kw.value) for kw in call.keywords if kw.arg}
+            return args, kwargs
+    except (SyntaxError, ValueError):
+        pass
+    # Fallback for non-parseable args: comma-split, detect key=value.
+    args, kwargs = [], {}
+    for part in raw_args.split(", "):
+        part = part.strip()
+        m = re.match(r"^(\w+)=(.*)$", part)
+        if m:
+            kwargs[m.group(1)] = m.group(2).strip().strip("\"'")
+        else:
+            args.append(part.strip("\"'"))
+    return args, kwargs
+
+
+def parse_model_output(text: str) -> tuple[str, str, list, dict] | None:
+    """Return (type, tool_or_message, args, kwargs) or None if neither TOOL nor
+    DONE found."""
     # Strip all thinking block formats before parsing so that tool/done references
     # inside thinking blocks don't trigger real tool calls or false done signals.
     # The original text is preserved in the message history; only parsing uses clean_text.
@@ -1609,14 +1667,8 @@ def parse_model_output(text: str) -> tuple[str, str, list] | None:
     active_match = native_match or tool_match
     if active_match:
         tool_name = active_match.group(1)
-        raw_args = active_match.group(2).strip()
-        try:
-            args = json.loads(f"[{raw_args}]") if raw_args else []
-        except json.JSONDecodeError:
-            # Heuristic: try splitting on comma+space for multi-arg tools
-            parts = [p.strip().strip("\"'") for p in raw_args.split(", ")]
-            args = parts if len(parts) > 1 else [raw_args]
-        return ("tool", tool_name, args)
+        args, kwargs = _parse_tool_args(active_match.group(2))
+        return ("tool", tool_name, args, kwargs)
     if done_match:
-        return ("done", done_match.group(1).strip(), [])
+        return ("done", done_match.group(1).strip(), [], {})
     return None

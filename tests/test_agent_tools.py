@@ -370,6 +370,17 @@ async def test_send_message_escapes_newline():
 
 
 @pytest.mark.asyncio
+async def test_messages_read_full_disk_access_hint():
+    with patch(
+        "agent_utils._messages_db_rows",
+        side_effect=Exception("unable to open database file"),
+    ):
+        out = await _messages_read(5)
+    assert out.startswith("ERROR")
+    assert "Full Disk Access" in out
+
+
+@pytest.mark.asyncio
 async def test_transcribe(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "a.wav").write_bytes(b"RIFF")
