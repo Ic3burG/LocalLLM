@@ -7,6 +7,21 @@ cd "$REPO_ROOT"
 
 VENV_PYTHON=".venv/bin/python"
 
+# On Apple Silicon, the universal .venv python inherits its CPU arch from the
+# parent process. If git itself is an x86_64 binary (e.g. an x86 Homebrew git),
+# it launches python as x86_64, which then can't load arm64-only wheels such as
+# numpy and the whole suite fails to collect. Force arm64 so the hook passes
+# regardless of which git invoked it. Guarded so non-macOS / Intel CI is
+# unaffected (the array expands to nothing there).
+# Detect Apple Silicon *hardware* via sysctl, not `uname -m`: under Rosetta the
+# latter reports x86_64 (the translated arch), which is exactly the failing
+# case we need to catch. hw.optional.arm64 stays 1 even when queried by an
+# x86_64 process.
+ARCH_PREFIX=()
+if [ "$(uname -s)" = "Darwin" ] && [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ]; then
+  ARCH_PREFIX=(arch -arm64)
+fi
+
 echo "▶ ruff check..."
 ruff check .
 
@@ -17,6 +32,6 @@ echo "▶ prettier --check..."
 npx prettier --check .
 
 echo "▶ pytest..."
-"$VENV_PYTHON" -m pytest -q -m "not needs_gpu" --ignore=tests/contracts/test_mlx_contract.py
+"${ARCH_PREFIX[@]}" "$VENV_PYTHON" -m pytest -q -m "not needs_gpu" --ignore=tests/contracts/test_mlx_contract.py
 
 echo "✅ All checks passed."
