@@ -6,6 +6,7 @@ import pytest
 from agent_utils import (
     _calendar_create,
     _calendar_list,
+    _contacts_create,
     _delete_file,
     _describe_image,
     _generate_image,
@@ -24,6 +25,7 @@ from agent_utils import (
     _reminders_list,
     _say,
     _screenshot,
+    _search_contacts,
     _send_message,
     _sqlite_exec,
     _transcribe,
@@ -378,6 +380,35 @@ async def test_messages_read_full_disk_access_hint():
         out = await _messages_read(5)
     assert out.startswith("ERROR")
     assert "Full Disk Access" in out
+
+
+@pytest.mark.asyncio
+async def test_search_contacts_runs_osascript():
+    mock_res = MagicMock(stdout="Jane Doe | email: jane@x.com | phone: 555-1212\n")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _search_contacts("Jane")
+    assert "Jane Doe" in out
+    assert mock_run.call_args.args[0][0] == "osascript"
+
+
+@pytest.mark.asyncio
+async def test_search_contacts_escapes_quotes():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        await _search_contacts('a"b')
+    script = mock_run.call_args.args[0][2]
+    assert 'a\\"b' in script
+
+
+@pytest.mark.asyncio
+async def test_contacts_create_builds_person():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        out = await _contacts_create("Jane Doe", phone="555-1212", email="jane@x.com")
+    assert out.startswith("OK")
+    script = mock_run.call_args.args[0][2]
+    assert "make new person" in script
+    assert "jane@x.com" in script
 
 
 @pytest.mark.asyncio

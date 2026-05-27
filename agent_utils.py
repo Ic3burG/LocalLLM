@@ -1187,6 +1187,59 @@ async def _mail_compose(to: str, subject: str, body: str) -> str:
         return f"ERROR: {e}"
 
 
+async def _search_contacts(query: str) -> str:
+    try:
+        script = f"""
+        tell application "Contacts"
+            set output to ""
+            repeat with p in (people whose name contains "{_as_str(query)}")
+                set rec to name of p
+                repeat with e in emails of p
+                    set rec to rec & " | email: " & (value of e)
+                end repeat
+                repeat with ph in phones of p
+                    set rec to rec & " | phone: " & (value of ph)
+                end repeat
+                set output to output & rec & linefeed
+            end repeat
+            return output
+        end tell
+        """
+        out = await _osascript(script)
+        return out or "No matching contacts."
+    except Exception as e:
+        logger.error("search_contacts failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _contacts_create(name: str, phone: str = "", email: str = "") -> str:
+    log_audit(f"CONTACTS_CREATE: {name}")
+    try:
+        first, _, last = name.partition(" ")
+        lines = [
+            'tell application "Contacts"',
+            f'set p to make new person with properties {{first name:"{_as_str(first)}", '
+            f'last name:"{_as_str(last)}"}}',
+        ]
+        if email:
+            lines.append(
+                "make new email at end of emails of p with properties "
+                f'{{value:"{_as_str(email)}"}}'
+            )
+        if phone:
+            lines.append(
+                "make new phone at end of phones of p with properties "
+                f'{{value:"{_as_str(phone)}"}}'
+            )
+        lines.append("save")
+        lines.append("end tell")
+        await _osascript("\n".join(lines))
+        return f"OK: created contact '{name}'"
+    except Exception as e:
+        logger.error("contacts_create failed: %s", e)
+        return f"ERROR: {e}"
+
+
 async def _recall(query: str) -> str:
     try:
         import requests as _requests
@@ -1479,6 +1532,8 @@ register_tool("notes_create", "risky", "Create an Apple Note", _notes_create)
 register_tool("messages_read", "risky", "Read recent iMessages", _messages_read)
 register_tool("send_message", "risky", "Send an iMessage", _send_message)
 register_tool("mail_compose", "risky", "Draft an email (no auto-send)", _mail_compose)
+register_tool("search_contacts", "safe", "Search Contacts by name", _search_contacts)
+register_tool("contacts_create", "risky", "Create a contact", _contacts_create)
 register_tool("transcribe", "safe", "Transcribe an audio file to text", _transcribe)
 register_tool("describe_image", "safe", "Describe an image on-device", _describe_image)
 register_tool("ocr_image", "safe", "Extract text from an image (OCR)", _ocr_image)
@@ -1549,6 +1604,8 @@ TOOLS AVAILABLE:
   messages_read(limit)                           — read your most recent iMessages
   send_message(recipient, text)                  — send an iMessage to a phone/email
   mail_compose(to, subject, body)                — draft an email in Mail (you review and send)
+  search_contacts(query)                         — find people in Contacts (name, phone, email)
+  contacts_create(name, phone, email)            — create a new contact
   transcribe(path)                               — transcribe an audio file to text (on-device)
   describe_image(path, prompt)                   — describe/answer questions about an image (on-device)
   ocr_image(path)                                — extract text from an image via OCR

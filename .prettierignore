@@ -5,3 +5,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 mlx_models/
+
+# Runtime, model-written memory file — not subject to formatting enforcement
+# (the learner subagent rewrites it at runtime; see privacy note re: tracking).
+USER_MEMORY.md
