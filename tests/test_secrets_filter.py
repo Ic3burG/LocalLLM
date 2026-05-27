@@ -24,6 +24,20 @@ def test_redacts_code_is_phrase():
     assert "90210" not in out
 
 
+def test_redacts_code_keyword_after_digits():
+    # Real-world shape captured by the learner: digits then "(Verification code)".
+    out = redact_secrets("    - 28849 (Verification code)")
+    assert "28849" not in out
+    assert "[REDACTED]" in out
+    assert "Verification code" in out  # label kept
+
+
+def test_keeps_zip_label_after_digits():
+    # "90210 zip code" must NOT be treated as a verification code.
+    text = "They moved to 90210 zip code last year."
+    assert redact_secrets(text) == text
+
+
 def test_redacts_openai_style_key():
     out = redact_secrets("key sk-abcdEFGH0123456789ijklmnop here")
     assert "sk-abcdEFGH0123456789ijklmnop" not in out

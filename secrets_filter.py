@@ -46,6 +46,16 @@ _OTP = re.compile(
     re.IGNORECASE,
 )
 
+# Same idea but keyword AFTER the digits, e.g. "28849 (Verification code)".
+# Requires a qualified code phrase so "90210 zip code" is left alone.
+_OTP_AFTER = re.compile(
+    r"\b(\d{4,8})"
+    r"(\s*[\(\[]?\s*"
+    r"(?:(?:verification|security|access|login|one[\s-]?time|confirmation)\s+code"
+    r"|passcode|otp|2fa))",
+    re.IGNORECASE,
+)
+
 # Credit-card-like runs of digits; validated with Luhn to avoid redacting
 # arbitrary long numbers.
 _CC_CANDIDATE = re.compile(r"\b(?:\d[ -]?){13,19}\b")
@@ -87,5 +97,6 @@ def redact_secrets(text: str) -> str:
     text = _SSN.sub(REDACTED, text)
     text = _PASSWORD.sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", text)
     text = _OTP.sub(lambda m: f"{m.group(1)}{m.group(2)}{REDACTED}", text)
+    text = _OTP_AFTER.sub(lambda m: f"{REDACTED}{m.group(2)}", text)
     text = _CC_CANDIDATE.sub(_redact_cc, text)
     return text
