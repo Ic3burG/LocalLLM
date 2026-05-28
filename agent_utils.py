@@ -1326,6 +1326,27 @@ async def _search_contacts(query: str) -> str:
                 repeat with ph in phones of p
                     set rec to rec & " | phone: " & (value of ph)
                 end repeat
+                try
+                    set b to birth date of p
+                    if class of b is date then
+                        set bstr to (year of b as string) & "-" & ¬
+                            text -2 thru -1 of ("0" & ((month of b) as integer)) & "-" & ¬
+                            text -2 thru -1 of ("0" & (day of b))
+                        set rec to rec & " | birthday: " & bstr
+                    end if
+                end try
+                try
+                    set org to organization of p
+                    if org is not missing value and org is not "" then
+                        set rec to rec & " | org: " & org
+                    end if
+                end try
+                try
+                    set nt to note of p
+                    if nt is not missing value and nt is not "" then
+                        set rec to rec & " | note: " & nt
+                    end if
+                end try
                 set output to output & rec & linefeed
             end repeat
             return output
@@ -1335,6 +1356,88 @@ async def _search_contacts(query: str) -> str:
         return out or "No matching contacts."
     except Exception as e:
         logger.error("search_contacts failed: %s", e)
+        return f"ERROR: {e}"
+
+
+async def _birthdays_upcoming(days: int = 30) -> str:
+    """List Contacts whose birthday falls within the next `days` days.
+
+    The macOS Birthdays calendar is auto-generated from Contacts and is not
+    reliably enumerable via AppleScript's `every event of c`, so we walk
+    Contacts directly and compute the next occurrence in Python.
+    """
+    try:
+        window = max(1, int(days))
+        script = """
+        tell application "Contacts"
+            set output to ""
+            repeat with p in people
+                try
+                    set b to birth date of p
+                    if class of b is date then
+                        set m to (month of b) as integer
+                        set d to day of b
+                        set y to year of b
+                        set output to output & (name of p) & "\t" & ¬
+                            (m as string) & "\t" & (d as string) & "\t" & (y as string) & linefeed
+                    end if
+                end try
+            end repeat
+            return output
+        end tell
+        """
+        raw = await _osascript(script)
+        if not raw.strip():
+            return "No contacts with birthdays found."
+
+        from datetime import date, timedelta
+
+        today = date.today()
+        end = today + timedelta(days=window)
+        hits: list[tuple[date, str, int | None]] = []
+        for line in raw.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 4:
+                continue
+            name, m_s, d_s, y_s = parts[0], parts[1], parts[2], parts[3]
+            try:
+                m, d = int(m_s), int(d_s)
+                birth_year: int | None = int(y_s) if y_s.strip() else None
+            except ValueError:
+                continue
+            # Roll this year's birthday forward if it already passed.
+            try:
+                next_bd = date(today.year, m, d)
+            except ValueError:
+                # Feb 29 on a non-leap year — fall back to Feb 28.
+                if m == 2 and d == 29:
+                    next_bd = date(today.year, 2, 28)
+                else:
+                    continue
+            if next_bd < today:
+                try:
+                    next_bd = date(today.year + 1, m, d)
+                except ValueError:
+                    next_bd = date(today.year + 1, 2, 28)
+            if today <= next_bd <= end:
+                age_turning = (
+                    next_bd.year - birth_year
+                    if birth_year and birth_year > 1900
+                    else None
+                )
+                hits.append((next_bd, name, age_turning))
+
+        if not hits:
+            return f"No upcoming birthdays in the next {window} day(s)."
+
+        hits.sort(key=lambda x: (x[0], x[1]))
+        lines = []
+        for bd, name, age in hits:
+            extra = f" (turns {age})" if age else ""
+            lines.append(f"{bd.isoformat()} — {name}{extra}")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.error("birthdays_upcoming failed: %s", e)
         return f"ERROR: {e}"
 
 
@@ -1675,6 +1778,12 @@ register_tool("send_message", "risky", "Send an iMessage", _send_message)
 register_tool("mail_compose", "risky", "Draft an email (no auto-send)", _mail_compose)
 register_tool("search_contacts", "safe", "Search Contacts by name", _search_contacts)
 register_tool("contacts_create", "risky", "Create a contact", _contacts_create)
+register_tool(
+    "birthdays_upcoming",
+    "safe",
+    "List Contacts birthdays in the next N days",
+    _birthdays_upcoming,
+)
 register_tool("transcribe", "safe", "Transcribe an audio file to text", _transcribe)
 register_tool("describe_image", "safe", "Describe an image on-device", _describe_image)
 register_tool("ocr_image", "safe", "Extract text from an image (OCR)", _ocr_image)
@@ -1745,8 +1854,9 @@ TOOLS AVAILABLE:
   messages_read(limit)                           — read your most recent iMessages
   send_message(recipient, text)                  — send an iMessage to a phone/email
   mail_compose(to, subject, body)                — draft an email in Mail (you review and send)
-  search_contacts(query)                         — find people in Contacts (name, phone, email)
+  search_contacts(query)                         — find people in Contacts (name, phone, email, birthday, org, note)
   contacts_create(name, phone, email)            — create a new contact
+  birthdays_upcoming(days)                       — list contacts with birthdays in the next N days (default 30)
   transcribe("/Users/you/Downloads/clip.wav")    — transcribe an audio file to text on-device; pass a real path
   describe_image("/Users/you/Downloads/foo.png", "what is this?") — describe/answer questions about an image on-device; pass a real path
   ocr_image("/Users/you/Downloads/foo.png")      — extract text from an image via OCR; pass a real path

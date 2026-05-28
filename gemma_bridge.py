@@ -199,6 +199,11 @@ from agent_utils import TelemetryManager
 app.include_router(agent_router, prefix="/v1/agent")
 
 
+@app.get("/v1/health")
+def health():
+    return {"status": "ok"}
+
+
 @app.on_event("startup")
 async def startup():
     scheduler.start()

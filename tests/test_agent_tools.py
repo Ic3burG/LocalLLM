@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from agent_utils import (
+    _birthdays_upcoming,
     _calendar_create,
     _calendar_list,
     _contacts_create,
@@ -472,6 +473,50 @@ async def test_search_contacts_escapes_quotes():
         await _search_contacts('a"b')
     script = mock_run.call_args.args[0][2]
     assert 'a\\"b' in script
+
+
+@pytest.mark.asyncio
+async def test_search_contacts_includes_birthday_in_script():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res) as mock_run:
+        await _search_contacts("Jane")
+    script = mock_run.call_args.args[0][2]
+    assert "birth date of p" in script
+    assert "class of b is date" in script
+    assert "organization of p" in script
+    assert "note of p" in script
+
+
+@pytest.mark.asyncio
+async def test_birthdays_upcoming_filters_window():
+    from datetime import date, timedelta
+
+    today = date.today()
+    in_range = today + timedelta(days=10)
+    out_range = today + timedelta(days=200)
+    lines = [
+        f"In Range\t{in_range.month}\t{in_range.day}\t1990",
+        f"Out Range\t{out_range.month}\t{out_range.day}\t1985",
+        f"No Year\t{in_range.month}\t{in_range.day}\t",
+        "",
+    ]
+    mock_res = MagicMock(stdout="\n".join(lines) + "\n")
+    with patch("subprocess.run", return_value=mock_res):
+        out = await _birthdays_upcoming(30)
+    assert "In Range" in out
+    assert "Out Range" not in out
+    assert f"turns {in_range.year - 1990}" in out
+    # Year-less entry should appear but without "turns".
+    no_year_line = [line for line in out.splitlines() if "No Year" in line][0]
+    assert "turns" not in no_year_line
+
+
+@pytest.mark.asyncio
+async def test_birthdays_upcoming_empty():
+    mock_res = MagicMock(stdout="")
+    with patch("subprocess.run", return_value=mock_res):
+        out = await _birthdays_upcoming(7)
+    assert "No contacts" in out
 
 
 @pytest.mark.asyncio
