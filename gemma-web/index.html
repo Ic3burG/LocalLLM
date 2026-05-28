@@ -5733,6 +5733,31 @@
           hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
         const greetEl = document.getElementById("welcome-greeting");
         if (greetEl) greetEl.textContent = `Good ${period}, Omar`;
+
+        // Smoke-test deep-link support: start a fresh chat and prefill the
+        // input from ?prompt= so smoke-test.html links each land in their own
+        // new conversation ready for the user to send.
+        const prefill = new URLSearchParams(window.location.search).get(
+          "prompt"
+        );
+        if (prefill) {
+          // Click the existing "New Chat" button so we reuse the app's real
+          // new-chat flow (clears state, swaps view, sets currentChatId=null)
+          // without needing access to its enclosing scope.
+          const newBtn = document.getElementById("new-chat-btn");
+          if (newBtn) newBtn.click();
+          // Defer one tick so the new-chat handler's DOM updates settle
+          // before we populate the textarea.
+          setTimeout(() => {
+            const ta = document.getElementById("user-input");
+            if (ta) {
+              ta.value = prefill;
+              ta.focus();
+              ta.setSelectionRange(prefill.length, prefill.length);
+              ta.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+          }, 0);
+        }
       })();
     </script>
   </body>
