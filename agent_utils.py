@@ -1397,8 +1397,12 @@ async def _birthdays_upcoming(days: int = 30) -> str:
         hits: list[tuple[date, str, int | None]] = []
         for line in raw.splitlines():
             parts = line.split("\t")
-            if len(parts) < 4:
+            # `_osascript` strips trailing whitespace, so contacts without a
+            # birth year arrive as 3 fields instead of 4. Pad with "".
+            if len(parts) < 3:
                 continue
+            while len(parts) < 4:
+                parts.append("")
             name, m_s, d_s, y_s = parts[0], parts[1], parts[2], parts[3]
             try:
                 m, d = int(m_s), int(d_s)
