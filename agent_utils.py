@@ -748,6 +748,31 @@ _SCREENSHOT_IMG_EXTS = {".png", ".jpg", ".jpeg"}
 _SCREENSHOT_PLACEHOLDERS = {"", "path", "default", "none", "null"}
 
 
+# Bareword names the model parrots from system-prompt templates instead of
+# substituting a real value, e.g. describe_image(path, prompt) → path="path".
+# Media-reading tools reject these with a helpful hint so the failure mode is
+# self-explanatory rather than an opaque "File not found: path".
+_MEDIA_PATH_PLACEHOLDERS = {
+    "path",
+    "image",
+    "file",
+    "audio",
+    "video",
+    "media",
+    "default",
+    "none",
+    "null",
+}
+
+
+def _is_placeholder_path(value) -> bool:
+    """True if ``value`` looks like a parroted prompt placeholder
+    (``"path"``, ``"<audio>"``, etc.) rather than a real file path."""
+    if not isinstance(value, str):
+        return False
+    return value.strip().strip("<>").lower() in _MEDIA_PATH_PLACEHOLDERS
+
+
 def _validate_user_file_path(path: str, must_exist: bool = True) -> Path:
     """Like ``validate_path`` but additionally accepts paths under the standard
     user folders (``~/Downloads``, ``~/Desktop``, ``~/Pictures``). Used by tools
@@ -1445,6 +1470,11 @@ async def _hf_run(args: str) -> str:
 
 
 async def _transcribe(path: str) -> str:
+    if _is_placeholder_path(path):
+        return (
+            "ERROR: please pass an actual audio file path, e.g. "
+            'transcribe("/Users/you/Downloads/clip.wav").'
+        )
     try:
         p = _validate_user_file_path(path)
         import mlx_whisper
@@ -1466,6 +1496,11 @@ async def _transcribe(path: str) -> str:
 async def _describe_image(
     path: str, prompt: str = "Describe this image in detail."
 ) -> str:
+    if _is_placeholder_path(path):
+        return (
+            "ERROR: please pass an actual image file path, e.g. "
+            'describe_image("/Users/you/Downloads/foo.png", "what is this?").'
+        )
     try:
         p = _validate_user_file_path(path)
         import mlx_vlm
@@ -1487,6 +1522,11 @@ async def _describe_image(
 
 
 async def _ocr_image(path: str) -> str:
+    if _is_placeholder_path(path):
+        return (
+            "ERROR: please pass an actual image file path, e.g. "
+            'ocr_image("/Users/you/Downloads/foo.png").'
+        )
     try:
         p = _validate_user_file_path(path)
         helper = Path(__file__).parent / "scripts" / "ocr_vision.swift"
@@ -1707,9 +1747,9 @@ TOOLS AVAILABLE:
   mail_compose(to, subject, body)                — draft an email in Mail (you review and send)
   search_contacts(query)                         — find people in Contacts (name, phone, email)
   contacts_create(name, phone, email)            — create a new contact
-  transcribe(path)                               — transcribe an audio file to text (on-device)
-  describe_image(path, prompt)                   — describe/answer questions about an image (on-device)
-  ocr_image(path)                                — extract text from an image via OCR
+  transcribe("/Users/you/Downloads/clip.wav")    — transcribe an audio file to text on-device; pass a real path
+  describe_image("/Users/you/Downloads/foo.png", "what is this?") — describe/answer questions about an image on-device; pass a real path
+  ocr_image("/Users/you/Downloads/foo.png")      — extract text from an image via OCR; pass a real path
 
 RULES:
 1. For any real-time query (news, weather, scores, prices, current events): call google_search. You have internet access.

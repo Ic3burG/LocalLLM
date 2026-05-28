@@ -559,6 +559,30 @@ async def test_transcribe_allows_downloads_path(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_describe_image_rejects_placeholder_path():
+    # The model sometimes parrots the system-prompt template literally, e.g.
+    # describe_image(path, prompt). Coerced barewords like "path"/"image"/"<path>"
+    # must be rejected with a helpful hint so the user/model can self-correct.
+    out = await _describe_image("path")
+    assert out.startswith("ERROR")
+    assert "actual" in out.lower() or "example" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_ocr_image_rejects_placeholder_path():
+    out = await _ocr_image("image")
+    assert out.startswith("ERROR")
+    assert "actual" in out.lower() or "example" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_transcribe_rejects_placeholder_path():
+    out = await _transcribe("<audio>")
+    assert out.startswith("ERROR")
+    assert "actual" in out.lower() or "example" in out.lower()
+
+
+@pytest.mark.asyncio
 async def test_describe_image_rejects_path_outside_allowlist(tmp_path, monkeypatch):
     # Path under tmp_path but neither project dir nor a user image folder.
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
