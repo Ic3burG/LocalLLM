@@ -201,8 +201,22 @@ async def test_screenshot_uses_screencapture(tmp_path, monkeypatch):
     with patch("subprocess.run") as mock_run:
         out = await _screenshot("shot.png")
     assert out.startswith("OK")
-    assert mock_run.call_args.args[0][0] == "screencapture"
-    assert mock_run.call_args.args[0][1] == "-x"
+    first = mock_run.call_args_list[0].args[0]
+    assert first[0] == "screencapture"
+    assert first[1] == "-x"
+
+
+@pytest.mark.asyncio
+async def test_screenshot_strips_macl_xattr_after_capture():
+    # The launchd-managed bridge stamps created files with com.apple.macl, a
+    # TCC access-list that triggers permission dialogs in Finder/Preview. Native
+    # screenshots have no macl; the tool must strip it so files behave normally.
+    with patch("subprocess.run") as mock_run:
+        await _screenshot()
+    cmds = [c.args[0] for c in mock_run.call_args_list]
+    assert any(c[:3] == ["xattr", "-d", "com.apple.macl"] for c in cmds), (
+        f"expected xattr cleanup after screencapture, got commands: {cmds}"
+    )
 
 
 @pytest.mark.asyncio

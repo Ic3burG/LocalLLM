@@ -807,6 +807,17 @@ async def _screenshot(path: str = "") -> str:
                         "restart the bridge."
                     ) from e
                 raise RuntimeError(stderr or str(e)) from e
+            # Strip the TCC access-list xattr the launchd-managed bridge stamps
+            # onto files it creates, so the screenshot opens like a normal user
+            # file (matches native Cmd-Shift-3 behaviour). Best-effort.
+            try:
+                subprocess.run(
+                    ["xattr", "-d", "com.apple.macl", str(target)],
+                    check=False,
+                    capture_output=True,
+                )
+            except Exception:
+                pass
 
         await loop.run_in_executor(None, _run)
         return f"OK: saved to {target}"
