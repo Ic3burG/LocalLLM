@@ -1472,6 +1472,69 @@ HH.MM.SS.png` matching native Cmd-Shift-3.
 
 ---
 
+## 🎂 Contacts Enrichment & Birthdays Tool — May 28, 2026
+
+### Why
+
+The agent could look up a contact and get back name + phone + email, but
+nothing else — even though macOS's Contacts AppleScript dictionary exposes
+`birth date`, `organization`, `note`, addresses, etc. Worse: macOS's
+**Birthdays calendar** is synthesized from Contacts.app and is **not
+enumerable** through AppleScript's `every event of c`, so `calendar_list`
+silently returns zero birthdays for the next N days even though the UI shows
+them. The agent had a blind spot for "whose birthday is coming up?" queries.
+
+### `_search_contacts` enrichment
+
+`agent_utils.py:1316` — the AppleScript now also reads `birth date`,
+`organization`, and `note` on each matched person. Each extra field is wrapped
+in its own `try` block so missing values (the default for most contacts)
+don't crash the script. Birthday is emitted as `YYYY-MM-DD` built manually
+from `year/month/day` parts to avoid AppleScript's locale-sensitive date
+stringification.
+
+### New `birthdays_upcoming(days)` tool
+
+`agent_utils.py:1362` — registered as **safe**. Walks every person in
+Contacts via AppleScript, dumps `name<TAB>month<TAB>day<TAB>year` rows, then
+does the upcoming-window math in Python (`datetime`). Handles:
+
+- Contacts with **no birth year** set (returns the date without "(turns N)").
+- **Feb 29** birthdays in non-leap years (falls back to Feb 28).
+- Birthdays that already passed this year (rolls to next year's date).
+
+Default window 30 days; sort by date then name.
+
+### Bug found mid-implementation
+
+`_osascript` calls `r.stdout.strip()`, which silently destroys the trailing
+empty tab when a contact has no birth year — so the parser was getting 3
+fields instead of 4 and dropping those people. Fixed by padding short rows
+to 4 fields in the parser rather than tightening the AppleScript output —
+defensive against any field being blank, not just trailing year.
+
+### Files Changed
+
+- `agent_utils.py` — enriched `_search_contacts`, added `_birthdays_upcoming`,
+  registered the new tool, updated `AGENT_SYSTEM_PROMPT` help text.
+- `tests/test_agent_tools.py` — new tests:
+  - `test_search_contacts_includes_birthday_in_script` (verifies the
+    AppleScript references `birth date`, `organization`, `note`).
+  - `test_birthdays_upcoming_filters_window` (in-range vs out-of-range vs
+    year-less contact).
+  - `test_birthdays_upcoming_empty` (no birthdays → friendly message).
+
+### Outcome
+
+- 6 contact/birthday tests pass.
+- Pre-push gate: **230 passed**, exit 0.
+- Tool count: 60 → **61**.
+- The macOS Birthdays calendar's invisibility to `calendar_list` is now
+  documented in the docstring of `_birthdays_upcoming`; future-me won't
+  re-investigate that dead end.
+
+---
+
 ## 📈 Current Status (as of May 28, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
@@ -1480,10 +1543,12 @@ HH.MM.SS.png` matching native Cmd-Shift-3.
 - **Models:** Gemma 4 E4B, Gemma 4 E26B, Gemma 4 31B (all vision-capable via
   mlx_vlm); Phi-4 Mini, DeepSeek V4 Mini (text-only via mlx_lm);
   FLUX.1-schnell (image generation).
-- **Tools:** 60 registered tools (incl. semantic `recall`; macOS Calendar /
-  Reminders / Notes / **Contacts** / Messages / Mail automation; on-device
-  `transcribe` / `describe_image` / `ocr_image`; screenshot with native macOS
-  naming + `~/Downloads` default).
+- **Tools:** 61 registered tools (incl. semantic `recall`; macOS Calendar /
+  Reminders / Notes / **Contacts** (now with birthday/org/note) / Messages /
+  Mail automation; `birthdays_upcoming` for the synthesized Birthdays
+  calendar that `calendar_list` can't see; on-device `transcribe` /
+  `describe_image` / `ocr_image`; screenshot with native macOS naming +
+  `~/Downloads` default).
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
 - **UI:** Glass/gradient aesthetic; persistent flex sidebar (rail | sidebar |
   main, no overlay); kebab "⋯" on every chat row for Star / Rename / Delete;
@@ -1502,6 +1567,6 @@ HH.MM.SS.png` matching native Cmd-Shift-3.
 - **Smoke-test infra:** `docs/smoke-test.html` (one clickable link per tool,
   opens a fresh chat with the prompt prefilled); regenerate via
   `python3 scripts/build_smoke_test.py`.
-- **Integrity:** 226 tests passing; local **Git Hooks** (self-healing
+- **Integrity:** 230 tests passing; local **Git Hooks** (self-healing
   pre-commit + arm64-pinned CI-mirror pre-push) enforced; `CLAUDE.md` mandate
   auto-loaded every session; CI green on every push to `main`.
