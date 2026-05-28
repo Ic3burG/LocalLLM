@@ -1336,7 +1336,143 @@ the SSE confirmation gate.
 
 ---
 
-## 📈 Current Status (as of May 26, 2026)
+## 🔐 Privacy, Smoke Test & Media-Tool Hardening — May 26–28, 2026
+
+Twenty more commits on top of the tool-expansion landing: a real-data shakedown
+that surfaced a parser bug, a private-data-in-public-repo problem, and a chain
+of macOS-permission paper cuts in the media tools. Plus a clickable smoke-test
+page so the next round of testing isn't manual typing.
+
+### Parser & infrastructure
+
+- **`parse_model_output` now handles keyword args.** The model emits calls like
+  `calendar_list(days=1)` / `messages_read(limit=20)`, but the parser only
+  produced positional args and called `fn(*args)` — the literal token `"days=1"`
+  landed in the value slot, crashing `int()`. Rewrote with `ast` to parse the
+  call expression (handles quoted positional, kwargs, single quotes,
+  commas-inside-strings), returns `(type, name, args, kwargs)`, call sites use
+  `fn(*args, **kwargs)`. Benefits every tool, not just the new ones.
+- **Hook + arch fix.** `git push` was failing because `/usr/local/bin/git` is
+  x86_64; the universal venv python inherited that and couldn't load arm64
+  numpy. The pre-push hook now detects Apple Silicon hardware via
+  `sysctl hw.optional.arm64` (Rosetta-proof — `uname -m` lies under
+  translation) and runs python with `arch -arm64`. Plain `git push` works
+  with either git binary now.
+
+### Contacts tool
+
+- New `search_contacts(query)` (safe) and `contacts_create(name, phone, email)`
+  (risky) joining the macOS automation family via `_osascript` + `_as_str`
+  escaping. Registry: **58 → 60 tools**.
+
+### `USER_MEMORY.md` privacy remediation
+
+- Discovered the learner subagent was writing personal data (client names,
+  rates, negotiation notes) into a **tracked file in a PUBLIC GitHub repo**.
+  Live run-time content additionally captured phone numbers, emails, and a
+  verification code locally (never pushed — confirmed via `git log -S`).
+- Remediation: `git rm --cached` + `.gitignore`, then `git filter-repo` to
+  purge the file from **all 253 commits**, then force-pushed; remote API now
+  returns 404 for the path. Local file preserved on disk so the bridge keeps
+  its memory. Backup bundle in `/tmp` before the rewrite.
+- **Caveat (noted for the user):** forks/clones made before the scrub still
+  contain the old content; GitHub cached commit views can linger; the
+  previously-public client info should be treated as already disclosed.
+
+### Secrets guard (`secrets_filter.py`)
+
+- New stdlib-only `redact_secrets()` applied inside `write_user_memory`, the
+  single choke point both writers (learner + manual save) route through.
+  Catches OTP/verification codes (only adjacent to a qualified code phrase so
+  `$700` / years / zip codes survive), API keys / GitHub / AWS / Slack tokens,
+  `Bearer` tokens, `password: …`, private-key blocks, Luhn-valid card numbers,
+  SSNs. Phones/emails left intact per user preference.
+- Real-data shakedown found a regex gap: the bridge stored the code as
+  `28849 (Verification code)` — keyword **after** the digits, which the
+  initial forward pattern missed. Added `_OTP_AFTER` with a negative test
+  proving `90210 zip code` still survives. Existing local file scrubbed.
+- Defense-in-depth: the learner prompt now also instructs the model not to
+  record secrets.
+
+### Smoke-test infrastructure
+
+- `scripts/build_smoke_test.py` emits `docs/smoke-test.html` — a styled
+  clickable checklist with one "Open →" link per registered tool. Each link
+  uses `http://localhost:3001/?prompt=<url-encoded>`; a new snippet in
+  `gemma-web/index.html` clicks the **New Chat** button on load (so each link
+  lands in its own fresh conversation) then populates the textarea with the
+  prefilled prompt, ready to send. Badges flag risky / macOS-permission /
+  needs-a-file rows.
+
+### Screenshot tool — chain of fixes
+
+- **Default location + naming:** `~/Downloads/Screenshot YYYY-MM-DD at
+HH.MM.SS.png` matching native Cmd-Shift-3.
+- **Scoped sandbox exception** for this tool: also accept `~/Downloads`,
+  `~/Desktop`, `~/Pictures` alongside the project root.
+- **Auto-append `.png`**; **bare basenames** route to `~/Downloads`.
+- **Placeholder rejection:** strings like `"path"` / `"default"` / `"none"`
+  fall through to the default instead of saving a file literally named `path`
+  (a real failure mode after the kwarg fix coerced bareword Names to strings).
+- **`screencapture` stderr surfaced;** on "not authorized" returns an
+  actionable Screen Recording permission hint.
+- **`com.apple.macl` strip after capture:** the launchd-managed bridge stamps
+  created files with a TCC access-list entry tied to _its_ process identity,
+  triggering Finder/Preview permission dialogs. Best-effort
+  `xattr -d com.apple.macl` restores the native-screenshot lifecycle.
+- System-prompt entry rewritten to show concrete examples instead of
+  bareword `path` (the same change that broke the parroting bug for the
+  other media tools).
+
+### Media-tools allowlist (`describe_image` / `ocr_image` / `transcribe`)
+
+- New shared `_validate_user_file_path()` accepts the same scoped allowlist
+  as screenshot, so describing / OCRing / transcribing a file in
+  `~/Downloads` now works (the screenshot default location and the
+  media-read sandbox were out of sync).
+- **Placeholder guard** `_is_placeholder_path()` catches the same
+  `path` / `image` / `audio` / `<path>` parroting bug for these tools and
+  returns a helpful "pass an actual file path, e.g. …" hint so the model
+  self-corrects instead of failing with the opaque "File not found: path".
+- System-prompt entries updated with concrete example paths.
+
+### Testing & gate
+
+- 160 → **226 tests passing**. New deterministic test files:
+  `tests/test_secrets_filter.py` (18 tests, positive + false-positive
+  coverage). All `mlx_*`/macOS/subprocess paths are mocked so CI stays
+  hardware-free.
+- Every commit went through the local pre-push gate; every push monitored to
+  CI green on `main`.
+
+### Next steps / where we left off
+
+- **macOS permissions still to grant locally** (out-of-band, user action):
+  - **Full Disk Access** to the bridge's Python
+    (`/Library/Frameworks/Python.framework/Versions/3.14/bin/python3.14`) for
+    `messages_read` to actually open `~/Library/Messages/chat.db`. The tool
+    now returns the actionable hint when blocked.
+  - **Screen Recording** for `screencapture` to succeed without exit-1.
+  - **Automation prompts** approve on first use for Calendar / Reminders /
+    Notes / Contacts / Messages / Mail.
+- **Smoke-test page** is at `docs/smoke-test.html`; serve with
+  `python3 -m http.server 8902` from `docs/` and open
+  `http://localhost:8902/smoke-test.html`. Re-run
+  `python3 scripts/build_smoke_test.py` after editing prompts. Hard-refresh
+  `http://localhost:3001` once to pick up the prefill snippet.
+- **Untracked spec** at `docs/superpowers/specs/2026-05-28-localllm-cli-design.md`
+  appeared during this session — it's a design for a future CLI feature, not
+  yet implemented or committed. Pick that up in the next session if desired.
+- **Optional follow-up** (logged but deferred): cache the `mlx-vlm` model
+  between `describe_image` / `ocr_image` calls — currently reloaded per call,
+  noticeable on multi-image flows.
+- If you want a permanent fix for the x86_64 git on PATH (so the hook didn't
+  need the `arch -arm64` shim), `brew uninstall git` lets the arm64
+  `/usr/bin/git` take over — strictly optional given the hook fix.
+
+---
+
+## 📈 Current Status (as of May 28, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
   Both managed by repaired launchd plists; can be reinstalled via
@@ -1344,9 +1480,10 @@ the SSE confirmation gate.
 - **Models:** Gemma 4 E4B, Gemma 4 E26B, Gemma 4 31B (all vision-capable via
   mlx_vlm); Phi-4 Mini, DeepSeek V4 Mini (text-only via mlx_lm);
   FLUX.1-schnell (image generation).
-- **Tools:** 58 registered tools (incl. semantic `recall`, macOS Calendar /
-  Reminders / Notes / Messages / Mail automation, and on-device `transcribe` /
-  `describe_image` / `ocr_image`).
+- **Tools:** 60 registered tools (incl. semantic `recall`; macOS Calendar /
+  Reminders / Notes / **Contacts** / Messages / Mail automation; on-device
+  `transcribe` / `describe_image` / `ocr_image`; screenshot with native macOS
+  naming + `~/Downloads` default).
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
 - **UI:** Glass/gradient aesthetic; persistent flex sidebar (rail | sidebar |
   main, no overlay); kebab "⋯" on every chat row for Star / Rename / Delete;
@@ -1359,6 +1496,12 @@ the SSE confirmation gate.
   preview, click to open URL or RAG chunk modal; `📎 N sources` fallback footer).
 - **No known broken features.** (The previously open New Chat bug is fixed
   via the architectural pivot above.)
-- **Integrity:** 186 tests passing; local **Git Hooks** (self-healing
-  pre-commit + CI-mirror pre-push) enforced; `CLAUDE.md` mandate auto-loaded
-  every session; CI green on every push to `main`.
+- **Privacy posture:** `USER_MEMORY.md` gitignored + scrubbed from history;
+  all learner writes pass through `secrets_filter.redact_secrets` (deterministic
+  guard at the choke point, not a prompt request).
+- **Smoke-test infra:** `docs/smoke-test.html` (one clickable link per tool,
+  opens a fresh chat with the prompt prefilled); regenerate via
+  `python3 scripts/build_smoke_test.py`.
+- **Integrity:** 226 tests passing; local **Git Hooks** (self-healing
+  pre-commit + arm64-pinned CI-mirror pre-push) enforced; `CLAUDE.md` mandate
+  auto-loaded every session; CI green on every push to `main`.
