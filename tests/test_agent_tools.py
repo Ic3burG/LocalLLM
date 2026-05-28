@@ -206,6 +206,66 @@ async def test_screenshot_uses_screencapture(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_screenshot_default_path_uses_downloads_with_macos_naming():
+    from pathlib import Path
+
+    with patch("subprocess.run") as mock_run:
+        out = await _screenshot()
+    assert out.startswith("OK")
+    target = mock_run.call_args.args[0][-1]
+    assert target.startswith(str(Path.home() / "Downloads"))
+    assert "Screenshot " in target and " at " in target
+    assert target.endswith(".png")
+
+
+@pytest.mark.asyncio
+async def test_screenshot_appends_png_when_missing():
+    from pathlib import Path
+
+    with patch("subprocess.run") as mock_run:
+        await _screenshot("smoke")
+    target = mock_run.call_args.args[0][-1]
+    assert target.endswith(".png")
+    assert target.startswith(str(Path.home() / "Downloads"))
+
+
+@pytest.mark.asyncio
+async def test_screenshot_ignores_placeholder_path():
+    # The model sometimes parrots the system-prompt template literally.
+    # 'path' must be treated as no-arg, not a filename called 'path'.
+    with patch("subprocess.run") as mock_run:
+        await _screenshot("path")
+    target = mock_run.call_args.args[0][-1]
+    assert "Screenshot " in target and target.endswith(".png")
+
+
+@pytest.mark.asyncio
+async def test_screenshot_allows_explicit_downloads_path():
+    from pathlib import Path
+
+    p = str(Path.home() / "Downloads" / "explicit.png")
+    with patch("subprocess.run") as mock_run:
+        out = await _screenshot(p)
+    assert out.startswith("OK")
+    assert mock_run.call_args.args[0][-1] == p
+
+
+@pytest.mark.asyncio
+async def test_screenshot_screen_recording_permission_hint():
+    import subprocess as _sp
+
+    err = _sp.CalledProcessError(
+        1,
+        "screencapture",
+        stderr="screencapture: cannot run, not authorized to capture screen",
+    )
+    with patch("subprocess.run", side_effect=err):
+        out = await _screenshot()
+    assert out.startswith("ERROR")
+    assert "Screen Recording" in out
+
+
+@pytest.mark.asyncio
 async def test_generate_image_tool_returns_image_marker():
     fake_result = {
         "image_b64": "iVBORw0KGgo=",

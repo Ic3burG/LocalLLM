@@ -735,20 +735,81 @@ async def _move_file(src: str, dst: str) -> str:
         return f"ERROR: {e}"
 
 
+# Screenshot tool gets a scoped sandbox exception: in addition to the project
+# root it accepts standard user folders, since screenshots inherently belong
+# outside the project. Default destination is ~/Downloads with macOS-native
+# naming.
+_SCREENSHOT_EXTRA_ROOTS = ("Downloads", "Desktop", "Pictures")
+_SCREENSHOT_IMG_EXTS = {".png", ".jpg", ".jpeg"}
+_SCREENSHOT_PLACEHOLDERS = {"", "path", "default", "none", "null"}
+
+
+def _resolve_screenshot_path(path: str) -> Path:
+    """Pick the actual file path for a screenshot call.
+
+    Rules, in order:
+      1. Empty / placeholder ("path", "default", …) → ~/Downloads/Screenshot
+         YYYY-MM-DD at HH.MM.SS.png (macOS-native pattern).
+      2. Missing/non-image extension → append .png.
+      3. Bare basename → ~/Downloads/<name>.
+      4. Otherwise the path must resolve under the project sandbox OR one of
+         ~/Downloads, ~/Desktop, ~/Pictures.
+    """
+    if not path or path.strip().lower() in _SCREENSHOT_PLACEHOLDERS:
+        name = datetime.now().strftime("Screenshot %Y-%m-%d at %H.%M.%S.png")
+        return Path.home() / "Downloads" / name
+
+    p = Path(os.path.expanduser(path.strip()))
+    if p.suffix.lower() not in _SCREENSHOT_IMG_EXTS:
+        p = p.with_suffix(".png")
+    if str(p.parent) == ".":
+        return Path.home() / "Downloads" / p.name
+
+    target = p.resolve() if p.is_absolute() else (Path.cwd() / p).resolve()
+    allowed = [Path(os.getcwd()).resolve()] + [
+        (Path.home() / sub).resolve() for sub in _SCREENSHOT_EXTRA_ROOTS
+    ]
+    for root in allowed:
+        try:
+            target.relative_to(root)
+            return target
+        except ValueError:
+            continue
+    raise PermissionError(
+        f"Access denied: {path} is outside the screenshot allowlist "
+        "(project dir, ~/Downloads, ~/Desktop, ~/Pictures)."
+    )
+
+
 async def _screenshot(path: str = "") -> str:
     log_audit(f"SCREENSHOT: {path}")
     try:
-        if not path:
-            path = f"screenshot_{datetime.now():%Y%m%d_%H%M%S}.png"
-        p = validate_path(path, must_exist=False)
+        target = _resolve_screenshot_path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
         loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: subprocess.run(
-                ["screencapture", "-x", str(p)], check=True, capture_output=True
-            ),
-        )
-        return f"OK: saved to {p}"
+
+        def _run():
+            try:
+                subprocess.run(
+                    ["screencapture", "-x", str(target)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+            except subprocess.CalledProcessError as e:
+                stderr = (e.stderr or "").strip()
+                blob = (stderr + " " + str(e)).lower()
+                if "not authorized" in blob or "permission" in blob:
+                    raise RuntimeError(
+                        "screencapture is not authorized for Screen Recording. "
+                        "Grant Screen Recording to the bridge's Python in System "
+                        "Settings → Privacy & Security → Screen Recording, then "
+                        "restart the bridge."
+                    ) from e
+                raise RuntimeError(stderr or str(e)) from e
+
+        await loop.run_in_executor(None, _run)
+        return f"OK: saved to {target}"
     except Exception as e:
         logger.error("screenshot failed: %s", e)
         return f"ERROR: {e}"
@@ -1573,7 +1634,7 @@ TOOLS AVAILABLE:
   http_request(method, url, headers, body)       — make an HTTP request; headers is JSON string
   notify(title, message)                         — send a macOS system notification
   say(text)                                      — speak text aloud through the speakers
-  screenshot(path)                               — capture the screen to a PNG (path optional)
+  screenshot()                                   — capture the screen; call with no args to save to ~/Downloads with macOS naming, or screenshot("/path/to/file.png") for a specific path
   move_file(src, dst)                            — move or rename a file
   delete_file(path)                              — move a file to the Trash (recoverable)
   read_csv(path)                                 — read a CSV file as a tab-separated table
