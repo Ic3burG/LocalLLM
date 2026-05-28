@@ -520,6 +520,57 @@ async def test_ocr_image_success(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_describe_image_allows_downloads_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "Downloads").mkdir()
+    img = tmp_path / "Downloads" / "shot.png"
+    img.write_bytes(b"\x89PNG")
+    fake = MagicMock()
+    fake.load.return_value = (MagicMock(), MagicMock())
+    fake.generate.return_value = MagicMock(text="a cat on a mat")
+    with patch.dict("sys.modules", {"mlx_vlm": fake}):
+        out = await _describe_image(str(img))
+    assert "cat" in out
+
+
+@pytest.mark.asyncio
+async def test_ocr_image_allows_downloads_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "Downloads").mkdir()
+    img = tmp_path / "Downloads" / "shot.png"
+    img.write_bytes(b"\x89PNG")
+    mock_res = MagicMock(stdout="INVOICE 42", returncode=0)
+    with patch("subprocess.run", return_value=mock_res):
+        out = await _ocr_image(str(img))
+    assert "INVOICE 42" in out
+
+
+@pytest.mark.asyncio
+async def test_transcribe_allows_downloads_path(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    (tmp_path / "Downloads").mkdir()
+    audio = tmp_path / "Downloads" / "clip.wav"
+    audio.write_bytes(b"RIFF")
+    fake = MagicMock()
+    fake.transcribe.return_value = {"text": "  hello  "}
+    with patch.dict("sys.modules", {"mlx_whisper": fake}):
+        out = await _transcribe(str(audio))
+    assert out == "hello"
+
+
+@pytest.mark.asyncio
+async def test_describe_image_rejects_path_outside_allowlist(tmp_path, monkeypatch):
+    # Path under tmp_path but neither project dir nor a user image folder.
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    bad = tmp_path / "elsewhere" / "img.png"
+    bad.parent.mkdir()
+    bad.write_bytes(b"\x89PNG")
+    out = await _describe_image(str(bad))
+    assert out.startswith("ERROR")
+
+
+@pytest.mark.asyncio
 async def test_ocr_image_falls_back(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "p.png").write_bytes(b"\x89PNG")

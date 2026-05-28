@@ -739,9 +739,38 @@ async def _move_file(src: str, dst: str) -> str:
 # root it accepts standard user folders, since screenshots inherently belong
 # outside the project. Default destination is ~/Downloads with macOS-native
 # naming.
-_SCREENSHOT_EXTRA_ROOTS = ("Downloads", "Desktop", "Pictures")
+# User folders accepted by tools that operate on user-supplied media (images,
+# audio) which typically live outside the project — keeps the strict project
+# sandbox for everything else.
+_USER_FILE_ROOTS = ("Downloads", "Desktop", "Pictures")
+_SCREENSHOT_EXTRA_ROOTS = _USER_FILE_ROOTS  # screenshot also writes into these
 _SCREENSHOT_IMG_EXTS = {".png", ".jpg", ".jpeg"}
 _SCREENSHOT_PLACEHOLDERS = {"", "path", "default", "none", "null"}
+
+
+def _validate_user_file_path(path: str, must_exist: bool = True) -> Path:
+    """Like ``validate_path`` but additionally accepts paths under the standard
+    user folders (``~/Downloads``, ``~/Desktop``, ``~/Pictures``). Used by tools
+    that read media files the user keeps outside the project.
+    """
+    target = Path(os.path.expanduser(path)).resolve()
+    allowed = [Path(os.getcwd()).resolve()] + [
+        (Path.home() / sub).resolve() for sub in _USER_FILE_ROOTS
+    ]
+    for root in allowed:
+        try:
+            target.relative_to(root)
+            break
+        except ValueError:
+            continue
+    else:
+        raise PermissionError(
+            f"Access denied: {path} is outside the allowed folders "
+            "(project dir, ~/Downloads, ~/Desktop, ~/Pictures)."
+        )
+    if must_exist and not target.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    return target
 
 
 def _resolve_screenshot_path(path: str) -> Path:
@@ -1417,7 +1446,7 @@ async def _hf_run(args: str) -> str:
 
 async def _transcribe(path: str) -> str:
     try:
-        p = validate_path(path)
+        p = _validate_user_file_path(path)
         import mlx_whisper
 
         loop = asyncio.get_running_loop()
@@ -1438,7 +1467,7 @@ async def _describe_image(
     path: str, prompt: str = "Describe this image in detail."
 ) -> str:
     try:
-        p = validate_path(path)
+        p = _validate_user_file_path(path)
         import mlx_vlm
 
         loop = asyncio.get_running_loop()
@@ -1459,7 +1488,7 @@ async def _describe_image(
 
 async def _ocr_image(path: str) -> str:
     try:
-        p = validate_path(path)
+        p = _validate_user_file_path(path)
         helper = Path(__file__).parent / "scripts" / "ocr_vision.swift"
         loop = asyncio.get_running_loop()
 
