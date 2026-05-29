@@ -425,10 +425,18 @@ async def run_deep_thinking_pipeline(
 
 
 async def react_loop_sse(
-    task_id: str, messages: list, model_id: str, deep_think: bool = False
+    task_id: str,
+    messages: list,
+    model_id: str,
+    deep_think: bool = False,
+    cwd: str | None = None,
+    cli_session_id: str | None = None,
 ) -> None:
     """Run ReAct loop, emitting SSE events to sse_queues[task_id]."""
+    from logging_config import current_cwd_var
+
     task_id_var.set(task_id)
+    cwd_token = current_cwd_var.set(cwd) if cwd else None
     logger.info(
         "sse react loop started", extra={"model_id": model_id, "deep_think": deep_think}
     )
@@ -697,6 +705,8 @@ async def react_loop_sse(
         await q.put(json.dumps({"type": "error", "message": str(e)}))
         telemetry.record_complete(task_id, "error")
     finally:
+        if cwd_token is not None:
+            current_cwd_var.reset(cwd_token)
         await q.put(None)
 
 
@@ -710,6 +720,8 @@ class AgentRequest(BaseModel):
     messages: list[dict] | None = None
     model_id: str = "gemma4-e4b"
     deep_think: bool = False
+    cli_session_id: str | None = None
+    cwd: str | None = None
 
 
 class ConfirmRequest(BaseModel):
@@ -738,7 +750,14 @@ async def run_agent(req: AgentRequest):
         messages.append({"role": "user", "content": req.prompt})
 
     asyncio.create_task(
-        react_loop_sse(task_id, messages, req.model_id, deep_think=req.deep_think)
+        react_loop_sse(
+            task_id,
+            messages,
+            req.model_id,
+            deep_think=req.deep_think,
+            cwd=req.cwd,
+            cli_session_id=req.cli_session_id,
+        )
     )
     return {"task_id": task_id}
 
