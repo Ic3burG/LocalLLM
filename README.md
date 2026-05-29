@@ -33,6 +33,35 @@ LocalLLM empowers the AI with a wide array of capabilities, including:
 - **Sandbox Validation**: All filesystem tools are sandboxed with path validation.
 - **Confirmation Gate**: Risky tools (shell, write_file, etc.) require explicit user approval before execution.
 
+## 🖥 CLI (`localllm`)
+
+A Claude-Code-style terminal client for the LocalLLM bridge. After installing the venv:
+
+```bash
+pip install -e .
+cd ~/Projects/your-project
+localllm
+```
+
+- Fully standalone — only the FastAPI bridge (`gemma_bridge.py`, port 9379) needs to be running. The CLI does not require the Node web proxy or a browser.
+- Tool calls (`read_file`, `write_file`, `shell`, `git_*`) are sandboxed to the directory you launched `localllm` from.
+- Active CLI sessions appear in the web UI's "💻 Live CLI Sessions" sidebar as a read-only mirror; click a session to live-tail its agent trace in the browser. Remote control of CLI sessions from the web is planned for v2.
+
+Slash commands inside the TUI: `/help`, `/model <name>`, `/clear`, `/tools`, `/cwd <path>`, `/reconnect`, `/quit`.
+
+Configuration precedence (highest first):
+
+1. CLI args (`--bridge-url`, `--model`)
+2. Environment variable (`LOCALLLM_BRIDGE_URL`)
+3. `~/.localllm/config.toml`, e.g.:
+
+```toml
+bridge_url = "http://127.0.0.1:9379"
+model = "gemma4-e4b"
+```
+
+4. Built-in defaults
+
 ---
 
 _Built with Gemma 4, MLX, and a lot of caffeine._
