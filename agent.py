@@ -122,6 +122,33 @@ from inference_engine import is_model_loaded, run_inference
 sse_queues: dict[str, asyncio.Queue] = {}
 confirm_queues: dict[str, asyncio.Queue] = {}
 
+
+class _FanoutQueue:
+    """Transparent wrapper around an asyncio.Queue that mirrors every JSON
+    event also to the CLI session registry for the web mirror.
+
+    Lets react_loop_sse stay unchanged — any existing `await q.put(json.dumps(event))`
+    automatically fans out without touching the call site."""
+
+    def __init__(self, inner: asyncio.Queue, cli_session_id: str | None) -> None:
+        self._inner = inner
+        self._sid = cli_session_id
+
+    async def put(self, item) -> None:
+        await self._inner.put(item)
+        if self._sid and isinstance(item, str):
+            try:
+                event = json.loads(item)
+            except (ValueError, TypeError):
+                return
+            from cli_sessions import get_registry
+
+            await get_registry().fanout(self._sid, event)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 SCHEDULER_TASKS_FILE = Path(__file__).parent / "scheduler_tasks.json"
 SCHEDULER_LOG_FILE = Path(__file__).parent / "scheduler_log.jsonl"
 
@@ -437,6 +464,9 @@ async def react_loop_sse(
 
     task_id_var.set(task_id)
     cwd_token = current_cwd_var.set(cwd) if cwd else None
+    # Wrap the queue so events also fan out to CLI subscribers (the web
+    # mirror). When cli_session_id is None, this is a transparent passthrough.
+    sse_queues[task_id] = _FanoutQueue(sse_queues[task_id], cli_session_id)
     logger.info(
         "sse react loop started", extra={"model_id": model_id, "deep_think": deep_think}
     )
