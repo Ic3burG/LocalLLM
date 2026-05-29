@@ -112,6 +112,29 @@ class LocalLLMApp(App):
         input_box = self.query_one(InputBox)
         status = self.query_one(StatusBar)
 
+        # Slash commands short-circuit before the bridge round-trip.
+        from localllm.commands import dispatch
+
+        result = dispatch(text, model=self._model_id)
+        if result is not None:
+            input_box.push_history(text)
+            input_box.value = ""
+            if result.kind == "show":
+                transcript.write_status(result.message)
+            elif result.kind == "clear":
+                transcript.clear()
+            elif result.kind == "set_model":
+                self._model_id = result.value
+                status.model = result.value
+                transcript.write_status(f"model → {result.value}")
+            elif result.kind == "set_cwd":
+                self._cwd = result.value
+                status.cwd = result.value
+                transcript.write_status(f"cwd → {result.value}")
+            elif result.kind == "quit":
+                self.exit()
+            return
+
         transcript.write_user(text)
         input_box.push_history(text)
         input_box.value = ""
