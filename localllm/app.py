@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import uuid
 from pathlib import Path
 
+import httpx
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -14,15 +16,20 @@ from textual.widgets import Footer, Header
 
 from localllm.agent_client import AgentClient
 from localllm.events import (
+    ConfirmRequestEvent,
+    ConfirmResolvedEvent,
     DoneEvent,
     ErrorEvent,
     StatusEvent,
     StepEvent,
     ThinkingEvent,
 )
+from localllm.widgets.confirm_modal import ConfirmModal
 from localllm.widgets.input_box import InputBox
 from localllm.widgets.status_bar import StatusBar
 from localllm.widgets.transcript import Transcript
+
+RECONNECT_BACKOFFS_S = (1.0, 2.0, 4.0, 8.0, 15.0)  # ~30s total
 
 logger = logging.getLogger(__name__)
 
@@ -99,12 +106,44 @@ class LocalLLMApp(App):
                     transcript.write_status(f"thinking: {ev.content[:120]}")
                 elif isinstance(ev, StepEvent):
                     transcript.write_tool_call(ev.tool, ev.args, ev.elapsed_ms)
+                elif isinstance(ev, ConfirmRequestEvent):
+                    status.state = "waiting"
+                    approved = await self.push_screen_wait(
+                        ConfirmModal(tool=ev.tool, args=ev.args)
+                    )
+                    await self._client.confirm(
+                        task_id=ev.task_id, approved=bool(approved)
+                    )
+                    status.state = "thinking"
+                elif isinstance(ev, ConfirmResolvedEvent):
+                    # Echo of our own decision — no-op
+                    pass
                 elif isinstance(ev, DoneEvent):
                     transcript.write_assistant_chunk(ev.message)
                 elif isinstance(ev, ErrorEvent):
                     transcript.write_error(ev.message)
-                # Other event types (confirm_*, sources, image) handled in M3+
+        except httpx.HTTPError as exc:
+            transcript.write_error(f"bridge disconnected ({exc.__class__.__name__})")
+            status.state = "waiting"
+            transcript.write_status("retrying bridge…")
+            ok = await self._wait_for_bridge()
+            if ok:
+                transcript.write_status(
+                    "bridge back. Re-send your last prompt to resume."
+                )
+            else:
+                transcript.write_error(
+                    "bridge still down after 30s. Try /reconnect or /quit."
+                )
         except Exception as exc:  # noqa: BLE001
-            transcript.write_error(f"bridge error: {exc}")
+            transcript.write_error(f"unexpected: {exc}")
         finally:
             status.state = "ready"
+
+    async def _wait_for_bridge(self) -> bool:
+        """Probe /v1/health with exp backoff (1→2→4→8→15s; ~30s total)."""
+        for delay in RECONNECT_BACKOFFS_S:
+            if await self._client.health():
+                return True
+            await asyncio.sleep(delay)
+        return False
