@@ -92,3 +92,61 @@ async def test_heartbeat_unreachable_returns_false_quickly(monkeypatch):
     ok = await client.heartbeat_once("cli-1")
     assert ok is False
     assert sleeps == [1.0, 1.0]  # 3 attempts, 2 sleeps between them
+
+
+def make_409_then_ok_stub():
+    """Bridge that 409s on heartbeat the first time (unknown session),
+    accepts a fresh register, then 200s on subsequent heartbeats. Models
+    the 'bridge restarted and lost in-memory state' scenario."""
+    from fastapi import FastAPI, HTTPException
+
+    app = FastAPI()
+    state: dict = {"known": False, "calls": []}
+
+    @app.post("/v1/cli/register")
+    async def reg(payload: dict):
+        state["known"] = True
+        state["calls"].append(("register", payload))
+        return {"ok": True}
+
+    @app.post("/v1/cli/heartbeat")
+    async def hb(payload: dict):
+        state["calls"].append(("heartbeat", payload))
+        if not state["known"]:
+            raise HTTPException(status_code=409, detail="unknown_session")
+        return {"ok": True}
+
+    app.state.shared = state
+    return app
+
+
+async def test_heartbeat_409_triggers_reregister(stub_server):
+    # Spin a custom stub that emulates the post-restart scenario.
+    import uvicorn
+
+    app = make_409_then_ok_stub()
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning")
+    server = uvicorn.Server(config)
+    task = asyncio.create_task(server.serve())
+    while not server.started:
+        await asyncio.sleep(0.05)
+    port = server.servers[0].sockets[0].getsockname()[1]
+    try:
+        client = RegistryClient(base_url=f"http://127.0.0.1:{port}")
+        # Pre-register so the cache is populated
+        payload = make_payload(
+            "cli-1", "/tmp", "ws://127.0.0.1:1/control", "gemma4-e4b"
+        )
+        await client.register(payload)
+        # Simulate bridge restart: server forgot the session
+        app.state.shared["known"] = False
+        # Heartbeat sees 409, falls back to register
+        ok = await client.heartbeat_once("cli-1")
+        assert ok is True
+        kinds = [c[0] for c in app.state.shared["calls"]]
+        # register (initial) + heartbeat (409) + register (fallback)
+        assert kinds.count("register") == 2
+        assert kinds.count("heartbeat") == 1
+    finally:
+        server.should_exit = True
+        await task

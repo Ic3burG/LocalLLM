@@ -51,11 +51,14 @@ class SessionRegistry:
         self._last_seen[info.session_id] = time.monotonic()
         self._snapshot()
 
-    def heartbeat(self, session_id: str) -> None:
+    def heartbeat(self, session_id: str) -> bool:
+        """Return True if the heartbeat refreshed a live session, False if
+        the session is unknown (bridge restarted and lost it). Clients that
+        get False should re-register."""
         if session_id not in self._sessions:
-            # Loaded-from-snapshot without live info — no-op until re-register
-            return
+            return False
         self._last_seen[session_id] = time.monotonic()
+        return True
 
     def deregister(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
@@ -171,7 +174,11 @@ def register(req: RegisterRequest):
 
 @router.post("/heartbeat")
 def heartbeat(req: HeartbeatRequest):
-    _registry.heartbeat(req.session_id)
+    refreshed = _registry.heartbeat(req.session_id)
+    if not refreshed:
+        # Bridge has no record of this session (restart, eviction). Tell the
+        # CLI to re-register so the web sidebar can rediscover it.
+        raise HTTPException(status_code=409, detail="unknown_session")
     return {"ok": True}
 
 

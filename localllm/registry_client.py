@@ -48,8 +48,10 @@ class RegistryClient:
         self._base = base_url.rstrip("/")
         self._retries = retries
         self._heartbeat_task: asyncio.Task | None = None
+        self._last_payload: RegisterPayload | None = None
 
     async def register(self, payload: RegisterPayload) -> bool:
+        self._last_payload = payload  # cached for heartbeat re-register after restart
         for attempt in range(self._retries):
             try:
                 async with httpx.AsyncClient(timeout=2.0) as client:
@@ -74,7 +76,11 @@ class RegistryClient:
         return False
 
     async def heartbeat_once(self, session_id: str) -> bool:
-        """3× retry w/ 1 s backoff per spec §7 (Heartbeat blip)."""
+        """3× retry w/ 1 s backoff per spec §7 (Heartbeat blip).
+
+        On 409 'unknown_session' (bridge restarted and lost in-memory state),
+        re-register using the cached payload so the CLI rejoins the web
+        sidebar instead of silently disappearing."""
         for attempt in range(3):
             try:
                 async with httpx.AsyncClient(timeout=2.0) as client:
@@ -84,6 +90,11 @@ class RegistryClient:
                     )
                     if 200 <= resp.status_code < 300:
                         return True
+                    if resp.status_code == 409 and self._last_payload is not None:
+                        logger.info(
+                            "heartbeat: bridge reports unknown session; re-registering"
+                        )
+                        return await self.register(self._last_payload)
             except httpx.HTTPError as exc:
                 logger.debug("heartbeat attempt %d failed: %s", attempt + 1, exc)
             if attempt < 2:
