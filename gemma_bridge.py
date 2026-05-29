@@ -198,6 +198,10 @@ from agent_utils import TelemetryManager
 
 app.include_router(agent_router, prefix="/v1/agent")
 
+from cli_sessions import router as cli_sessions_router  # noqa: E402
+
+app.include_router(cli_sessions_router, prefix="/v1/cli")
+
 
 @app.get("/v1/health")
 def health():
