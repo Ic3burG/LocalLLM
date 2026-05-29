@@ -9,8 +9,7 @@ import sys
 
 from localllm import __version__
 from localllm.agent_client import AgentClient
-
-DEFAULT_BRIDGE_URL = "http://127.0.0.1:9379"
+from localllm.config import load as load_config
 
 
 async def _bridge_is_up(base_url: str) -> bool:
@@ -18,14 +17,20 @@ async def _bridge_is_up(base_url: str) -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
+    cfg = load_config()
     parser = argparse.ArgumentParser(prog="localllm", description="LocalLLM CLI")
     parser.add_argument(
         "--version", action="version", version=f"localllm {__version__}"
     )
     parser.add_argument(
         "--bridge-url",
-        default=os.environ.get("LOCALLLM_BRIDGE_URL", DEFAULT_BRIDGE_URL),
-        help="Bridge base URL (default: http://127.0.0.1:9379)",
+        default=os.environ.get("LOCALLLM_BRIDGE_URL", cfg.bridge_url),
+        help="Bridge base URL (default: from ~/.localllm/config.toml or http://127.0.0.1:9379)",
+    )
+    parser.add_argument(
+        "--model",
+        default=cfg.model,
+        help=f"Model id (default: {cfg.model})",
     )
     parser.add_argument(
         "--no-tui",
@@ -54,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
     # Import here so tests can run without Textual installed/initialized
     from localllm.app import LocalLLMApp
 
-    app = LocalLLMApp(bridge_url=args.bridge_url)
+    app = LocalLLMApp(bridge_url=args.bridge_url, model_id=args.model)
     app.run()
     return 0
 
