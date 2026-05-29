@@ -127,14 +127,34 @@ class Tool:
 
 
 def validate_path(path_str: str, must_exist: bool = True) -> Path:
-    # Resolve the project root (base) and the requested path (target)
-    base = Path(os.getcwd()).resolve()
-    target = Path(os.path.expanduser(path_str)).resolve()
+    # Local import: keep logging_config dependency lazy to avoid import cycles
+    # at module-load time.
+    from logging_config import current_cwd_var
 
-    # Security Check: Ensure target is within base
-    try:
-        target.relative_to(base)
-    except ValueError:
+    process_base = Path(os.getcwd()).resolve()
+    session_cwd = current_cwd_var.get()
+    extra_base: Path | None = Path(session_cwd).resolve() if session_cwd else None
+
+    expanded = Path(os.path.expanduser(path_str))
+    # Relative paths resolve against the session cwd when one is set, so
+    # `read_file("README.md")` means "in the CLI's launch dir", not the
+    # bridge process's cwd.
+    if not expanded.is_absolute() and extra_base is not None:
+        target = (extra_base / expanded).resolve()
+    else:
+        target = expanded.resolve()
+
+    allowed_bases: list[Path] = [process_base]
+    if extra_base is not None:
+        allowed_bases.append(extra_base)
+
+    for base in allowed_bases:
+        try:
+            target.relative_to(base)
+            break
+        except ValueError:
+            continue
+    else:
         raise PermissionError(f"Access denied: {path_str} is outside the sandbox.")
 
     if must_exist and not target.exists():
