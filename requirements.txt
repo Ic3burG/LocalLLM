@@ -20,3 +20,6 @@ oletools
 olefile
 mflux; sys_platform == "darwin"
 mlx-whisper; sys_platform == "darwin"
+textual>=0.60
+httpx-sse>=0.4
+aiohttp>=3.9
