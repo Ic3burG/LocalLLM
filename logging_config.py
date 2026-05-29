@@ -6,6 +6,7 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 
 task_id_var: ContextVar[str] = ContextVar("task_id", default="")
+current_cwd_var: ContextVar[str | None] = ContextVar("current_cwd", default=None)
 
 # Dynamically determine built-in LogRecord attributes so extras are cleanly separated.
 _sample = logging.LogRecord("", 0, "", 0, "", (), None)
