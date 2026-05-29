@@ -27,6 +27,7 @@ from localllm.events import (
 from localllm.widgets.confirm_modal import ConfirmModal
 from localllm.widgets.input_box import InputBox
 from localllm.widgets.status_bar import StatusBar
+from localllm.widgets.trace_panel import TracePanel
 from localllm.widgets.transcript import Transcript
 
 RECONNECT_BACKOFFS_S = (1.0, 2.0, 4.0, 8.0, 15.0)  # ~30s total
@@ -66,6 +67,7 @@ class LocalLLMApp(App):
         with Vertical():
             yield Transcript(id="transcript")
             yield InputBox(id="input")
+        yield TracePanel(id="trace")
         yield StatusBar(id="status")
         yield Footer()
 
@@ -92,6 +94,9 @@ class LocalLLMApp(App):
         input_box.push_history(text)
         input_box.value = ""
         status.state = "thinking"
+        trace = self.query_one(TracePanel)
+        trace.reset()
+        trace.active = True
 
         try:
             async for ev in self._client.run_and_stream(
@@ -106,6 +111,8 @@ class LocalLLMApp(App):
                     transcript.write_status(f"thinking: {ev.content[:120]}")
                 elif isinstance(ev, StepEvent):
                     transcript.write_tool_call(ev.tool, ev.args, ev.elapsed_ms)
+                    trace.steps += 1
+                    trace.elapsed_ms += ev.elapsed_ms
                 elif isinstance(ev, ConfirmRequestEvent):
                     status.state = "waiting"
                     approved = await self.push_screen_wait(
@@ -139,6 +146,7 @@ class LocalLLMApp(App):
             transcript.write_error(f"unexpected: {exc}")
         finally:
             status.state = "ready"
+            trace.active = False
 
     async def _wait_for_bridge(self) -> bool:
         """Probe /v1/health with exp backoff (1→2→4→8→15s; ~30s total)."""
