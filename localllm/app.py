@@ -15,6 +15,7 @@ from textual.containers import Vertical
 from textual.widgets import Footer, Header
 
 from localllm.agent_client import AgentClient
+from localllm.control_server import ControlServer
 from localllm.events import (
     ConfirmRequestEvent,
     ConfirmResolvedEvent,
@@ -24,6 +25,7 @@ from localllm.events import (
     StepEvent,
     ThinkingEvent,
 )
+from localllm.registry_client import RegistryClient, make_payload
 from localllm.widgets.confirm_modal import ConfirmModal
 from localllm.widgets.input_box import InputBox
 from localllm.widgets.status_bar import StatusBar
@@ -61,6 +63,8 @@ class LocalLLMApp(App):
         self._model_id = model_id
         self._cwd = str(Path(os.getcwd()).resolve())
         self._session_id = f"cli-{uuid.uuid4().hex[:8]}"
+        self._control = ControlServer()
+        self._registry_client = RegistryClient(base_url=bridge_url)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -81,6 +85,24 @@ class LocalLLMApp(App):
         self.query_one(Transcript).write_status(
             f"Connected. cwd: {self._cwd}  ·  model: {self._model_id}"
         )
+        self.run_worker(self._startup_register(), exclusive=False)
+
+    async def _startup_register(self) -> None:
+        ws_url = await self._control.start()
+        payload = make_payload(
+            session_id=self._session_id,
+            cwd=self._cwd,
+            ws_url=ws_url,
+            model=self._model_id,
+        )
+        registered = await self._registry_client.register(payload)
+        if registered:
+            await self._registry_client.start_heartbeat(self._session_id)
+
+    async def on_unmount(self) -> None:
+        await self._registry_client.stop_heartbeat()
+        await self._registry_client.deregister(self._session_id)
+        await self._control.stop()
 
     async def on_input_submitted(self, event: InputBox.Submitted) -> None:  # type: ignore[name-defined]
         text = event.value.strip()
