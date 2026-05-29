@@ -44,6 +44,60 @@ def test_validate_path_absolute_in_session_cwd(tmp_path: Path):
         current_cwd_var.reset(token)
 
 
+# --- media-tool validators honor session cwd ------------------------------
+
+from agent_utils import _resolve_screenshot_path, _validate_user_file_path
+
+
+def test_validate_user_file_path_honors_session_cwd(tmp_path: Path):
+    (tmp_path / "photo.png").write_bytes(b"\x89PNG")
+    token = current_cwd_var.set(str(tmp_path))
+    try:
+        resolved = _validate_user_file_path("photo.png")
+        assert resolved == tmp_path / "photo.png"
+    finally:
+        current_cwd_var.reset(token)
+
+
+def test_validate_user_file_path_still_allows_downloads(tmp_path: Path, monkeypatch):
+    # Session cwd set, but legacy ~/Downloads paths must keep working
+    monkeypatch.chdir(tmp_path)
+    token = current_cwd_var.set(str(tmp_path))
+    try:
+        downloads = Path.home() / "Downloads"
+        downloads.mkdir(exist_ok=True)
+        sample = downloads / "test_localllm_sample.png"
+        sample.write_bytes(b"\x89PNG")
+        try:
+            resolved = _validate_user_file_path(str(sample))
+            assert resolved == sample.resolve()
+        finally:
+            sample.unlink(missing_ok=True)
+    finally:
+        current_cwd_var.reset(token)
+
+
+def test_resolve_screenshot_path_uses_session_cwd_for_relative(tmp_path: Path):
+    token = current_cwd_var.set(str(tmp_path))
+    try:
+        # Relative path with subdir → must resolve under session cwd, not Downloads
+        (tmp_path / "shots").mkdir()
+        target = _resolve_screenshot_path("shots/grab.png")
+        assert target == (tmp_path / "shots" / "grab.png").resolve()
+    finally:
+        current_cwd_var.reset(token)
+
+
+def test_resolve_screenshot_path_bare_basename_still_goes_to_downloads(tmp_path: Path):
+    # Bare basename (no parent) → ~/Downloads — session cwd should not change this
+    token = current_cwd_var.set(str(tmp_path))
+    try:
+        target = _resolve_screenshot_path("foo.png")
+        assert target == Path.home() / "Downloads" / "foo.png"
+    finally:
+        current_cwd_var.reset(token)
+
+
 # --- end-to-end via the FastAPI bridge -----------------------------------
 
 import json
