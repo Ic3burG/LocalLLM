@@ -1833,6 +1833,29 @@
           </div>
         </div>
       </div>
+
+      <!-- Live CLI Sessions — sidebar discovery panel for running localllm sessions -->
+      <div class="sidebar-section">
+        <div class="sidebar-section-header" onclick="toggleCliSessionsPanel()">
+          <span
+            >💻 Live CLI Sessions <span id="cli-sessions-count">0</span></span
+          >
+          <span id="cli-sessions-chevron">▼</span>
+        </div>
+        <div id="cli-sessions-body" style="display: none">
+          <div id="cli-sessions-list"></div>
+          <div
+            id="cli-sessions-empty"
+            style="
+              padding: 8px 4px;
+              font-size: 11px;
+              color: var(--llm-text-muted);
+            "
+          >
+            No CLI sessions running.
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── Main Area ── -->
@@ -2722,6 +2745,67 @@
           <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
         </svg>
         Delete
+      </div>
+    </div>
+
+    <!-- CLI Mirror Modal — read-only view of a running localllm session -->
+    <div
+      id="cli-mirror-modal"
+      class="fixed inset-0 z-[60] flex items-center justify-center modal-overlay hidden-modal"
+    >
+      <div
+        class="modal-content w-full max-w-4xl max-h-[85vh] m-4 shadow-2xl flex flex-col overflow-hidden"
+      >
+        <div
+          class="p-4 border-b flex items-center justify-between"
+          style="
+            border-color: var(--llm-panel-border);
+            background: var(--llm-panel);
+          "
+        >
+          <div class="flex items-center gap-3 flex-1 min-w-0">
+            <span style="font-size: 18px">🪞</span>
+            <div class="flex flex-col min-w-0">
+              <div
+                style="
+                  font-size: 13px;
+                  font-weight: 600;
+                  color: var(--llm-text);
+                "
+              >
+                Mirroring <code id="cli-mirror-session-id"></code>
+              </div>
+              <div style="font-size: 11px; color: var(--llm-text-muted)">
+                <code id="cli-mirror-cwd"></code> · input disabled (CLI owns
+                input; remote control coming in v2)
+              </div>
+            </div>
+          </div>
+          <button
+            onclick="closeCliMirror()"
+            style="
+              padding: 6px 12px;
+              border-radius: 6px;
+              background: var(--llm-panel-border);
+              color: var(--llm-text);
+              font-size: 12px;
+              cursor: pointer;
+            "
+          >
+            Detach
+          </button>
+        </div>
+        <div
+          id="cli-mirror-trace"
+          style="
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            font-family: ui-monospace, SFMono-Regular, monospace;
+            font-size: 12px;
+            background: var(--llm-bg);
+          "
+        ></div>
       </div>
     </div>
 
@@ -5351,6 +5435,213 @@
         typingIndicator.textContent = "Thinking...";
         sendBtn.disabled = false;
       }
+
+      // ── Live CLI Sessions ─────────────────────────────────────────────────
+      //
+      // Discovery panel for running `localllm` sessions registered with the
+      // bridge. Polls every 5s. Click a row to open the read-only Mirror
+      // overlay, which subscribes to the same SSE stream the CLI is consuming.
+      //
+      // XSS note: session_id/cwd/model come from /v1/cli/sessions which
+      // mirrors back what a local process posted to /v1/cli/register. The
+      // bridge binds 127.0.0.1, but defense-in-depth — never interpolate
+      // these into innerHTML. textContent only.
+
+      let cliSessionsTimer = null;
+      let cliMirrorSSE = null;
+
+      function shortCliId(id) {
+        return id ? id.slice(0, 8) : "—";
+      }
+
+      function cliBasename(p) {
+        if (!p) return "";
+        const parts = p.split("/").filter(Boolean);
+        return parts[parts.length - 1] || "/";
+      }
+
+      function buildCliSessionRow(s) {
+        const row = document.createElement("div");
+        row.style.cssText =
+          "padding:6px 4px;cursor:pointer;border-radius:4px;display:flex;align-items:center;gap:8px;font-size:12px;";
+        row.addEventListener(
+          "mouseenter",
+          () => (row.style.background = "var(--llm-panel-border)")
+        );
+        row.addEventListener("mouseleave", () => (row.style.background = ""));
+
+        const dot = document.createElement("span");
+        dot.style.cssText =
+          "width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0;";
+
+        const title = document.createElement("span");
+        title.style.cssText =
+          "flex:1;color:var(--llm-text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+        title.textContent =
+          shortCliId(s.session_id) + " · " + cliBasename(s.cwd);
+
+        const meta = document.createElement("span");
+        meta.style.cssText =
+          "color:var(--llm-text-muted);font-size:10px;flex-shrink:0;";
+        meta.textContent = s.model || "";
+
+        row.append(dot, title, meta);
+        row.addEventListener("click", () => openCliMirror(s));
+        return row;
+      }
+
+      async function refreshCliSessions() {
+        try {
+          const r = await fetch("/api/cli/sessions");
+          if (!r.ok) return;
+          const sessions = await r.json();
+          const list = document.getElementById("cli-sessions-list");
+          const empty = document.getElementById("cli-sessions-empty");
+          const count = document.getElementById("cli-sessions-count");
+          count.textContent = " (" + sessions.length + ")";
+          while (list.firstChild) list.removeChild(list.firstChild);
+          if (sessions.length === 0) {
+            empty.style.display = "block";
+          } else {
+            empty.style.display = "none";
+            for (const s of sessions) list.appendChild(buildCliSessionRow(s));
+          }
+        } catch (err) {
+          // Bridge unreachable — leave the panel showing the last state silently
+          console.debug("cli-sessions refresh failed", err);
+        }
+      }
+
+      function toggleCliSessionsPanel() {
+        const body = document.getElementById("cli-sessions-body");
+        const chevron = document.getElementById("cli-sessions-chevron");
+        const visible = body.style.display !== "none";
+        body.style.display = visible ? "none" : "block";
+        chevron.textContent = visible ? "▼" : "▲";
+        if (!visible) refreshCliSessions();
+      }
+
+      // Mirror overlay -------------------------------------------------------
+
+      function openCliMirror(session) {
+        closeCliMirror();
+        document.getElementById("cli-mirror-session-id").textContent =
+          shortCliId(session.session_id);
+        document.getElementById("cli-mirror-cwd").textContent =
+          session.cwd || "";
+
+        const trace = document.getElementById("cli-mirror-trace");
+        while (trace.firstChild) trace.removeChild(trace.firstChild);
+
+        const modal = document.getElementById("cli-mirror-modal");
+        modal.classList.remove("hidden-modal");
+
+        cliMirrorSSE = new EventSource(
+          "/api/cli/stream/" + encodeURIComponent(session.session_id)
+        );
+        cliMirrorSSE.onmessage = (e) => {
+          try {
+            renderCliMirrorEvent(trace, JSON.parse(e.data));
+          } catch (err) {
+            console.debug("cli mirror parse", err);
+          }
+        };
+        cliMirrorSSE.onerror = () => {
+          // Stream closed (CLI exited or bridge down) — show a one-shot notice.
+          const note = document.createElement("div");
+          note.style.cssText =
+            "color:var(--llm-text-muted);padding:6px 0;font-style:italic;";
+          note.textContent = "(stream ended)";
+          trace.appendChild(note);
+          if (cliMirrorSSE) {
+            cliMirrorSSE.close();
+            cliMirrorSSE = null;
+          }
+        };
+      }
+
+      function closeCliMirror() {
+        if (cliMirrorSSE) {
+          try {
+            cliMirrorSSE.close();
+          } catch (e) {
+            /* ignore */
+          }
+          cliMirrorSSE = null;
+        }
+        const modal = document.getElementById("cli-mirror-modal");
+        if (modal) modal.classList.add("hidden-modal");
+      }
+
+      function renderCliMirrorEvent(target, event) {
+        // Minimal renderer — read-only view of agent events. All interpolated
+        // strings go through textContent.
+        const row = document.createElement("div");
+        row.style.cssText = "padding:4px 0;line-height:1.5;";
+        const t = event && event.type;
+
+        if (t === "step") {
+          const args = event.args
+            ? Object.values(event.args)
+                .map((v) => JSON.stringify(v))
+                .join(", ")
+            : "";
+          const head = document.createElement("span");
+          head.style.color = "#f59e0b";
+          head.style.fontWeight = "600";
+          head.textContent = "⚙ " + (event.tool || "") + "(" + args + ")";
+          const tail = document.createElement("span");
+          tail.style.color = "var(--llm-text-muted)";
+          tail.textContent = " · " + (event.elapsed_ms || 0) + "ms";
+          row.append(head, tail);
+        } else if (t === "done") {
+          const head = document.createElement("div");
+          head.style.color = "var(--llm-text)";
+          head.textContent = String(event.message || "");
+          row.appendChild(head);
+        } else if (t === "error") {
+          row.style.color = "#ef4444";
+          row.textContent = "✗ " + String(event.message || "");
+        } else if (t === "status") {
+          row.style.color = "var(--llm-text-muted)";
+          row.style.fontStyle = "italic";
+          row.textContent = "… " + String(event.message || "");
+        } else if (t === "thinking") {
+          row.style.color = "var(--llm-text-muted)";
+          row.style.fontStyle = "italic";
+          row.textContent = "🤔 " + String(event.content || "").slice(0, 200);
+        } else if (t === "confirm_request") {
+          row.style.color = "#ef4444";
+          const args = event.args
+            ? Object.values(event.args)
+                .map((v) => JSON.stringify(v))
+                .join(", ")
+            : "";
+          row.textContent =
+            "⚠ awaiting CLI confirmation: " +
+            (event.tool || "") +
+            "(" +
+            args +
+            ")";
+        } else if (t === "confirm_resolved") {
+          row.style.color = event.approved ? "#22c55e" : "#ef4444";
+          row.textContent = event.approved ? "✓ allowed" : "✕ denied";
+        } else {
+          // Unknown type — render the JSON for visibility
+          row.style.color = "var(--llm-text-muted)";
+          row.textContent = JSON.stringify(event);
+        }
+        target.appendChild(row);
+        target.scrollTop = target.scrollHeight;
+      }
+
+      // Kick off CLI sessions polling once the DOM is ready
+      document.addEventListener("DOMContentLoaded", () => {
+        refreshCliSessions();
+        if (cliSessionsTimer === null) {
+          cliSessionsTimer = setInterval(refreshCliSessions, 5000);
+        }
+      });
 
       // ── Scheduled Tasks Panel ─────────────────────────────────────────────
 
