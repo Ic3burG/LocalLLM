@@ -1472,7 +1472,7 @@ HH.MM.SS.png` matching native Cmd-Shift-3.
 
 ---
 
-## 🎂 Contacts Enrichment & Birthdays Tool — May 28, 2026
+## 🎂 Contacts Enrichment & Birthdays Tool — May 28–29, 2026
 
 ### Why
 
@@ -1533,9 +1533,42 @@ defensive against any field being blank, not just trailing year.
   documented in the docstring of `_birthdays_upcoming`; future-me won't
   re-investigate that dead end.
 
+### Ship
+
+- Work pushed first to `feat/localllm-cli`, then fast-forward-merged to
+  `main` and pushed (`6b986bf..d22542f`). GitHub Actions CI run
+  [26609378178](https://github.com/Ic3burG/LocalLLM/actions/runs/26609378178)
+  passed both `lint` and `test` jobs. `main` is the source of truth; no
+  PR was opened — direct-push workflow per repo convention.
+
+### Next steps / where we left off
+
+- **AppleScript Contacts schema is still under-used.** `_search_contacts`
+  now reads `birth date`, `organization`, and `note`, but the dictionary
+  also exposes `addresses`, `urls`, `custom dates` (anniversary), and
+  `related names` (spouse, child). Easy follow-up if the agent needs
+  richer profile lookups.
+- **Optional perf:** `_birthdays_upcoming` runs a full Contacts walk on
+  every call. If the user has thousands of contacts, consider an
+  AppleScript-side `whose birth date is not missing value` filter to
+  shrink the iteration set.
+- **Carry-overs from the prior session (still open):**
+  - macOS permissions to grant locally (Full Disk Access for
+    `messages_read`, Screen Recording for `screencapture`, Automation
+    prompts for Calendar/Reminders/Notes/Contacts/Messages/Mail).
+  - `mlx-vlm` model is reloaded per call in `describe_image` / `ocr_image`
+    — caching is still a deferred optional follow-up.
+  - The CLI design spec at
+    `docs/superpowers/specs/2026-05-28-localllm-cli-design.md` and the
+    implementation plan at
+    `docs/superpowers/plans/2026-05-28-localllm-cli.md` were committed
+    this session but the CLI itself is not yet built. The `/v1/health`
+    readiness probe on the bridge (`gemma_bridge.py`) is in place as a
+    prerequisite for it.
+
 ---
 
-## 📈 Current Status (as of May 28, 2026)
+## 📈 Current Status (as of May 29, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
   Both managed by repaired launchd plists; can be reinstalled via
