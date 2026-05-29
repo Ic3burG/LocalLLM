@@ -225,13 +225,23 @@ app.get("/api/cli/stream/:sid", (req, res) => {
     path: `/v1/cli/stream/${sid}`,
     method: "GET",
   };
-  res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
-  res.setHeader("Connection", "keep-alive");
-  res.setHeader("X-Accel-Buffering", "no");
+  // Don't flushHeaders eagerly — wait for the upstream response so we
+  // can propagate non-200 status (e.g. 404 when the session has been
+  // evicted) instead of silently piping the JSON error body as SSE data.
   res.socket && res.socket.setTimeout(0);
-  res.flushHeaders();
   const proxyReq = http.request(options, (proxyRes) => {
+    if (proxyRes.statusCode !== 200) {
+      // Propagate the upstream status + body; the browser EventSource
+      // will fire onerror and the mirror modal can show a clear message.
+      res.status(proxyRes.statusCode).type("application/json");
+      proxyRes.pipe(res);
+      return;
+    }
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
     proxyRes.pipe(res);
   });
   proxyReq.on("socket", (sock) => sock.setTimeout(0));
@@ -240,7 +250,11 @@ app.get("/api/cli/stream/:sid", (req, res) => {
       session_id: sid,
       error: err.message,
     });
-    res.end();
+    if (!res.headersSent) {
+      res.status(502).json({ error: "Bridge unreachable" });
+    } else {
+      res.end();
+    }
   });
   req.on("close", () => proxyReq.destroy());
   proxyReq.end();
