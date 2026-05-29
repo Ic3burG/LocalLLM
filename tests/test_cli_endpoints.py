@@ -59,6 +59,28 @@ def test_stream_404_for_unknown_session(monkeypatch, tmp_path):
         assert r.status_code == 404
 
 
+def test_snapshot_loaded_session_is_streamable(tmp_path):
+    """After a bridge restart, load_snapshot repopulates _sessions but wipes
+    _last_seen. The session is filtered out of list() until a heartbeat,
+    but the stream endpoint's membership check must use _sessions (not list())
+    so a mirror client can attach during the 10s gap. We don't open the
+    full SSE stream (it's long-lived); we assert the underlying invariant:
+    the session is present in _sessions and absent from list()."""
+    snapshot = tmp_path / "sessions.json"
+    snapshot.write_text(
+        '{"cli-loaded": {"session_id": "cli-loaded", "pid": 1, '
+        '"cwd": "/tmp", "ws_url": "ws://127.0.0.1:1/control", '
+        '"model": "gemma4-e4b", "started_at": "2026-05-28T00:00:00Z", '
+        '"tty": "", "host": "test"}}'
+    )
+    fresh = cli_sessions.SessionRegistry(snapshot_path=snapshot)
+    fresh.load_snapshot()
+    # list() filters by staleness — empty until heartbeat
+    assert fresh.list() == []
+    # _sessions (what stream_session now checks) contains the entry
+    assert "cli-loaded" in fresh._sessions
+
+
 def test_heartbeat_409_when_session_unknown(monkeypatch, tmp_path):
     """If the bridge has no record of the session (restart, eviction), the
     heartbeat endpoint returns 409 so the CLI knows to re-register."""

@@ -195,7 +195,12 @@ def list_sessions():
 
 @router.get("/stream/{session_id}")
 async def stream_session(session_id: str):
-    if not any(s.session_id == session_id for s in _registry.list()):
+    # Check raw _sessions, not list() — list() filters stale by heartbeat
+    # window, which means a freshly-restored session (load_snapshot wipes
+    # _last_seen) would 404 in the 10s gap before its next heartbeat. The
+    # mirror connection still works correctly because the publisher fans out
+    # to subscribers regardless of staleness.
+    if session_id not in _registry._sessions:
         raise HTTPException(status_code=404, detail="Session not found")
     q = await _registry.subscribe(session_id)
 
