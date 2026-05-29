@@ -204,8 +204,18 @@ app.include_router(cli_sessions_router, prefix="/v1/cli")
 
 
 @app.get("/v1/health")
-def health():
-    return {"status": "ok"}
+def health(model_id: str = "gemma4-e4b"):
+    """Liveness + readiness probe. Always returns 200 if the bridge is up;
+    `ready` indicates whether the named model is loaded and able to serve
+    a request right now. The CLI uses `ready` to avoid declaring 'Connected'
+    while mlx-vlm is still warming up after a launchctl kickstart."""
+    from inference_engine import is_model_loaded
+
+    return {
+        "status": "ok",
+        "ready": is_model_loaded(model_id),
+        "model_id": model_id,
+    }
 
 
 @app.on_event("startup")

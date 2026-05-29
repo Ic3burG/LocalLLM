@@ -16,6 +16,10 @@ async def _bridge_is_up(base_url: str) -> bool:
     return await AgentClient(base_url=base_url).health()
 
 
+async def _bridge_health_detail(base_url: str, model_id: str) -> dict | None:
+    return await AgentClient(base_url=base_url).health_detail(model_id)
+
+
 def main(argv: list[str] | None = None) -> int:
     cfg = load_config()
     parser = argparse.ArgumentParser(prog="localllm", description="LocalLLM CLI")
@@ -43,8 +47,8 @@ def main(argv: list[str] | None = None) -> int:
         print("localllm requires a TTY (no rich-TUI fallback in v1).", file=sys.stderr)
         return 3
 
-    up = asyncio.run(_bridge_is_up(args.bridge_url))
-    if not up:
+    detail = asyncio.run(_bridge_health_detail(args.bridge_url, args.model))
+    if detail is None:
         print(
             f"Bridge unreachable at {args.bridge_url}.\n"
             f"Start it with: launchctl kickstart -k gui/$UID/com.gemini.litert",
@@ -52,8 +56,17 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    if not detail.get("ready", False):
+        print(
+            f"Bridge is up at {args.bridge_url} but model {args.model!r} is not loaded yet.\n"
+            f"This usually means the bridge just started; the model loads on first use.\n"
+            f"Either wait a few seconds and re-run, or send a chat request via the web UI to warm it.",
+            file=sys.stderr,
+        )
+        return 4
+
     if args.no_tui:
-        print(f"Bridge OK at {args.bridge_url}")
+        print(f"Bridge OK at {args.bridge_url} (model {args.model} ready)")
         return 0
 
     # Import here so tests can run without Textual installed/initialized

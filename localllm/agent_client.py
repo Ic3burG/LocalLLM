@@ -76,3 +76,16 @@ class AgentClient:
                 return resp.status_code == 200
         except httpx.HTTPError:
             return False
+
+    async def health_detail(self, model_id: str = "gemma4-e4b") -> dict | None:
+        """Full /v1/health response. Returns None if the bridge is unreachable."""
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                resp = await client.get(
+                    f"{self._base}/v1/health", params={"model_id": model_id}
+                )
+                if resp.status_code != 200:
+                    return None
+                return resp.json()
+        except httpx.HTTPError:
+            return None
