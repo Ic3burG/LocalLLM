@@ -155,6 +155,38 @@ def _drain_stream(client: TestClient, task_id: str, timeout: float = 5.0) -> lis
     return events
 
 
+def test_agent_run_rejects_root_cwd():
+    from gemma_bridge import app
+
+    client = TestClient(app)
+    for bad in ["/", "/Users", "/etc", "/private", "/var"]:
+        resp = client.post("/v1/agent/run", json={"prompt": "hi", "cwd": bad})
+        assert resp.status_code == 400, f"expected 400 for cwd={bad!r}"
+        assert "top-level root" in resp.json()["detail"]
+
+
+def test_agent_run_rejects_nonexistent_cwd(tmp_path):
+    from gemma_bridge import app
+
+    client = TestClient(app)
+    nonexistent = str(tmp_path / "does_not_exist")
+    resp = client.post("/v1/agent/run", json={"prompt": "hi", "cwd": nonexistent})
+    assert resp.status_code == 400
+    assert "does not exist" in resp.json()["detail"]
+
+
+def test_agent_run_rejects_file_as_cwd(tmp_path):
+    from gemma_bridge import app
+
+    afile = tmp_path / "file.txt"
+    afile.write_text("hi")
+
+    client = TestClient(app)
+    resp = client.post("/v1/agent/run", json={"prompt": "hi", "cwd": str(afile)})
+    assert resp.status_code == 400
+    assert "not a directory" in resp.json()["detail"]
+
+
 def test_agent_run_with_cwd_sandboxes_tools(monkeypatch, tmp_path):
     (tmp_path / "hello.txt").write_text("from-session-cwd")
     monkeypatch.setattr("agent.react_loop_sse", _fake_react_with_one_step)

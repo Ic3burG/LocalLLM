@@ -754,6 +754,57 @@ class AgentRequest(BaseModel):
     cwd: str | None = None
 
 
+# Top-level roots that should never be acceptable as a session cwd — they'd
+# functionally remove the file-access sandbox. Subdirectories of these are
+# fine (e.g. /Users/<me>/Projects/foo is allowed; /Users is not). macOS resolves
+# /etc → /private/etc and /var → /private/var via symlinks, so we check both
+# the input form and the resolved form against the denylist.
+_DENIED_CWD_ROOTS = frozenset(
+    {
+        "/",
+        "/Users",
+        "/Library",
+        "/System",
+        "/usr",
+        "/usr/local",
+        "/bin",
+        "/sbin",
+        "/opt",
+        "/etc",
+        "/var",
+        "/tmp",
+        "/private",
+        "/private/etc",
+        "/private/var",
+        "/private/tmp",
+    }
+)
+
+
+def _validate_session_cwd(cwd: str) -> str:
+    """Reject obviously bad client-supplied cwd values before they widen
+    the agent's sandbox. Returns the resolved absolute path if OK; raises
+    HTTPException(400) otherwise."""
+    from pathlib import Path
+
+    if not cwd or not cwd.strip():
+        raise HTTPException(status_code=400, detail="cwd must be non-empty")
+    expanded = Path(cwd).expanduser()
+    resolved = expanded.resolve()
+    resolved_str = str(resolved)
+    # Check both the user's input form and the resolved form so /etc (which
+    # resolves to /private/etc on macOS) is caught either way.
+    if str(expanded) in _DENIED_CWD_ROOTS or resolved_str in _DENIED_CWD_ROOTS:
+        raise HTTPException(
+            status_code=400, detail=f"cwd cannot be top-level root {resolved_str}"
+        )
+    if not resolved.exists():
+        raise HTTPException(status_code=400, detail=f"cwd does not exist: {cwd}")
+    if not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"cwd is not a directory: {cwd}")
+    return resolved_str
+
+
 class ConfirmRequest(BaseModel):
     approved: bool
 
@@ -771,6 +822,10 @@ class ScheduleTaskRequest(BaseModel):
 
 @router.post("/run")
 async def run_agent(req: AgentRequest):
+    # Validate client-supplied cwd before any state mutation so a 400
+    # response doesn't leave half-created queues behind.
+    validated_cwd = _validate_session_cwd(req.cwd) if req.cwd is not None else None
+
     task_id = str(uuid.uuid4())
     sse_queues[task_id] = asyncio.Queue()
     confirm_queues[task_id] = asyncio.Queue()
@@ -785,7 +840,7 @@ async def run_agent(req: AgentRequest):
             messages,
             req.model_id,
             deep_think=req.deep_think,
-            cwd=req.cwd,
+            cwd=validated_cwd,
             cli_session_id=req.cli_session_id,
         )
     )
