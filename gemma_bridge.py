@@ -222,6 +222,23 @@ def health(model_id: str = "gemma4-e4b"):
 async def startup():
     scheduler.start()
     load_scheduler_tasks_on_startup()
+    # Prune CLI sessions that haven't heartbeat'd in HEARTBEAT_STALE_AFTER_S.
+    # Runs every 60s so _sessions doesn't accumulate dead entries from CLIs
+    # that exited without a clean DELETE (kill -9, panic, network blip).
+    from cli_sessions import get_registry
+
+    def _prune_cli_sessions():
+        evicted = get_registry().evict_stale()
+        if evicted:
+            logger.info("evicted %d stale CLI session(s)", evicted)
+
+    scheduler.add_job(
+        _prune_cli_sessions,
+        "interval",
+        seconds=60,
+        id="cli_sessions_evict",
+        replace_existing=True,
+    )
 
 
 @app.get("/v1/system_prompt")

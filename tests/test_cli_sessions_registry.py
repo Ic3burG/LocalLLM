@@ -94,3 +94,38 @@ async def test_fanout_drops_oldest_when_queue_full(tmp_path: Path):
     assert q.qsize() == 2
     assert (await q.get())["i"] == 2
     assert (await q.get())["i"] == 3
+
+
+def test_init_does_not_create_snapshot_dir(tmp_path: Path):
+    """Module import / SessionRegistry() must not touch the filesystem.
+    The snapshot dir is created lazily on first write."""
+    target = tmp_path / "deep" / "deeper" / "sessions.json"
+    SessionRegistry(snapshot_path=target)
+    assert not target.parent.exists()
+
+
+def test_snapshot_is_atomic_replace(tmp_path: Path):
+    """A write must leave no tmp files behind after success and must not
+    truncate the existing file even if interrupted (we model this by
+    checking that no .tmp files are left after a normal write)."""
+    snapshot = tmp_path / "sessions.json"
+    reg = SessionRegistry(snapshot_path=snapshot)
+    reg.register(_info("cli-1"))
+    reg.register(_info("cli-2"))
+    assert snapshot.exists()
+    leftover = [p for p in tmp_path.iterdir() if p.suffix == ".tmp"]
+    assert leftover == []
+    # File is valid JSON
+    data = json.loads(snapshot.read_text())
+    assert set(data.keys()) == {"cli-1", "cli-2"}
+
+
+def test_evict_stale_removes_stale_entries(tmp_path: Path):
+    reg = SessionRegistry(snapshot_path=tmp_path / "sessions.json")
+    reg.register(_info("cli-fresh"))
+    reg.register(_info("cli-stale"))
+    reg._last_seen["cli-stale"] = time.monotonic() - (HEARTBEAT_STALE_AFTER_S + 1)
+    evicted = reg.evict_stale()
+    assert evicted == 1
+    assert "cli-fresh" in reg._sessions
+    assert "cli-stale" not in reg._sessions

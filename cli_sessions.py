@@ -43,6 +43,10 @@ class SessionRegistry:
         self._subscribers: dict[str, list[asyncio.Queue]] = {}
         self._snapshot_path = snapshot_path or DEFAULT_SNAPSHOT_PATH
         self._max_queue = max_queue
+        # NOTE: directory creation deferred to _ensure_snapshot_dir() so module
+        # import doesn't have a filesystem side effect (touching ~/.localllm).
+
+    def _ensure_snapshot_dir(self) -> None:
         self._snapshot_path.parent.mkdir(mode=0o700, exist_ok=True, parents=True)
 
     # ---- core CRUD --------------------------------------------------------
@@ -96,9 +100,28 @@ class SessionRegistry:
 
     # ---- snapshot persistence --------------------------------------------
     def _snapshot(self) -> None:
+        import os
+        import tempfile
+        from contextlib import suppress
+
         try:
+            self._ensure_snapshot_dir()
             data = {sid: asdict(info) for sid, info in self._sessions.items()}
-            self._snapshot_path.write_text(json.dumps(data, indent=2))
+            # Atomic write: tmp + os.replace so a crash mid-write can't leave
+            # a truncated JSON file that load_snapshot would silently reset.
+            fd, tmp_path = tempfile.mkstemp(
+                prefix=".sessions.",
+                suffix=".json.tmp",
+                dir=self._snapshot_path.parent,
+            )
+            try:
+                with os.fdopen(fd, "w") as f:
+                    f.write(json.dumps(data, indent=2))
+                os.replace(tmp_path, self._snapshot_path)
+            except Exception:
+                with suppress(OSError):
+                    os.unlink(tmp_path)
+                raise
         except OSError as exc:
             logger.warning("registry snapshot failed: %s", exc)
 
