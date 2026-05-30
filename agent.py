@@ -123,27 +123,41 @@ sse_queues: dict[str, asyncio.Queue] = {}
 confirm_queues: dict[str, asyncio.Queue] = {}
 
 
+from cli_sessions import get_registry as _get_cli_registry
+
+
 class _FanoutQueue:
     """Transparent wrapper around an asyncio.Queue that mirrors every JSON
     event also to the CLI session registry for the web mirror.
 
     Lets react_loop_sse stay unchanged — any existing `await q.put(json.dumps(event))`
-    automatically fans out without touching the call site."""
+    automatically fans out without touching the call site.
+
+    Optimization: accepts dicts directly (`put(event_dict)`) so producers
+    who already have the dict can avoid the double serialize/parse round
+    trip. The inner queue still receives the JSON string the SSE consumer
+    needs."""
 
     def __init__(self, inner: asyncio.Queue, cli_session_id: str | None) -> None:
         self._inner = inner
         self._sid = cli_session_id
 
     async def put(self, item) -> None:
+        if isinstance(item, dict):
+            # Fast path: serialize once for the inner queue, forward the
+            # dict directly to fanout without a re-parse.
+            payload = json.dumps(item)
+            await self._inner.put(payload)
+            if self._sid:
+                await _get_cli_registry().fanout(self._sid, item)
+            return
         await self._inner.put(item)
         if self._sid and isinstance(item, str):
             try:
                 event = json.loads(item)
             except (ValueError, TypeError):
                 return
-            from cli_sessions import get_registry
-
-            await get_registry().fanout(self._sid, event)
+            await _get_cli_registry().fanout(self._sid, event)
 
     def __getattr__(self, name):
         return getattr(self._inner, name)

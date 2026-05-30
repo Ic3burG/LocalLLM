@@ -66,3 +66,23 @@ async def test_fanout_queue_handles_malformed_json(monkeypatch, tmp_path):
     wrapped = _FanoutQueue(inner, cli_session_id="cli-1")
     await wrapped.put("not json")  # must not raise
     assert (await inner.get()) == "not json"
+
+
+async def test_fanout_queue_accepts_dict_directly(monkeypatch, tmp_path):
+    """Fast path: a producer that has the dict can skip the JSON dance —
+    inner queue still receives a JSON string, subscriber gets the dict."""
+    fresh = cli_sessions.SessionRegistry(snapshot_path=tmp_path / "sessions.json")
+    monkeypatch.setattr(cli_sessions, "_registry", fresh)
+    fresh.register(_info("cli-1"))
+    subscriber = await fresh.subscribe("cli-1")
+
+    inner: asyncio.Queue = asyncio.Queue()
+    wrapped = _FanoutQueue(inner, cli_session_id="cli-1")
+    await wrapped.put({"type": "done", "message": "ok"})
+
+    # Inner queue got the serialized form
+    raw = await inner.get()
+    assert json.loads(raw)["message"] == "ok"
+    # Subscriber got the dict directly
+    delivered = await asyncio.wait_for(subscriber.get(), timeout=1)
+    assert delivered == {"type": "done", "message": "ok"}
