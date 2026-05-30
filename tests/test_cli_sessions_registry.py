@@ -120,6 +120,29 @@ def test_snapshot_is_atomic_replace(tmp_path: Path):
     assert set(data.keys()) == {"cli-1", "cli-2"}
 
 
+async def test_deregister_delivers_none_sentinel_when_queue_full(tmp_path: Path):
+    """If a subscriber queue is full at deregister time, we must still
+    deliver the None sentinel so the mirror SSE consumer sees end-of-stream."""
+    reg = SessionRegistry(snapshot_path=tmp_path / "sessions.json", max_queue=2)
+    reg.register(_info("cli-1"))
+    q = await reg.subscribe("cli-1")
+    await reg.fanout("cli-1", {"i": 1})
+    await reg.fanout("cli-1", {"i": 2})
+    # Queue is now full (size 2). Deregister must still drain a sentinel.
+    reg.deregister("cli-1")
+    # Drain to find the None — should be reachable after at most max_queue items
+    saw_none = False
+    for _ in range(3):
+        try:
+            item = q.get_nowait()
+        except asyncio.QueueEmpty:
+            break
+        if item is None:
+            saw_none = True
+            break
+    assert saw_none, "deregister must deliver None sentinel"
+
+
 def test_evict_stale_removes_stale_entries(tmp_path: Path):
     reg = SessionRegistry(snapshot_path=tmp_path / "sessions.json")
     reg.register(_info("cli-fresh"))

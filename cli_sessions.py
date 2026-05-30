@@ -68,10 +68,18 @@ class SessionRegistry:
         self._sessions.pop(session_id, None)
         self._last_seen.pop(session_id, None)
         for q in self._subscribers.pop(session_id, []):
+            # Drop oldest if full so the None sentinel always lands —
+            # otherwise mirror clients never see end-of-stream and the
+            # SSE consumer hangs until TCP timeout.
+            if q.full():
+                try:
+                    q.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
             try:
                 q.put_nowait(None)
             except asyncio.QueueFull:
-                pass
+                logger.debug("deregister: queue still full after drop: %s", session_id)
         self._snapshot()
 
     def list(self) -> list[SessionInfo]:
