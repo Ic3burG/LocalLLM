@@ -11,6 +11,8 @@ temp_v4/
 node_modules/
 .superpowers/
 .DS_Store
+*.egg-info/
+.localllm/
 
 # Runtime, model-written memory containing personal data — must NOT be tracked
 # in a (public) repo. Persists locally for the bridge; kept out of git.

@@ -202,6 +202,64 @@ app.get("/api/agent/schedule", async (req, res) => {
   }
 });
 
+// CLI session registry (read-only from the web side; v2 may add control)
+
+app.get("/api/cli/sessions", async (req, res) => {
+  try {
+    const response = await axios.get("http://localhost:9379/v1/cli/sessions");
+    res.json(response.data);
+  } catch (error) {
+    log("ERROR", "fetch cli sessions failed", {
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
+    res.status(502).json({ error: "Failed to fetch CLI sessions" });
+  }
+});
+
+app.get("/api/cli/stream/:sid", (req, res) => {
+  const sid = req.params.sid;
+  const options = {
+    hostname: "localhost",
+    port: 9379,
+    path: `/v1/cli/stream/${sid}`,
+    method: "GET",
+  };
+  // Don't flushHeaders eagerly — wait for the upstream response so we
+  // can propagate non-200 status (e.g. 404 when the session has been
+  // evicted) instead of silently piping the JSON error body as SSE data.
+  res.socket && res.socket.setTimeout(0);
+  const proxyReq = http.request(options, (proxyRes) => {
+    if (proxyRes.statusCode !== 200) {
+      // Propagate the upstream status + body; the browser EventSource
+      // will fire onerror and the mirror modal can show a clear message.
+      res.status(proxyRes.statusCode).type("application/json");
+      proxyRes.pipe(res);
+      return;
+    }
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+    proxyRes.pipe(res);
+  });
+  proxyReq.on("socket", (sock) => sock.setTimeout(0));
+  proxyReq.on("error", (err) => {
+    log("ERROR", "CLI mirror SSE proxy error", {
+      session_id: sid,
+      error: err.message,
+    });
+    if (!res.headersSent) {
+      res.status(502).json({ error: "Bridge unreachable" });
+    } else {
+      res.end();
+    }
+  });
+  req.on("close", () => proxyReq.destroy());
+  proxyReq.end();
+});
+
 app.post("/api/agent/schedule", async (req, res) => {
   try {
     const response = await axios.post(

@@ -198,16 +198,47 @@ from agent_utils import TelemetryManager
 
 app.include_router(agent_router, prefix="/v1/agent")
 
+from cli_sessions import router as cli_sessions_router  # noqa: E402
+
+app.include_router(cli_sessions_router, prefix="/v1/cli")
+
 
 @app.get("/v1/health")
-def health():
-    return {"status": "ok"}
+def health(model_id: str = "gemma4-e4b"):
+    """Liveness + readiness probe. Always returns 200 if the bridge is up;
+    `ready` indicates whether the named model is loaded and able to serve
+    a request right now. The CLI uses `ready` to avoid declaring 'Connected'
+    while mlx-vlm is still warming up after a launchctl kickstart."""
+    from inference_engine import is_model_loaded
+
+    return {
+        "status": "ok",
+        "ready": is_model_loaded(model_id),
+        "model_id": model_id,
+    }
 
 
 @app.on_event("startup")
 async def startup():
     scheduler.start()
     load_scheduler_tasks_on_startup()
+    # Prune CLI sessions that haven't heartbeat'd in HEARTBEAT_STALE_AFTER_S.
+    # Runs every 60s so _sessions doesn't accumulate dead entries from CLIs
+    # that exited without a clean DELETE (kill -9, panic, network blip).
+    from cli_sessions import get_registry
+
+    def _prune_cli_sessions():
+        evicted = get_registry().evict_stale()
+        if evicted:
+            logger.info("evicted %d stale CLI session(s)", evicted)
+
+    scheduler.add_job(
+        _prune_cli_sessions,
+        "interval",
+        seconds=60,
+        id="cli_sessions_evict",
+        replace_existing=True,
+    )
 
 
 @app.get("/v1/system_prompt")

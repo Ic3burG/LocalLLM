@@ -127,14 +127,34 @@ class Tool:
 
 
 def validate_path(path_str: str, must_exist: bool = True) -> Path:
-    # Resolve the project root (base) and the requested path (target)
-    base = Path(os.getcwd()).resolve()
-    target = Path(os.path.expanduser(path_str)).resolve()
+    # Local import: keep logging_config dependency lazy to avoid import cycles
+    # at module-load time.
+    from logging_config import current_cwd_var
 
-    # Security Check: Ensure target is within base
-    try:
-        target.relative_to(base)
-    except ValueError:
+    process_base = Path(os.getcwd()).resolve()
+    session_cwd = current_cwd_var.get()
+    extra_base: Path | None = Path(session_cwd).resolve() if session_cwd else None
+
+    expanded = Path(os.path.expanduser(path_str))
+    # Relative paths resolve against the session cwd when one is set, so
+    # `read_file("README.md")` means "in the CLI's launch dir", not the
+    # bridge process's cwd.
+    if not expanded.is_absolute() and extra_base is not None:
+        target = (extra_base / expanded).resolve()
+    else:
+        target = expanded.resolve()
+
+    allowed_bases: list[Path] = [process_base]
+    if extra_base is not None:
+        allowed_bases.append(extra_base)
+
+    for base in allowed_bases:
+        try:
+            target.relative_to(base)
+            break
+        except ValueError:
+            continue
+    else:
         raise PermissionError(f"Access denied: {path_str} is outside the sandbox.")
 
     if must_exist and not target.exists():
@@ -777,11 +797,28 @@ def _validate_user_file_path(path: str, must_exist: bool = True) -> Path:
     """Like ``validate_path`` but additionally accepts paths under the standard
     user folders (``~/Downloads``, ``~/Desktop``, ``~/Pictures``). Used by tools
     that read media files the user keeps outside the project.
+
+    Honors logging_config.current_cwd_var so a CLI session's launch dir is
+    treated identically to the bridge process cwd: relative paths resolve
+    against it, and it's added to the allowlist.
     """
-    target = Path(os.path.expanduser(path)).resolve()
-    allowed = [Path(os.getcwd()).resolve()] + [
+    from logging_config import current_cwd_var
+
+    session_cwd = current_cwd_var.get()
+    extra_base: Path | None = Path(session_cwd).resolve() if session_cwd else None
+
+    expanded = Path(os.path.expanduser(path))
+    if not expanded.is_absolute() and extra_base is not None:
+        target = (extra_base / expanded).resolve()
+    else:
+        target = expanded.resolve()
+
+    allowed: list[Path] = [Path(os.getcwd()).resolve()] + [
         (Path.home() / sub).resolve() for sub in _USER_FILE_ROOTS
     ]
+    if extra_base is not None:
+        allowed.append(extra_base)
+
     for root in allowed:
         try:
             target.relative_to(root)
@@ -791,7 +828,7 @@ def _validate_user_file_path(path: str, must_exist: bool = True) -> Path:
     else:
         raise PermissionError(
             f"Access denied: {path} is outside the allowed folders "
-            "(project dir, ~/Downloads, ~/Desktop, ~/Pictures)."
+            "(project dir, ~/Downloads, ~/Desktop, ~/Pictures, session cwd)."
         )
     if must_exist and not target.exists():
         raise FileNotFoundError(f"File not found: {path}")
@@ -819,10 +856,23 @@ def _resolve_screenshot_path(path: str) -> Path:
     if str(p.parent) == ".":
         return Path.home() / "Downloads" / p.name
 
-    target = p.resolve() if p.is_absolute() else (Path.cwd() / p).resolve()
+    from logging_config import current_cwd_var
+
+    session_cwd = current_cwd_var.get()
+    extra_base: Path | None = Path(session_cwd).resolve() if session_cwd else None
+
+    if p.is_absolute():
+        target = p.resolve()
+    elif extra_base is not None:
+        target = (extra_base / p).resolve()
+    else:
+        target = (Path.cwd() / p).resolve()
+
     allowed = [Path(os.getcwd()).resolve()] + [
         (Path.home() / sub).resolve() for sub in _SCREENSHOT_EXTRA_ROOTS
     ]
+    if extra_base is not None:
+        allowed.append(extra_base)
     for root in allowed:
         try:
             target.relative_to(root)
@@ -831,7 +881,7 @@ def _resolve_screenshot_path(path: str) -> Path:
             continue
     raise PermissionError(
         f"Access denied: {path} is outside the screenshot allowlist "
-        "(project dir, ~/Downloads, ~/Desktop, ~/Pictures)."
+        "(project dir, ~/Downloads, ~/Desktop, ~/Pictures, session cwd)."
     )
 
 

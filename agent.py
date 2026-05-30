@@ -122,6 +122,58 @@ from inference_engine import is_model_loaded, run_inference
 sse_queues: dict[str, asyncio.Queue] = {}
 confirm_queues: dict[str, asyncio.Queue] = {}
 
+
+from cli_sessions import get_registry as _get_cli_registry
+from event_types import (
+    mk_confirm_request,
+    mk_confirm_resolved,
+    mk_done,
+    mk_error,
+    mk_image,
+    mk_sources,
+    mk_status,
+    mk_step,
+    mk_thinking,
+)
+
+
+class _FanoutQueue:
+    """Transparent wrapper around an asyncio.Queue that mirrors every JSON
+    event also to the CLI session registry for the web mirror.
+
+    Lets react_loop_sse stay unchanged — any existing `await q.put(json.dumps(event))`
+    automatically fans out without touching the call site.
+
+    Optimization: accepts dicts directly (`put(event_dict)`) so producers
+    who already have the dict can avoid the double serialize/parse round
+    trip. The inner queue still receives the JSON string the SSE consumer
+    needs."""
+
+    def __init__(self, inner: asyncio.Queue, cli_session_id: str | None) -> None:
+        self._inner = inner
+        self._sid = cli_session_id
+
+    async def put(self, item) -> None:
+        if isinstance(item, dict):
+            # Fast path: serialize once for the inner queue, forward the
+            # dict directly to fanout without a re-parse.
+            payload = json.dumps(item)
+            await self._inner.put(payload)
+            if self._sid:
+                await _get_cli_registry().fanout(self._sid, item)
+            return
+        await self._inner.put(item)
+        if self._sid and isinstance(item, str):
+            try:
+                event = json.loads(item)
+            except (ValueError, TypeError):
+                return
+            await _get_cli_registry().fanout(self._sid, event)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
 SCHEDULER_TASKS_FILE = Path(__file__).parent / "scheduler_tasks.json"
 SCHEDULER_LOG_FILE = Path(__file__).parent / "scheduler_log.jsonl"
 
@@ -344,11 +396,7 @@ async def run_deep_thinking_pipeline(
             break
 
     # Stage 1: Diversify
-    await q.put(
-        json.dumps(
-            {"type": "status", "message": "Deep Thinking: Exploring 3 reasoning paths…"}
-        )
-    )
+    await q.put(json.dumps(mk_status("Deep Thinking: Exploring 3 reasoning paths…")))
     diversify_prompt = (
         "Generate 3 distinct, high-level strategies to solve this problem. "
         "Label them Path A, Path B, and Path C.\n\n"
@@ -358,19 +406,12 @@ async def run_deep_thinking_pipeline(
     path_responses = await run_inference(diversify_messages, model_id)
     await q.put(
         json.dumps(
-            {
-                "type": "thinking",
-                "content": f"### DIVERSIFY (Tree of Thought)\n{path_responses}\n\n",
-            }
+            mk_thinking(f"### DIVERSIFY (Tree of Thought)\n{path_responses}\n\n")
         )
     )
 
     # Stage 2: Critique
-    await q.put(
-        json.dumps(
-            {"type": "status", "message": "Deep Thinking: Critiquing strategies…"}
-        )
-    )
+    await q.put(json.dumps(mk_status("Deep Thinking: Critiquing strategies…")))
     critique_prompt = (
         "Act as a critical reviewer. For each Path (A, B, C) mentioned above, "
         "identify one major logical flaw or edge case. Score each 1-10 based on robustness."
@@ -383,19 +424,12 @@ async def run_deep_thinking_pipeline(
     critique_responses = await run_inference(critique_messages, model_id)
     await q.put(
         json.dumps(
-            {
-                "type": "thinking",
-                "content": f"### CRITIQUE (Self-Correction)\n{critique_responses}\n\n",
-            }
+            mk_thinking(f"### CRITIQUE (Self-Correction)\n{critique_responses}\n\n")
         )
     )
 
     # Stage 3: Synthesize
-    await q.put(
-        json.dumps(
-            {"type": "status", "message": "Deep Thinking: Synthesizing final plan…"}
-        )
-    )
+    await q.put(json.dumps(mk_status("Deep Thinking: Synthesizing final plan…")))
     synthesize_prompt = (
         "Based on the original problem and your critique, synthesize the absolute best solution. "
         "Address the flaws identified. Output ONLY the final synthesized reasoning."
@@ -409,12 +443,7 @@ async def run_deep_thinking_pipeline(
     ]
     final_reasoning = await run_inference(synthesize_messages, model_id)
     await q.put(
-        json.dumps(
-            {
-                "type": "thinking",
-                "content": f"### SYNTHESIZE (Final Plan)\n{final_reasoning}",
-            }
-        )
+        json.dumps(mk_thinking(f"### SYNTHESIZE (Final Plan)\n{final_reasoning}"))
     )
     return final_reasoning
 
@@ -425,10 +454,21 @@ async def run_deep_thinking_pipeline(
 
 
 async def react_loop_sse(
-    task_id: str, messages: list, model_id: str, deep_think: bool = False
+    task_id: str,
+    messages: list,
+    model_id: str,
+    deep_think: bool = False,
+    cwd: str | None = None,
+    cli_session_id: str | None = None,
 ) -> None:
     """Run ReAct loop, emitting SSE events to sse_queues[task_id]."""
+    from logging_config import current_cwd_var
+
     task_id_var.set(task_id)
+    cwd_token = current_cwd_var.set(cwd) if cwd else None
+    # Wrap the queue so events also fan out to CLI subscribers (the web
+    # mirror). When cli_session_id is None, this is a transparent passthrough.
+    sse_queues[task_id] = _FanoutQueue(sse_queues[task_id], cli_session_id)
     logger.info(
         "sse react loop started", extra={"model_id": model_id, "deep_think": deep_think}
     )
@@ -471,7 +511,7 @@ async def react_loop_sse(
     try:
         if deep_think:
             reasoning = await run_deep_thinking_pipeline(q, messages, model_id)
-            await q.put(json.dumps({"type": "thinking", "content": reasoning}))
+            await q.put(json.dumps(mk_thinking(reasoning)))
             # Inject the reasoning to guide the agent
             messages.append(
                 {
@@ -485,9 +525,7 @@ async def react_loop_sse(
             # Notify the UI when the model needs to be loaded from disk so the
             # user sees a meaningful status instead of a silent "Thinking..." wait.
             if not is_model_loaded(model_id):
-                await q.put(
-                    json.dumps({"type": "status", "message": f"Loading {model_id}…"})
-                )
+                await q.put(json.dumps(mk_status(f"Loading {model_id}…")))
 
             messages = await summarize_history(messages)
             response_text = await run_inference(messages, model_id)
@@ -509,9 +547,7 @@ async def react_loop_sse(
                     thinking_match.group(1).strip() if thinking_match else None
                 )
                 if thinking_content:
-                    await q.put(
-                        json.dumps({"type": "thinking", "content": thinking_content})
-                    )
+                    await q.put(json.dumps(mk_thinking(thinking_content)))
 
                 clean_response = strip_thinking_blocks(response_text)
                 if not clean_response:
@@ -526,10 +562,9 @@ async def react_loop_sse(
                         )
                         await q.put(
                             json.dumps(
-                                {
-                                    "type": "error",
-                                    "message": f"Model {model_id} produced no response after 3 attempts. Try a simpler query or a different model.",
-                                }
+                                mk_error(
+                                    f"Model {model_id} produced no response after 3 attempts. Try a simpler query or a different model."
+                                )
                             )
                         )
                         telemetry.record_complete(task_id, "error")
@@ -543,7 +578,7 @@ async def react_loop_sse(
                     "plain text response, treating as done",
                     extra={"preview": clean_response[:200]},
                 )
-                await q.put(json.dumps({"type": "done", "message": clean_response}))
+                await q.put(json.dumps(mk_done(clean_response)))
                 telemetry.record_complete(task_id, "success")
                 await trigger_memory_update(last_user_msg, clean_response)
                 return
@@ -554,7 +589,7 @@ async def react_loop_sse(
                     "DONE marker found, sending done event",
                     extra={"model_id": model_id, "preview": name_or_msg[:200]},
                 )
-                await q.put(json.dumps({"type": "done", "message": name_or_msg}))
+                await q.put(json.dumps(mk_done(name_or_msg)))
                 telemetry.record_complete(task_id, "success")
                 await trigger_memory_update(last_user_msg, name_or_msg)
                 return
@@ -571,12 +606,9 @@ async def react_loop_sse(
                 args_dict = dict(enumerate(args))
                 await q.put(
                     json.dumps(
-                        {
-                            "type": "confirm_request",
-                            "task_id": task_id,
-                            "tool": name_or_msg,
-                            "args": args_dict,
-                        }
+                        mk_confirm_request(
+                            task_id=task_id, tool=name_or_msg, args=args_dict
+                        )
                     )
                 )
                 cq = confirm_queues[task_id]
@@ -588,9 +620,7 @@ async def react_loop_sse(
                         extra={"tool": name_or_msg},
                     )
                     approved = False
-                await q.put(
-                    json.dumps({"type": "confirm_resolved", "approved": approved})
-                )
+                await q.put(json.dumps(mk_confirm_resolved(approved)))
                 if not approved:
                     messages.append(
                         {"role": "user", "content": "TOOL_RESULT: denied by user"}
@@ -631,7 +661,7 @@ async def react_loop_sse(
                 run_sources.extend(new_sources)
 
                 if new_sources:
-                    await q.put(json.dumps({"type": "sources", "items": new_sources}))
+                    await q.put(json.dumps(mk_sources(new_sources)))
 
                 header = format_sources_for_model(new_sources)
                 if header and model_text:
@@ -647,13 +677,12 @@ async def react_loop_sse(
 
             await q.put(
                 json.dumps(
-                    {
-                        "type": "step",
-                        "tool": name_or_msg,
-                        "args": dict(enumerate(args)),
-                        "result": display_result,
-                        "elapsed_ms": elapsed,
-                    }
+                    mk_step(
+                        tool=name_or_msg,
+                        args=dict(enumerate(args)),
+                        result=display_result,
+                        elapsed_ms=elapsed,
+                    )
                 )
             )
 
@@ -667,16 +696,15 @@ async def react_loop_sse(
                         raise ValueError
                     await q.put(
                         json.dumps(
-                            {
-                                "type": "image",
-                                "image_b64": img_data["image_b64"],
-                                "width": img_data["width"],
-                                "height": img_data["height"],
-                                "steps": img_data["steps"],
-                                "elapsed_ms": img_data["elapsed_ms"],
-                                "prompt": img_data["prompt"],
-                                "size": img_data.get("size", "512x512"),
-                            }
+                            mk_image(
+                                image_b64=img_data["image_b64"],
+                                width=img_data["width"],
+                                height=img_data["height"],
+                                steps=img_data["steps"],
+                                elapsed_ms=img_data["elapsed_ms"],
+                                prompt=img_data["prompt"],
+                                size=img_data.get("size", "512x512"),
+                            )
                         )
                     )
                     model_tool_result = (
@@ -691,12 +719,14 @@ async def react_loop_sse(
             )
 
         logger.warning("max iterations reached")
-        await q.put(json.dumps({"type": "error", "message": "Max iterations reached"}))
+        await q.put(json.dumps(mk_error("Max iterations reached")))
         telemetry.record_complete(task_id, "error")
     except Exception as e:
-        await q.put(json.dumps({"type": "error", "message": str(e)}))
+        await q.put(json.dumps(mk_error(str(e))))
         telemetry.record_complete(task_id, "error")
     finally:
+        if cwd_token is not None:
+            current_cwd_var.reset(cwd_token)
         await q.put(None)
 
 
@@ -710,6 +740,59 @@ class AgentRequest(BaseModel):
     messages: list[dict] | None = None
     model_id: str = "gemma4-e4b"
     deep_think: bool = False
+    cli_session_id: str | None = None
+    cwd: str | None = None
+
+
+# Top-level roots that should never be acceptable as a session cwd — they'd
+# functionally remove the file-access sandbox. Subdirectories of these are
+# fine (e.g. /Users/<me>/Projects/foo is allowed; /Users is not). macOS resolves
+# /etc → /private/etc and /var → /private/var via symlinks, so we check both
+# the input form and the resolved form against the denylist.
+_DENIED_CWD_ROOTS = frozenset(
+    {
+        "/",
+        "/Users",
+        "/Library",
+        "/System",
+        "/usr",
+        "/usr/local",
+        "/bin",
+        "/sbin",
+        "/opt",
+        "/etc",
+        "/var",
+        "/tmp",
+        "/private",
+        "/private/etc",
+        "/private/var",
+        "/private/tmp",
+    }
+)
+
+
+def _validate_session_cwd(cwd: str) -> str:
+    """Reject obviously bad client-supplied cwd values before they widen
+    the agent's sandbox. Returns the resolved absolute path if OK; raises
+    HTTPException(400) otherwise."""
+    from pathlib import Path
+
+    if not cwd or not cwd.strip():
+        raise HTTPException(status_code=400, detail="cwd must be non-empty")
+    expanded = Path(cwd).expanduser()
+    resolved = expanded.resolve()
+    resolved_str = str(resolved)
+    # Check both the user's input form and the resolved form so /etc (which
+    # resolves to /private/etc on macOS) is caught either way.
+    if str(expanded) in _DENIED_CWD_ROOTS or resolved_str in _DENIED_CWD_ROOTS:
+        raise HTTPException(
+            status_code=400, detail=f"cwd cannot be top-level root {resolved_str}"
+        )
+    if not resolved.exists():
+        raise HTTPException(status_code=400, detail=f"cwd does not exist: {cwd}")
+    if not resolved.is_dir():
+        raise HTTPException(status_code=400, detail=f"cwd is not a directory: {cwd}")
+    return resolved_str
 
 
 class ConfirmRequest(BaseModel):
@@ -729,6 +812,10 @@ class ScheduleTaskRequest(BaseModel):
 
 @router.post("/run")
 async def run_agent(req: AgentRequest):
+    # Validate client-supplied cwd before any state mutation so a 400
+    # response doesn't leave half-created queues behind.
+    validated_cwd = _validate_session_cwd(req.cwd) if req.cwd is not None else None
+
     task_id = str(uuid.uuid4())
     sse_queues[task_id] = asyncio.Queue()
     confirm_queues[task_id] = asyncio.Queue()
@@ -738,7 +825,14 @@ async def run_agent(req: AgentRequest):
         messages.append({"role": "user", "content": req.prompt})
 
     asyncio.create_task(
-        react_loop_sse(task_id, messages, req.model_id, deep_think=req.deep_think)
+        react_loop_sse(
+            task_id,
+            messages,
+            req.model_id,
+            deep_think=req.deep_think,
+            cwd=validated_cwd,
+            cli_session_id=req.cli_session_id,
+        )
     )
     return {"task_id": task_id}
 
