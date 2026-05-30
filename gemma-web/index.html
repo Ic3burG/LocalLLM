@@ -5581,6 +5581,11 @@
       function renderCliMirrorEvent(target, event) {
         // Minimal renderer — read-only view of agent events. All interpolated
         // strings go through textContent.
+        //
+        // Event schema source of truth: event_types.py (repo root). The
+        // dataclasses + mk_* builders there are the canonical wire format;
+        // any rename or new event must update both that file and the
+        // string literals below.
         const row = document.createElement("div");
         row.style.cssText = "padding:4px 0;line-height:1.5;";
         const t = event && event.type;
