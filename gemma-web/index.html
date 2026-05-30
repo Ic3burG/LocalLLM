@@ -5491,6 +5491,11 @@
       }
 
       async function refreshCliSessions() {
+        // Skip the fetch + DOM rebuild while the panel is collapsed; the
+        // count badge updates on next expand anyway. Saves ~720 round-trips
+        // and DOM teardowns/hour when nobody's watching.
+        const body = document.getElementById("cli-sessions-body");
+        if (body && body.style.display === "none") return;
         try {
           const r = await fetch("/api/cli/sessions");
           if (!r.ok) return;
