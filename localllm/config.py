@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-import tomllib
+# tomllib is stdlib on 3.11+; fall back to the tomli backport on 3.10 so the
+# CI matrix (Python 3.10) still works.
+try:
+    import tomllib  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # pragma: no cover  -- exercised on 3.10 only
+    import tomli as tomllib  # type: ignore[import-not-found, no-redef]
 
 CONFIG_DIR = Path.home() / ".localllm"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
