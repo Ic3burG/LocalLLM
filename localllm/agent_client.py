@@ -15,7 +15,11 @@ logger = logging.getLogger(__name__)
 
 
 class AgentClient:
-    """Thin async wrapper over /v1/agent/{run,stream,confirm} + /v1/health."""
+    """Thin async wrapper over /v1/agent/{run,stream,confirm} + /v1/health.
+
+    Holds a single long-lived httpx.AsyncClient so keep-alive connections
+    are reused across run/confirm/health calls. Callers can `await close()`
+    explicitly or rely on GC; localhost socket leaks are bounded anyway."""
 
     def __init__(
         self,
@@ -24,6 +28,16 @@ class AgentClient:
     ) -> None:
         self._base = base_url.rstrip("/")
         self._timeout = httpx.Timeout(request_timeout, read=None)
+        # One AsyncClient per AgentClient — httpx pools connections to the
+        # same host, so per-call POST/GET reuses the keep-alive socket.
+        self._client = httpx.AsyncClient(timeout=self._timeout)
+        # Separate short-timeout client for health probes so they can't
+        # block on the read=None of the streaming client.
+        self._health_client = httpx.AsyncClient(timeout=httpx.Timeout(2.0))
+
+    async def close(self) -> None:
+        await self._client.aclose()
+        await self._health_client.aclose()
 
     async def run_and_stream(
         self,
@@ -44,48 +58,44 @@ class AgentClient:
         if cli_session_id is not None:
             payload["cli_session_id"] = cli_session_id
 
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(f"{self._base}/v1/agent/run", json=payload)
-            resp.raise_for_status()
-            task_id = resp.json()["task_id"]
-            async with aconnect_sse(
-                client, "GET", f"{self._base}/v1/agent/stream/{task_id}"
-            ) as event_source:
-                async for sse in event_source.aiter_sse():
-                    if not sse.data:
-                        continue
-                    event = parse_event(sse.data)
-                    if event is None:
-                        logger.debug("dropping unrecognized event")
-                        continue
-                    yield event
+        resp = await self._client.post(f"{self._base}/v1/agent/run", json=payload)
+        resp.raise_for_status()
+        task_id = resp.json()["task_id"]
+        async with aconnect_sse(
+            self._client, "GET", f"{self._base}/v1/agent/stream/{task_id}"
+        ) as event_source:
+            async for sse in event_source.aiter_sse():
+                if not sse.data:
+                    continue
+                event = parse_event(sse.data)
+                if event is None:
+                    logger.debug("dropping unrecognized event")
+                    continue
+                yield event
 
     async def confirm(self, task_id: str, approved: bool) -> None:
-        async with httpx.AsyncClient(timeout=self._timeout) as client:
-            resp = await client.post(
-                f"{self._base}/v1/agent/confirm/{task_id}",
-                json={"approved": approved},
-            )
-            resp.raise_for_status()
+        resp = await self._client.post(
+            f"{self._base}/v1/agent/confirm/{task_id}",
+            json={"approved": approved},
+        )
+        resp.raise_for_status()
 
     async def health(self) -> bool:
         """Probe /v1/health. Returns True iff status code is 200."""
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                resp = await client.get(f"{self._base}/v1/health")
-                return resp.status_code == 200
+            resp = await self._health_client.get(f"{self._base}/v1/health")
+            return resp.status_code == 200
         except httpx.HTTPError:
             return False
 
     async def health_detail(self, model_id: str = "gemma4-e4b") -> dict | None:
         """Full /v1/health response. Returns None if the bridge is unreachable."""
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                resp = await client.get(
-                    f"{self._base}/v1/health", params={"model_id": model_id}
-                )
-                if resp.status_code != 200:
-                    return None
-                return resp.json()
+            resp = await self._health_client.get(
+                f"{self._base}/v1/health", params={"model_id": model_id}
+            )
+            if resp.status_code != 200:
+                return None
+            return resp.json()
         except httpx.HTTPError:
             return None

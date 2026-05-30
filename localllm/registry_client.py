@@ -42,6 +42,9 @@ def make_payload(session_id: str, cwd: str, ws_url: str, model: str) -> Register
 
 
 class RegistryClient:
+    """Holds one long-lived httpx.AsyncClient; heartbeat at 10s × hours of
+    CLI uptime amortizes to near-zero socket churn via keep-alive."""
+
     def __init__(
         self, base_url: str = "http://127.0.0.1:9379", retries: int = 3
     ) -> None:
@@ -49,26 +52,27 @@ class RegistryClient:
         self._retries = retries
         self._heartbeat_task: asyncio.Task | None = None
         self._last_payload: RegisterPayload | None = None
+        self._client = httpx.AsyncClient(timeout=2.0)
+
+    async def close(self) -> None:
+        await self._client.aclose()
 
     async def register(self, payload: RegisterPayload) -> bool:
         self._last_payload = payload  # cached for heartbeat re-register after restart
         for attempt in range(self._retries):
             try:
-                async with httpx.AsyncClient(timeout=2.0) as client:
-                    resp = await client.post(
-                        f"{self._base}/v1/cli/register", json=payload.__dict__
-                    )
-                    if 200 <= resp.status_code < 300:
-                        return True
-                    if resp.status_code == 404:
-                        logger.warning(
-                            "register: bridge has no /v1/cli/register; "
-                            "running standalone without web visibility"
-                        )
-                        return False
+                resp = await self._client.post(
+                    f"{self._base}/v1/cli/register", json=payload.__dict__
+                )
+                if 200 <= resp.status_code < 300:
+                    return True
+                if resp.status_code == 404:
                     logger.warning(
-                        "register failed: %s %s", resp.status_code, resp.text
+                        "register: bridge has no /v1/cli/register; "
+                        "running standalone without web visibility"
                     )
+                    return False
+                logger.warning("register failed: %s %s", resp.status_code, resp.text)
             except httpx.HTTPError as exc:
                 logger.warning("register attempt %d failed: %s", attempt + 1, exc)
             if attempt < self._retries - 1:
@@ -83,18 +87,17 @@ class RegistryClient:
         sidebar instead of silently disappearing."""
         for attempt in range(3):
             try:
-                async with httpx.AsyncClient(timeout=2.0) as client:
-                    resp = await client.post(
-                        f"{self._base}/v1/cli/heartbeat",
-                        json={"session_id": session_id},
+                resp = await self._client.post(
+                    f"{self._base}/v1/cli/heartbeat",
+                    json={"session_id": session_id},
+                )
+                if 200 <= resp.status_code < 300:
+                    return True
+                if resp.status_code == 409 and self._last_payload is not None:
+                    logger.info(
+                        "heartbeat: bridge reports unknown session; re-registering"
                     )
-                    if 200 <= resp.status_code < 300:
-                        return True
-                    if resp.status_code == 409 and self._last_payload is not None:
-                        logger.info(
-                            "heartbeat: bridge reports unknown session; re-registering"
-                        )
-                        return await self.register(self._last_payload)
+                    return await self.register(self._last_payload)
             except httpx.HTTPError as exc:
                 logger.debug("heartbeat attempt %d failed: %s", attempt + 1, exc)
             if attempt < 2:
@@ -117,7 +120,6 @@ class RegistryClient:
 
     async def deregister(self, session_id: str) -> None:
         try:
-            async with httpx.AsyncClient(timeout=2.0) as client:
-                await client.delete(f"{self._base}/v1/cli/sessions/{session_id}")
+            await self._client.delete(f"{self._base}/v1/cli/sessions/{session_id}")
         except httpx.HTTPError as exc:
             logger.debug("deregister failed: %s", exc)

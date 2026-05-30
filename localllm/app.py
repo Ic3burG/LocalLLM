@@ -103,6 +103,9 @@ class LocalLLMApp(App):
         await self._registry_client.stop_heartbeat()
         await self._registry_client.deregister(self._session_id)
         await self._control.stop()
+        # Release pooled connections held by the long-lived clients.
+        await self._registry_client.close()
+        await self._client.close()
 
     async def on_input_submitted(self, event: InputBox.Submitted) -> None:  # type: ignore[name-defined]
         text = event.value.strip()
