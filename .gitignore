@@ -4,6 +4,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 *.log
+*.log.*
 mlx_models/
 temp_model/
 temp_config/

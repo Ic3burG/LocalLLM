@@ -17,7 +17,20 @@ async def _bridge_is_up(base_url: str) -> bool:
 
 
 async def _bridge_health_detail(base_url: str, model_id: str) -> dict | None:
-    return await AgentClient(base_url=base_url).health_detail(model_id)
+    # Retry across a freshly-(re)started bridge's bind window: a connection
+    # refused while uvicorn is still binding the port returns immediately, so a
+    # bigger timeout alone wouldn't help — we briefly retry instead. ~3.5s total.
+    client = AgentClient(base_url=base_url)
+    try:
+        for delay in (0.0, 0.5, 1.0, 2.0):
+            if delay:
+                await asyncio.sleep(delay)
+            detail = await client.health_detail(model_id)
+            if detail is not None:
+                return detail
+        return None
+    finally:
+        await client.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,23 +69,29 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    if not detail.get("ready", False):
-        print(
-            f"Bridge is up at {args.bridge_url} but model {args.model!r} is not loaded yet.\n"
-            f"This usually means the bridge just started; the model loads on first use.\n"
-            f"Either wait a few seconds and re-run, or send a chat request via the web UI to warm it.",
-            file=sys.stderr,
-        )
-        return 4
+    ready = detail.get("ready", False)
 
+    # --no-tui is a diagnostic probe: report exact readiness and exit. The
+    # interactive TUI does NOT need a preloaded model — it loads lazily on the
+    # first prompt — so reachability (detail is not None) is enough to launch.
     if args.no_tui:
+        if not ready:
+            print(
+                f"Bridge is up at {args.bridge_url} but model {args.model!r} is not loaded yet.\n"
+                f"This usually means the bridge just started; the model loads on first use.\n"
+                f"Either wait a few seconds and re-run, or send a chat request via the web UI to warm it.",
+                file=sys.stderr,
+            )
+            return 4
         print(f"Bridge OK at {args.bridge_url} (model {args.model} ready)")
         return 0
 
     # Import here so tests can run without Textual installed/initialized
     from localllm.app import LocalLLMApp
 
-    app = LocalLLMApp(bridge_url=args.bridge_url, model_id=args.model)
+    app = LocalLLMApp(
+        bridge_url=args.bridge_url, model_id=args.model, model_ready=ready
+    )
     app.run()
     return 0
 

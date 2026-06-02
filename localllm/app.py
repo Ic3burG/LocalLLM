@@ -57,10 +57,16 @@ class LocalLLMApp(App):
     }
     """
 
-    def __init__(self, bridge_url: str, model_id: str = "gemma4-e4b") -> None:
+    def __init__(
+        self,
+        bridge_url: str,
+        model_id: str = "gemma4-e4b",
+        model_ready: bool = True,
+    ) -> None:
         super().__init__()
         self._client = AgentClient(base_url=bridge_url)
         self._model_id = model_id
+        self._model_ready = model_ready
         self._cwd = str(Path(os.getcwd()).resolve())
         self._session_id = f"cli-{uuid.uuid4().hex[:8]}"
         self._control = ControlServer()
@@ -85,6 +91,11 @@ class LocalLLMApp(App):
         self.query_one(Transcript).write_status(
             f"Connected. cwd: {self._cwd}  ·  model: {self._model_id}"
         )
+        if not self._model_ready:
+            self.query_one(Transcript).write_status(
+                f"Model {self._model_id} isn't loaded yet — it will load on your "
+                f"first message (may take a few seconds)."
+            )
         self.run_worker(self._startup_register(), exclusive=False)
 
     async def _startup_register(self) -> None:

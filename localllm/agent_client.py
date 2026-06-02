@@ -32,8 +32,10 @@ class AgentClient:
         # same host, so per-call POST/GET reuses the keep-alive socket.
         self._client = httpx.AsyncClient(timeout=self._timeout)
         # Separate short-timeout client for health probes so they can't
-        # block on the read=None of the streaming client.
-        self._health_client = httpx.AsyncClient(timeout=httpx.Timeout(2.0))
+        # block on the read=None of the streaming client. 5s (not 2s) so a
+        # bridge that has bound the port but is still finishing its heavy
+        # cold-start imports isn't falsely reported unreachable.
+        self._health_client = httpx.AsyncClient(timeout=httpx.Timeout(5.0))
 
     async def close(self) -> None:
         await self._client.aclose()
