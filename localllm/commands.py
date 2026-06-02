@@ -5,8 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from agent_utils import TOOL_REGISTRY
-
 HELP_TEXT = """Slash commands:
   /help              Show this help.
   /model <name>      Switch model (e.g., gemma4-e4b, gemma-31b).
@@ -25,6 +23,18 @@ class CommandResult:
 
 
 def _tools_text() -> str:
+    # agent_utils is a bridge-side module that lives at the repo root, not in
+    # the localllm package. When `localllm` runs from inside the repo it's
+    # importable via sys.path[0]; when run from any other cwd it's not.
+    # Degrade gracefully rather than crashing the slash-command path.
+    try:
+        from agent_utils import TOOL_REGISTRY
+    except ModuleNotFoundError:
+        return (
+            "Tool listing unavailable: agent_utils not on sys.path "
+            "(launch `localllm` from the LocalLLM repo root for `/tools`, "
+            "or query the bridge directly with `curl http://127.0.0.1:9379/v1/agent/...`)."
+        )
     lines = ["Available tools:"]
     for name in sorted(TOOL_REGISTRY):
         tool = TOOL_REGISTRY[name]

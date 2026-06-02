@@ -15,6 +15,14 @@ build-backend = "setuptools.build_meta"
 where = ["."]
 include = ["localllm*"]
 
+# event_types is shared between the bridge (agent.py) and the CLI
+# (localllm.events). It's a single-file module at repo root rather than a
+# package, so list it explicitly here so editable installs put it on
+# sys.path — without this, `localllm` from a foreign cwd fails to import
+# event_types because it's neither in the localllm package nor in the cwd.
+[tool.setuptools]
+py-modules = ["event_types"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py310"
