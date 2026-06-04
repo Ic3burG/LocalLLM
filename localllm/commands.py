@@ -7,7 +7,7 @@ from typing import Literal
 
 HELP_TEXT = """Slash commands:
   /help              Show this help.
-  /model <name>      Switch model (e.g., gemma4-e4b, gemma-31b).
+  /model [name]      Switch model. Bare /model opens a selectable list.
   /clear             Clear the transcript.
   /tools             List available tools (safe vs risky).
   /cwd <path>        Change session cwd (sandbox root).
@@ -17,7 +17,7 @@ HELP_TEXT = """Slash commands:
 
 @dataclass(frozen=True)
 class CommandResult:
-    kind: Literal["show", "set_model", "set_cwd", "clear", "quit"]
+    kind: Literal["show", "set_model", "pick_model", "set_cwd", "clear", "quit"]
     message: str = ""
     value: str = ""
 
@@ -54,7 +54,9 @@ def dispatch(line: str, *, model: str) -> CommandResult | None:
         return CommandResult(kind="show", message=HELP_TEXT)
     if cmd == "/model":
         if not arg:
-            return CommandResult(kind="show", message=f"current model: {model}")
+            # Bare /model opens the selectable picker; the current model is
+            # highlighted in the list, so this still surfaces "what's active".
+            return CommandResult(kind="pick_model")
         return CommandResult(kind="set_model", value=arg.strip())
     if cmd == "/clear":
         return CommandResult(kind="clear")

@@ -33,6 +33,18 @@ def make_stub_app(events: list[dict]) -> FastAPI:
         state.setdefault("confirmations", []).append((task_id, payload))
         return {"ok": True}
 
+    @app.get("/v1/models")
+    async def models():
+        # Mirror the real bridge: directory listing can yield duplicates.
+        return {
+            "data": [
+                {"id": "gemma4-e4b", "object": "model", "provider": "mlx_vlm"},
+                {"id": "phi4-mini", "object": "model", "provider": "mlx_vlm"},
+                {"id": "gemma4-e4b", "object": "model", "provider": "mlx_vlm"},
+                {"id": "gemma4-31b-mlx", "object": "model", "provider": "mlx_vlm"},
+            ]
+        }
+
     app.state.shared = state
     return app
 
@@ -92,3 +104,16 @@ async def test_health_returns_false_when_route_missing(stub_server):
     # The stub doesn't define /v1/health, so health() returns False.
     client = AgentClient(base_url=base_url)
     assert await client.health() is False
+
+
+async def test_list_models_dedupes_and_preserves_order(stub_server):
+    base_url, _ = stub_server
+    client = AgentClient(base_url=base_url)
+    models = await client.list_models()
+    assert models == ["gemma4-e4b", "phi4-mini", "gemma4-31b-mlx"]
+
+
+async def test_list_models_empty_when_route_missing():
+    # Nothing listening → graceful empty list, no exception.
+    client = AgentClient(base_url="http://127.0.0.1:1")
+    assert await client.list_models() == []

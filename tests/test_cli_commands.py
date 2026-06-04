@@ -14,10 +14,9 @@ def test_model_with_arg_sets_model():
     assert result.value == "gemma-31b"
 
 
-def test_model_no_arg_shows_current():
+def test_model_no_arg_opens_picker():
     result = dispatch("/model", model="gemma-31b")
-    assert result.kind == "show"
-    assert "gemma-31b" in result.message
+    assert result.kind == "pick_model"
 
 
 def test_clear():

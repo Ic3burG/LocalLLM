@@ -90,6 +90,27 @@ class AgentClient:
         except httpx.HTTPError:
             return False
 
+    async def list_models(self) -> list[str]:
+        """Available model ids from /v1/models, de-duplicated, order preserved.
+
+        Returns an empty list if the bridge is unreachable or errors — callers
+        treat that as 'no models to pick from' rather than crashing the TUI."""
+        try:
+            resp = await self._health_client.get(f"{self._base}/v1/models")
+            if resp.status_code != 200:
+                return []
+            data = resp.json().get("data", [])
+        except httpx.HTTPError:
+            return []
+        seen: set[str] = set()
+        out: list[str] = []
+        for item in data:
+            mid = item.get("id")
+            if mid and mid not in seen:
+                seen.add(mid)
+                out.append(mid)
+        return out
+
     async def health_detail(self, model_id: str = "gemma4-e4b") -> dict | None:
         """Full /v1/health response. Returns None if the bridge is unreachable."""
         try:

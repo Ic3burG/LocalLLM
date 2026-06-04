@@ -4,12 +4,39 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
+import logging.handlers
 import os
 import sys
+from pathlib import Path
 
 from localllm import __version__
 from localllm.agent_client import AgentClient
 from localllm.config import load as load_config
+
+LOG_PATH = Path.home() / ".localllm" / "cli.log"
+
+
+def _setup_logging() -> Path:
+    """Attach a rotating file handler to the `localllm` logger so TUI errors are
+    captured to ~/.localllm/cli.log (the TUI owns the terminal, so stderr is not
+    usable). Honors LOCALLLM_LOG_LEVEL (default INFO)."""
+    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    level = os.environ.get("LOCALLLM_LOG_LEVEL", "INFO").upper()
+    logger = logging.getLogger("localllm")
+    logger.setLevel(level)
+    # Idempotent: don't stack handlers if main() is called more than once.
+    if not any(
+        isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers
+    ):
+        handler = logging.handlers.RotatingFileHandler(
+            LOG_PATH, maxBytes=1_000_000, backupCount=3
+        )
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+        )
+        logger.addHandler(handler)
+    return LOG_PATH
 
 
 async def _bridge_is_up(base_url: str) -> bool:
@@ -88,6 +115,16 @@ def main(argv: list[str] | None = None) -> int:
 
     # Import here so tests can run without Textual installed/initialized
     from localllm.app import LocalLLMApp
+
+    log_path = _setup_logging()
+    logging.getLogger("localllm").info(
+        "starting TUI: version=%s bridge=%s model=%s ready=%s",
+        __version__,
+        args.bridge_url,
+        args.model,
+        ready,
+    )
+    print(f"localllm {__version__} — logging to {log_path}")
 
     app = LocalLLMApp(
         bridge_url=args.bridge_url, model_id=args.model, model_ready=ready

@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
@@ -28,6 +29,7 @@ from localllm.events import (
 from localllm.registry_client import RegistryClient, make_payload
 from localllm.widgets.confirm_modal import ConfirmModal
 from localllm.widgets.input_box import InputBox
+from localllm.widgets.model_picker import ModelPicker
 from localllm.widgets.status_bar import StatusBar
 from localllm.widgets.trace_panel import TracePanel
 from localllm.widgets.transcript import Transcript
@@ -122,8 +124,22 @@ class LocalLLMApp(App):
         text = event.value.strip()
         if not text:
             return
-        transcript = self.query_one(Transcript)
+        # Record history + clear the box immediately for responsiveness, then do
+        # the real work in a worker. Modal dialogs (model picker, confirm modal)
+        # use push_screen_wait, which Textual 8.x only permits inside a worker.
         input_box = self.query_one(InputBox)
+        input_box.push_history(text)
+        input_box.value = ""
+        self._process_submit(text)
+
+    @work(exclusive=True)
+    async def _process_submit(self, text: str) -> None:
+        """Worker that handles one submitted line (slash command or prompt).
+
+        Runs in a worker so push_screen_wait is legal; any uncaught error is
+        logged to the CLI log and surfaced in the transcript rather than
+        tearing down the whole TUI."""
+        transcript = self.query_one(Transcript)
         status = self.query_one(StatusBar)
 
         # Slash commands short-circuit before the bridge round-trip.
@@ -131,27 +147,16 @@ class LocalLLMApp(App):
 
         result = dispatch(text, model=self._model_id)
         if result is not None:
-            input_box.push_history(text)
-            input_box.value = ""
-            if result.kind == "show":
-                transcript.write_status(result.message)
-            elif result.kind == "clear":
-                transcript.clear()
-            elif result.kind == "set_model":
-                self._model_id = result.value
-                status.model = result.value
-                transcript.write_status(f"model → {result.value}")
-            elif result.kind == "set_cwd":
-                self._cwd = result.value
-                status.cwd = result.value
-                transcript.write_status(f"cwd → {result.value}")
-            elif result.kind == "quit":
-                self.exit()
+            try:
+                await self._handle_command(result, transcript, status)
+            except Exception:  # noqa: BLE001
+                logger.exception("error handling command: %r", text)
+                transcript.write_error(
+                    "internal error running command — see ~/.localllm/cli.log"
+                )
             return
 
         transcript.write_user(text)
-        input_box.push_history(text)
-        input_box.value = ""
         status.state = "thinking"
         trace = self.query_one(TracePanel)
         trace.reset()
@@ -189,6 +194,7 @@ class LocalLLMApp(App):
                 elif isinstance(ev, ErrorEvent):
                     transcript.write_error(ev.message)
         except httpx.HTTPError as exc:
+            logger.warning("bridge disconnected during run: %r", exc)
             transcript.write_error(f"bridge disconnected ({exc.__class__.__name__})")
             status.state = "waiting"
             transcript.write_status("retrying bridge…")
@@ -201,11 +207,44 @@ class LocalLLMApp(App):
                 transcript.write_error(
                     "bridge still down after 30s. Try /reconnect or /quit."
                 )
-        except Exception as exc:  # noqa: BLE001
-            transcript.write_error(f"unexpected: {exc}")
+        except Exception:  # noqa: BLE001
+            logger.exception("unexpected error during agent run: %r", text)
+            transcript.write_error("unexpected error — see ~/.localllm/cli.log")
         finally:
             status.state = "ready"
             trace.active = False
+
+    async def _handle_command(self, result, transcript, status) -> None:
+        """Apply a parsed slash command. May open modal dialogs."""
+        if result.kind == "show":
+            transcript.write_status(result.message)
+        elif result.kind == "clear":
+            transcript.clear()
+        elif result.kind == "set_model":
+            self._model_id = result.value
+            status.model = result.value
+            transcript.write_status(f"model → {result.value}")
+        elif result.kind == "pick_model":
+            models = await self._client.list_models()
+            if not models:
+                transcript.write_status(
+                    "no models available from the bridge "
+                    "(use /model <name> to switch directly)."
+                )
+                return
+            chosen = await self.push_screen_wait(
+                ModelPicker(models=models, current=self._model_id)
+            )
+            if chosen and chosen != self._model_id:
+                self._model_id = chosen
+                status.model = chosen
+                transcript.write_status(f"model → {chosen}")
+        elif result.kind == "set_cwd":
+            self._cwd = result.value
+            status.cwd = result.value
+            transcript.write_status(f"cwd → {result.value}")
+        elif result.kind == "quit":
+            self.exit()
 
     async def _wait_for_bridge(self) -> bool:
         """Probe /v1/health with exp backoff (1→2→4→8→15s; ~30s total)."""
