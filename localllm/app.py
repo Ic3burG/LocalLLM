@@ -253,3 +253,11 @@ class LocalLLMApp(App):
                 return True
             await asyncio.sleep(delay)
         return False
+
+    def _handle_exception(self, error: Exception) -> None:
+        """Central Textual hook for *every* unhandled exception (any handler,
+        worker, or startup task). Log the full traceback to ~/.localllm/cli.log
+        before Textual restores the terminal — otherwise the crash is lost. Then
+        defer to Textual's default teardown/rendering."""
+        logger.critical("unhandled exception — TUI will exit", exc_info=error)
+        super()._handle_exception(error)

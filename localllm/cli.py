@@ -129,7 +129,12 @@ def main(argv: list[str] | None = None) -> int:
     app = LocalLLMApp(
         bridge_url=args.bridge_url, model_id=args.model, model_ready=ready
     )
-    app.run()
+    try:
+        app.run()
+    except Exception:
+        logging.getLogger("localllm").exception("fatal: TUI crashed")
+        print(f"localllm crashed — see {log_path}", file=sys.stderr)
+        return 1
     return 0
 
 
