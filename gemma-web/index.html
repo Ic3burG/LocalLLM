@@ -5019,6 +5019,7 @@
       );
 
       async function handleFiles(files) {
+        const docBatch = [];
         for (const file of files) {
           if (file.type.startsWith("image/")) {
             const reader = new FileReader();
@@ -5044,55 +5045,74 @@
             reader.readAsText(file);
           } else if (
             file.type === "application/pdf" ||
-            file.name.endsWith(".pdf")
+            file.name.endsWith(".pdf") ||
+            file.name.endsWith(".docx") ||
+            file.name.endsWith(".xlsx")
           ) {
-            const attachId = `pdf-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            // PDFs and Office docs all index through /v1/documents (the bridge
+            // routes by extension to the PDF or Office pipeline). They share the
+            // indexed-document chip.
+            const attachId = `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
             currentAttachments.push({
               type: "pdf",
               name: file.name,
               attachId,
               status: "processing",
             });
-            renderPreviews();
-
-            const formData = new FormData();
-            formData.append("file", file);
-
-            fetch("/api/document", {
-              method: "POST",
-              body: formData,
-            })
-              .then((r) => r.json())
-              .then((data) => {
-                const att = currentAttachments.find(
-                  (a) => a.attachId === attachId
-                );
-                if (!att) return;
-                if (data.warnings && data.warnings.includes("no_text_found")) {
-                  att.status = "error";
-                  att.errorMsg = "No text found (scanned PDF)";
-                } else if (data.doc_id) {
-                  att.status = "ready";
-                  att.doc_id = data.doc_id;
-                  att.pageCount = data.page_count;
-                } else {
-                  att.status = "error";
-                  att.errorMsg = "Upload failed";
-                }
-                renderPreviews();
-              })
-              .catch(() => {
-                const att = currentAttachments.find(
-                  (a) => a.attachId === attachId
-                );
-                if (att) {
-                  att.status = "error";
-                  att.errorMsg = "Upload failed";
-                }
-                renderPreviews();
-              });
+            docBatch.push({ file, attachId });
           }
         }
+        renderPreviews();
+        if (docBatch.length) uploadDocumentBatch(docBatch);
+      }
+
+      // Upload all indexable document files in ONE request to /api/documents,
+      // which fans parsing across CPU cores and embeds in a single batch on the
+      // bridge. Results come back in upload order, so we map them to chips by
+      // index — far faster than POSTing each file separately.
+      function uploadDocumentBatch(docBatch) {
+        const formData = new FormData();
+        for (const { file } of docBatch) formData.append("files", file);
+
+        fetch("/api/documents", {
+          method: "POST",
+          body: formData,
+        })
+          .then((r) => r.json())
+          .then((data) => {
+            const results = (data && data.documents) || [];
+            docBatch.forEach(({ attachId }, i) => {
+              const att = currentAttachments.find(
+                (a) => a.attachId === attachId
+              );
+              if (!att) return;
+              const d = results[i] || {};
+              if (d.warnings && d.warnings.includes("no_text_found")) {
+                att.status = "error";
+                att.errorMsg = "No text found";
+              } else if (d.doc_id) {
+                att.status = "ready";
+                att.doc_id = d.doc_id;
+                att.pageCount = d.page_count;
+              } else {
+                att.status = "error";
+                att.errorMsg = "Upload failed";
+              }
+            });
+            renderPreviews();
+          })
+          .catch(() => {
+            docBatch.forEach(({ attachId }) => {
+              const att = currentAttachments.find(
+                (a) => a.attachId === attachId
+              );
+              if (att) {
+                att.status = "error";
+                att.errorMsg = "Upload failed";
+              }
+            });
+            renderPreviews();
+          });
       }
 
       function addAttachment(at) {

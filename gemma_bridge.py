@@ -24,6 +24,7 @@ try:
 except ImportError:
     _GatedRepoError = None
 import image_pipeline
+import ingest
 import pdf_pipeline
 from agent_utils import (
     AGENT_SYSTEM_PROMPT,
@@ -468,6 +469,69 @@ async def upload_document(file: UploadFile = File(...)):
         }
     except Exception as e:
         logger.error(f"Document ingestion failed: {e}", exc_info=True)
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.post("/v1/documents")
+async def upload_documents(files: list[UploadFile] = File(...)):
+    """Batch sibling of /v1/document.
+
+    Parsing is fanned out across CPU cores (process pool) and every chunk is
+    embedded in one batched call, so uploading a folder of files is far faster
+    than POSTing them one at a time. Results are returned in upload order.
+    """
+    try:
+        t0 = time.monotonic()
+        payloads = [(await f.read(), f.filename or "document.pdf") for f in files]
+
+        # ingest_documents blocks (process pool + native embed); run it off the
+        # event loop so the bridge stays responsive — same pattern as the rest
+        # of the app's CPU-bound work.
+        loop = asyncio.get_running_loop()
+        docs = await loop.run_in_executor(None, ingest.ingest_documents, payloads)
+
+        record_ingestion_time(time.monotonic() - t0)
+
+        results = []
+        latency_recorded = False
+        for (_, filename), doc in zip(payloads, docs):
+            if doc is None:
+                results.append(
+                    {
+                        "doc_id": None,
+                        "filename": filename,
+                        "page_count": 0,
+                        "chunk_count": 0,
+                        "warnings": ["no_text_found"],
+                    }
+                )
+                continue
+            # The batched embed shares one latency across the batch; record once.
+            if not latency_recorded and "embedding_latency_ms" in doc:
+                record_embedding_latency(doc["embedding_latency_ms"])
+                latency_recorded = True
+            doc_store[doc["doc_id"]] = {
+                "filename": doc["filename"],
+                "page_count": doc["page_count"],
+                "chunks": doc["chunks"],
+                "embeddings": doc["embeddings"],
+            }
+            logger.info(
+                f"Indexed {filename}: {len(doc['chunks'])} chunks, "
+                f"doc_id={doc['doc_id']}"
+            )
+            results.append(
+                {
+                    "doc_id": doc["doc_id"],
+                    "filename": doc["filename"],
+                    "page_count": doc["page_count"],
+                    "chunk_count": len(doc["chunks"]),
+                    "warnings": [],
+                }
+            )
+        return {"documents": results}
+    except Exception as e:
+        logger.error(f"Batch document ingestion failed: {e}", exc_info=True)
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 

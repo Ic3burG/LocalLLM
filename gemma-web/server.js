@@ -77,6 +77,43 @@ app.post("/api/document", upload.single("file"), async (req, res) => {
   }
 });
 
+app.post("/api/documents", upload.array("files"), async (req, res) => {
+  const t0 = Date.now();
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No files uploaded" });
+    }
+    const form = new FormData();
+    for (const file of req.files) {
+      form.append("files", file.buffer, {
+        filename: file.originalname,
+        contentType: file.mimetype || "application/pdf",
+      });
+    }
+    const response = await axios.post(
+      "http://localhost:9379/v1/documents",
+      form,
+      {
+        headers: form.getHeaders(),
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+      }
+    );
+    log("INFO", "document batch upload", {
+      elapsed_ms: Date.now() - t0,
+      count: req.files.length,
+    });
+    res.json(response.data);
+  } catch (error) {
+    log("ERROR", "document batch upload failed", {
+      elapsed_ms: Date.now() - t0,
+      error: error.message,
+      upstream_status: error.response?.status,
+    });
+    res.status(500).json({ error: "Failed to upload documents to bridge" });
+  }
+});
+
 app.post("/api/chat", async (req, res) => {
   const t0 = Date.now();
   try {
