@@ -91,7 +91,7 @@ def main(argv: list[str] | None = None) -> int:
     if detail is None:
         print(
             f"Bridge unreachable at {args.bridge_url}.\n"
-            f"Start it with: launchctl kickstart -k gui/$UID/com.gemini.litert",
+            f"Start it with: launchctl kickstart -k gui/$UID/com.localllm.bridge",
             file=sys.stderr,
         )
         return 2

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# Install / refresh launchd agents for the LocalLLM Python bridge and Node
+# Install / refresh launchd agents for the LocalLLM Python bridge and Node web
 # server. Templates absolute paths from the current project directory so the
 # plists cannot drift if the repo is ever moved or renamed.
+#
+# Services:
+#   com.localllm.bridge  — Python FastAPI bridge (gemma_bridge.py) on :9379
+#   com.localllm.web     — Node web/proxy server (gemma-web/server.js) on :3001
 #
 # Usage:
 #   bash scripts/install-launchd.sh           # install + reload
@@ -22,14 +26,21 @@ SERVER_SCRIPT="$REPO_ROOT/gemma-web/server.js"
 NODE_BIN="$(command -v node || true)"
 
 LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
-LITERT_PLIST="$LAUNCH_AGENTS/com.gemini.litert.plist"
-BRIDGE_PLIST="$LAUNCH_AGENTS/com.gemini.gemma-bridge.plist"
+BRIDGE_PLIST="$LAUNCH_AGENTS/com.localllm.bridge.plist"
+WEB_PLIST="$LAUNCH_AGENTS/com.localllm.web.plist"
+
+# Legacy labels from before the 2026-06 rename — cleaned up on install so they
+# don't linger as orphaned, confusingly-named agents.
+LEGACY_PLISTS=(
+  "$LAUNCH_AGENTS/com.gemini.litert.plist"
+  "$LAUNCH_AGENTS/com.gemini.gemma-bridge.plist"
+)
 
 LOG_DIR="$HOME/.gemini"
-LITERT_STDOUT="$LOG_DIR/litert-stdout.log"
-LITERT_STDERR="$LOG_DIR/litert-stderr.log"
 BRIDGE_STDOUT="$LOG_DIR/bridge-stdout.log"
 BRIDGE_STDERR="$LOG_DIR/bridge-stderr.log"
+WEB_STDOUT="$LOG_DIR/web-stdout.log"
+WEB_STDERR="$LOG_DIR/web-stderr.log"
 
 PYTHON_PORT=9379
 NODE_PORT=3001
@@ -50,14 +61,14 @@ err() { echo "✗ $1" >&2; exit 1; }
 [ "$MODE" = "uninstall" ] || [ -n "$NODE_BIN" ] || err "node not on PATH (install Node.js or symlink to /usr/local/bin/node)"
 
 # ── Plist templates ─────────────────────────────────────────────────────────
-emit_litert_plist() {
+emit_bridge_plist() {
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.gemini.litert</string>
+    <string>com.localllm.bridge</string>
     <key>ProgramArguments</key>
     <array>
         <string>$PY_VENV</string>
@@ -70,22 +81,22 @@ emit_litert_plist() {
     <key>WorkingDirectory</key>
     <string>$REPO_ROOT</string>
     <key>StandardOutPath</key>
-    <string>$LITERT_STDOUT</string>
+    <string>$BRIDGE_STDOUT</string>
     <key>StandardErrorPath</key>
-    <string>$LITERT_STDERR</string>
+    <string>$BRIDGE_STDERR</string>
 </dict>
 </plist>
 EOF
 }
 
-emit_bridge_plist() {
+emit_web_plist() {
   cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.gemini.gemma-bridge</string>
+    <string>com.localllm.web</string>
     <key>ProgramArguments</key>
     <array>
         <string>$NODE_BIN</string>
@@ -98,9 +109,9 @@ emit_bridge_plist() {
     <key>WorkingDirectory</key>
     <string>$REPO_ROOT/gemma-web</string>
     <key>StandardOutPath</key>
-    <string>$BRIDGE_STDOUT</string>
+    <string>$WEB_STDOUT</string>
     <key>StandardErrorPath</key>
-    <string>$BRIDGE_STDERR</string>
+    <string>$WEB_STDERR</string>
 </dict>
 </plist>
 EOF
@@ -108,17 +119,17 @@ EOF
 
 # ── Print mode: dump templated plists and exit ──────────────────────────────
 if [ "$MODE" = "print" ]; then
-  echo "# --- com.gemini.litert.plist ---"
-  emit_litert_plist
-  echo
-  echo "# --- com.gemini.gemma-bridge.plist ---"
+  echo "# --- com.localllm.bridge.plist ---"
   emit_bridge_plist
+  echo
+  echo "# --- com.localllm.web.plist ---"
+  emit_web_plist
   exit 0
 fi
 
-# ── Uninstall mode: unload + remove plists ──────────────────────────────────
+# ── Uninstall mode: unload + remove plists (current + legacy) ────────────────
 if [ "$MODE" = "uninstall" ]; then
-  for plist in "$LITERT_PLIST" "$BRIDGE_PLIST"; do
+  for plist in "$BRIDGE_PLIST" "$WEB_PLIST" "${LEGACY_PLISTS[@]}"; do
     if [ -f "$plist" ]; then
       launchctl unload "$plist" 2>/dev/null || true
       rm -f "$plist"
@@ -131,21 +142,31 @@ fi
 # ── Install mode ────────────────────────────────────────────────────────────
 mkdir -p "$LAUNCH_AGENTS" "$LOG_DIR"
 
-# Unload any existing versions before overwriting (ignore failures — they may
-# not be loaded, or may be pointing at a stale path).
-for plist in "$LITERT_PLIST" "$BRIDGE_PLIST"; do
+# Unload+remove any legacy-named agents so they don't run alongside the renamed
+# ones (ignore failures — they may not be loaded).
+for plist in "${LEGACY_PLISTS[@]}"; do
+  if [ -f "$plist" ]; then
+    launchctl unload "$plist" 2>/dev/null || true
+    rm -f "$plist"
+    echo "✓ removed legacy $plist"
+  fi
+done
+
+# Unload existing versions before overwriting (ignore failures — they may not
+# be loaded, or may be pointing at a stale path).
+for plist in "$BRIDGE_PLIST" "$WEB_PLIST"; do
   if [ -f "$plist" ]; then
     launchctl unload "$plist" 2>/dev/null || true
   fi
 done
 
-emit_litert_plist > "$LITERT_PLIST"
 emit_bridge_plist > "$BRIDGE_PLIST"
-echo "✓ wrote $LITERT_PLIST"
+emit_web_plist > "$WEB_PLIST"
 echo "✓ wrote $BRIDGE_PLIST"
+echo "✓ wrote $WEB_PLIST"
 
-launchctl load "$LITERT_PLIST"
 launchctl load "$BRIDGE_PLIST"
+launchctl load "$WEB_PLIST"
 echo "✓ loaded both agents"
 
 # ── Verify both ports come up ───────────────────────────────────────────────
@@ -173,8 +194,8 @@ wait_for_port() {
 
 # Node is fast; Python bridge takes ~5–15s to import mlx_vlm on cold start.
 fail=0
-wait_for_port "$NODE_PORT" bridge || fail=1
-wait_for_port "$PYTHON_PORT" litert || fail=1
+wait_for_port "$NODE_PORT" web || fail=1
+wait_for_port "$PYTHON_PORT" bridge || fail=1
 
 if [ "$fail" -ne 0 ]; then
   echo

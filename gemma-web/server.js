@@ -405,7 +405,7 @@ app.get("/api/backend/check", (req, res) => {
 });
 
 app.post("/api/backend/restart", (req, res) => {
-  const plist = `${process.env.HOME}/Library/LaunchAgents/com.gemini.litert.plist`;
+  const plist = `${process.env.HOME}/Library/LaunchAgents/com.localllm.bridge.plist`;
   // 1. Unload/Load the Python bridge via launchctl
   execFile("launchctl", ["unload", plist], () => {
     setTimeout(() => {
