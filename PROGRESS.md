@@ -1568,11 +1568,85 @@ defensive against any field being blank, not just trailing year.
 
 ---
 
-## 📈 Current Status (as of May 29, 2026)
+## ⚡ Parallel Document Ingestion + Service Rename + CI Hardening — June 4–5, 2026
+
+Added a parallel multi-file ingestion path, renamed the launchd services to
+self-describing names, and made the test suite hermetic so CI stops flaking on
+HuggingFace rate-limits. Three commits: `702099b`, `e3320ff`, `c2bfe1d`.
+
+### 🚀 Parallel Document Ingestion (PDF + Office)
+
+- **New `ingest.py`** splits ingestion into two phases: `parse_document`
+  (pure-Python extract + chunk via `pdfplumber`/`python-docx`/`openpyxl`, no
+  model load) and an embed phase. `parse_documents_parallel` fans parsing across
+  CPU cores with a `ProcessPoolExecutor` (order-preserving); `ingest_documents`
+  then embeds **every chunk from every file in one batched `embed_texts` call**
+  and slices the vectors back per-document.
+- **Why this shape:** the GIL was never the bottleneck — model compute already
+  runs in native MLX / sentence-transformers that release it, and the GPU is a
+  single shared resource. The real win is parallelizing the GIL-bound _parsing_
+  and batching the one native embed call. Measured **3.32× speedup** (4.93s →
+  1.49s on 8 PDFs, 10 cores), identical chunk counts. See
+  `scripts/benchmark_ingest.py`.
+- **New `POST /v1/documents`** batch endpoint on the bridge, offloaded via
+  `run_in_executor`; the single-file `/v1/document` is left intact.
+- **Frontend + proxy:** new `/api/documents` proxy route (`multer.array`) and
+  `handleFiles` now batches all indexable files into one request instead of
+  firing one fetch per file. The upload path now routes **`.pdf`, `.docx` and
+  `.xlsx`** — Office files were already supported by the backend but never sent
+  by the UI; that gap is closed.
+- Verified live end-to-end after a bridge restart: a mixed PDF/docx/xlsx batch
+  indexed in 2.24s and the docx came back as the top RAG search result.
+
+### 🏷 launchd Service Rename
+
+- The service labels were mismatched and confusing: `com.gemini.litert` was
+  actually the Python bridge, and `com.gemini.gemma-bridge` was actually the
+  Node web server. Renamed so each label says what it is:
+  - `com.gemini.litert` → **`com.localllm.bridge`** (`gemma_bridge.py`, :9379)
+  - `com.gemini.gemma-bridge` → **`com.localllm.web`** (`server.js`, :3001)
+- `scripts/install-launchd.sh` rewritten to write the renamed plists, match log
+  filenames (`bridge-*.log` / `web-*.log`), and auto-remove the legacy
+  `com.gemini.*` agents on install. CLI hint and the proxy's
+  `/api/backend/restart` updated to the new bridge label. Live services migrated
+  and the old `.bak` plists removed. Historical PROGRESS/plan docs left as-is.
+
+### 🧪 CI Hardening — hermetic embedding tests
+
+- Several tests transitively loaded `all-MiniLM-L6-v2` via `embed_texts`, which
+  CI downloaded from HuggingFace at runtime — a run failed with **HTTP 429**
+  rate-limits. Added `tests/conftest.py` with an autouse fixture that stubs
+  `pdf_pipeline.embed_texts` with a deterministic offline value (every embed
+  path routes through that one symbol). No unit test asserts on embedding
+  _values_, only shapes/counts, so the stub is safe.
+- Verified hermetic: the model-loading test files pass with `HF_HUB_OFFLINE=1`
+  and an empty `HF_HOME` (47 passed), and the suite is faster without the load.
+
+### 🍎 Environment note
+
+- Investigated the macOS "Support Ending for Intel-based Apps" dialog: it was
+  flagging the optional `python3.14-intel64` helper inside the python.org
+  framework, not the app itself. The toolchain is already native Apple Silicon
+  (universal2 Python 3.14 running arm64); removed the lone Intel helper to clear
+  the warning. No migration needed.
+
+### Next steps / where we left off
+
+- **Live browser click-through** of multi-file drag-and-drop is still pending —
+  verified via API + tests + benchmark, but not a real Chrome upload.
+- Multi-request _throughput_ (as opposed to multi-file ingest) would want MLX
+  **batched generation**, not more threads — a separate effort if desired.
+- Known footgun unchanged: CI runs Python 3.10 while the local venv is 3.14, so
+  stdlib added after 3.10 passes locally but fails CI.
+
+---
+
+## 📈 Current Status (as of June 5, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
-  Both managed by repaired launchd plists; can be reinstalled via
-  `bash scripts/install-launchd.sh` after any project rename or move.
+  Managed by launchd as **`com.localllm.bridge`** and **`com.localllm.web`**
+  (renamed June 2026 from the confusing `com.gemini.*` labels); reinstall/refresh
+  via `bash scripts/install-launchd.sh` after any project rename or move.
 - **Models:** Gemma 4 E4B, Gemma 4 E26B, Gemma 4 31B (all vision-capable via
   mlx_vlm); Phi-4 Mini, DeepSeek V4 Mini (text-only via mlx_lm);
   FLUX.1-schnell (image generation).
@@ -1583,6 +1657,8 @@ defensive against any field being blank, not just trailing year.
   `describe_image` / `ocr_image`; screenshot with native macOS naming +
   `~/Downloads` default).
 - **Document Support:** PDF, Word (.docx), Excel (.xlsx) — all indexed for RAG.
+  Multi-file uploads ingest in parallel (`POST /v1/documents` → process-pool
+  parse + one batched embed; ~3.3× faster than sequential).
 - **UI:** Glass/gradient aesthetic; persistent flex sidebar (rail | sidebar |
   main, no overlay); kebab "⋯" on every chat row for Star / Rename / Delete;
   Recents fills available height; All Chats button sits at end of chat list;
@@ -1600,6 +1676,8 @@ defensive against any field being blank, not just trailing year.
 - **Smoke-test infra:** `docs/smoke-test.html` (one clickable link per tool,
   opens a fresh chat with the prompt prefilled); regenerate via
   `python3 scripts/build_smoke_test.py`.
-- **Integrity:** 230 tests passing; local **Git Hooks** (self-healing
-  pre-commit + arm64-pinned CI-mirror pre-push) enforced; `CLAUDE.md` mandate
-  auto-loaded every session; CI green on every push to `main`.
+- **Integrity:** 317 tests passing (hermetic — embedding model stubbed in
+  `tests/conftest.py`, so CI never downloads from HuggingFace); local **Git
+  Hooks** (self-healing pre-commit + arm64-pinned CI-mirror pre-push) enforced;
+  `CLAUDE.md` mandate auto-loaded every session; CI green on every push to
+  `main`.
