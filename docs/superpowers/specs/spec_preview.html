@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Tool Registry Expansion</title>
+    <title>Close the CI/local Python version gap</title>
     <style>
       * {
         box-sizing: border-box;
@@ -112,227 +112,334 @@
   </head>
   <body>
     <div class="container">
-      <h1>Agent Tool Registry Expansion</h1>
+      <h1>Close the CI/local Python version gap</h1>
+      <h2>Problem</h2>
       <p>
-        Expand the agent&#x27;s tool registry with ~22 new tools across five
-        areas: semantic recall, macOS personal automation, on-device audio,
-        on-device vision, and a set of smaller data/file fill-ins. Delivered as
-        <strong>one spec, built in three phases</strong> so each batch can be
-        verified before the next.
-      </p>
-      <hr />
-      <h2>Shared Pattern</h2>
-      <p>
-        Every new tool follows the existing mold, so there are no new
-        abstractions:
+        CI and local development run
+        <strong>different Python interpreters</strong>, and nothing makes that
+        divergence visible or fully tested:
       </p>
       <ul>
         <li>
-          <code>async def _name(...) -&gt; str</code> returning
-          <code>OK: …</code> / <code>ERROR: …</code>.
-        </li>
-        <li>
-          Heavy dependencies are
-          <strong>imported lazily inside the function</strong>, so a missing
+          <strong>CI</strong> (<code>.github/workflows/ci.yml</code>) pins
+          <strong>3.10</strong> for both the <code>lint</code> and
         </li>
       </ul>
-      <p>optional dep only breaks that one tool.</p>
+      <p><code>test</code> jobs.</p>
       <ul>
         <li>
-          File arguments go through <code>validate_path()</code>; risky actions
-          call
-        </li>
-      </ul>
-      <p><code>log_audit()</code>.</p>
-      <ul>
-        <li>Blocking work is offloaded with <code>run_in_executor</code>.</li>
-        <li>
-          Each tool is wired up with <strong>three edits</strong>: the
-          <code>async def</code>, a
+          <strong>Local</strong> development runs <strong>3.14</strong> — both
+          <code>.venv/bin/python</code> and the
         </li>
       </ul>
       <p>
-        <code>register_tool(...)</code> line, and one entry in the
-        <code>TOOLS AVAILABLE</code> block of the system prompt (the model only
-        &quot;sees&quot; a tool that is listed there).
+        <code>python3</code> on <code>PATH</code> are 3.14.0. No 3.10/3.11/3.12
+        interpreter is installed.
       </p>
+      <ul>
+        <li>
+          The project declares
+          <code>requires-python = &quot;&gt;=3.10&quot;</code> and
+          <code>ruff</code> uses
+        </li>
+      </ul>
+      <p><code>target-version = &quot;py310&quot;</code>.</p>
       <p>
-        The risk gate is automatic: any tool registered as
-        <code>risky</code> triggers an SSE <code>confirm_request</code> and
-        blocks for your approval (up to 300s) before running. No extra plumbing
-        — write/send/delete tools just set <code>risk=&quot;risky&quot;</code>.
+        The <code>scripts/hooks/pre-push</code> hook claims, on lines 1–2, that
+        it _&quot;Mirrors the CI pipeline exactly — if this passes locally, CI
+        will pass.&quot;_ That promise is false on one axis: it runs
+        <code>pytest</code> against the local <strong>3.14</strong> interpreter,
+        while CI runs <code>pytest</code> on <strong>3.10</strong>.
       </p>
-      <hr />
-      <h2>Phase 1 — Quick Wins (zero or one new dependency)</h2>
+      <p>This is a live footgun, not a hypothetical one:</p>
       <ul>
-        <li>
-          <strong><code>recall(query)</code></strong> — safe. Semantic search
-          over already-ingested documents.
-        </li>
+        <li><code>localllm/config.py:11-13</code> uses the standard</li>
       </ul>
       <p>
-        Adds a bridge endpoint <code>/v1/rag/search</code> backed by
-        <code>pdf_pipeline.retrieve_chunks</code>; the tool POSTs to it exactly
-        like <code>generate_image</code> already does, avoiding a circular
-        import.
+        <code
+          >try: import tomllib / except ImportError: import tomli as
+          tomllib</code
+        >
+        pattern. On local 3.14, only the <code>tomllib</code> branch ever
+        executes. The <code>tomli</code> fallback branch — and
+        <code>requirements.txt</code>&#x27;s
+        <code>tomli&gt;=2.0; python_version &lt; &quot;3.11&quot;</code> marker
+        — are <strong>only</strong> exercised on CI&#x27;s 3.10. So that code
+        path is untested locally by construction. A green local pre-push cannot
+        catch a break in it.
       </p>
       <ul>
         <li>
-          <strong><code>say(text)</code></strong> — safe. Text-to-speech via the
-          macOS <code>say</code> command.
-        </li>
-        <li>
-          <strong><code>screenshot(path?)</code></strong> — risky. Capture the
-          screen via <code>screencapture</code>.
-        </li>
-        <li>
-          <strong><code>move_file(src, dst)</code></strong> — risky. Move/rename
-          via <code>shutil</code> (covers rename).
-        </li>
-        <li>
-          <strong><code>delete_file(path)</code></strong> — risky. Sends the
-          file to <strong>Trash</strong>, not a hard
-        </li>
-      </ul>
-      <p>remove, so it stays recoverable.</p>
-      <ul>
-        <li>
-          <strong><code>read_csv(path)</code></strong> — safe. Parse CSV to a
-          tab-separated table (same output
-        </li>
-      </ul>
-      <p>shape as <code>sqlite_query</code>).</p>
-      <ul>
-        <li>
-          <strong><code>json_query(path_or_text, expr)</code></strong> — safe.
-          jq-style dotted-path lookups
-        </li>
-      </ul>
-      <p>over JSON without writing Python each time.</p>
-      <ul>
-        <li>
-          <strong><code>read_ics(path)</code></strong> — safe. Parse events from
-          a local <code>.ics</code> file.
-        </li>
-        <li>
-          <strong><code>sqlite_exec(db_path, sql)</code></strong> — risky. Run
-          non-SELECT statements
+          <code>ruff</code> catches _syntax_ that 3.10 cannot parse (its
+          <code>target-version</code> is
         </li>
       </ul>
       <p>
-        (INSERT/UPDATE/DELETE/CREATE), expanding today&#x27;s read-only
-        boundary.
+        <code>py310</code>), but it does <strong>not</strong> model the stdlib
+        surface. Calling a 3.11+-only API such as
+        <code>tomllib.load</code> under a bare import is invisible to ruff. Only
+        _running on 3.10_ exercises the 3.10 stdlib — and nothing local does.
       </p>
-      <hr />
-      <h2>
-        Phase 2 — macOS Personal Automation (all via <code>osascript</code>)
-      </h2>
+      <h2>Decision</h2>
+      <p>
+        <strong>Keep the <code>&gt;=3.10</code> floor.</strong> The 3.10-compat
+        code is deliberate, and the repo has external contributors (e.g. the
+        Ic3burG CLI PR) for whom broad compatibility matters. We close the gap
+        by making the untested side <strong>covered in CI</strong> and the
+        interpreter divergence <strong>visible in the hook</strong>, rather than
+        dropping support or forcing a 3.10 install on the maintainer&#x27;s Mac.
+      </p>
+      <h2>Goals</h2>
       <ul>
         <li>
-          <strong><code>calendar_list(days=7)</code></strong> — safe. List
-          upcoming events.
+          CI is self-sufficient for both ends of the supported range — important
+          for
+        </li>
+      </ul>
+      <p>
+        contributors whose PRs run CI but never run the maintainer&#x27;s local
+        hook.
+      </p>
+      <ul>
+        <li>
+          The pre-push hook tells the truth about what it does and does not
+          guarantee.
         </li>
         <li>
-          <strong
-            ><code>calendar_create(title, start, end?, notes?)</code></strong
+          No new local toolchain (no second interpreter to install/maintain).
+        </li>
+        <li>No production code changes.</li>
+      </ul>
+      <h2>Non-goals</h2>
+      <ul>
+        <li>Raising or lowering the supported Python range.</li>
+        <li>
+          Making local pre-push run 3.10 (the heavier &quot;belt and
+          suspenders&quot; option was
+        </li>
+      </ul>
+      <p>considered and declined).</p>
+      <ul>
+        <li>Fixing unrelated deprecations (see Out of scope).</li>
+      </ul>
+      <h2>Design</h2>
+      <h3>1. CI <code>test</code> job → version matrix</h3>
+      <p>
+        Convert the single <code>test</code> job to a matrix over
+        <strong><code>[&quot;3.10&quot;, &quot;3.13&quot;]</code></strong
+        >:
+      </p>
+      <ul>
+        <li>
+          <code>3.10</code> — the declared floor. Catches 3.10-only breakage
+          such as the
+        </li>
+      </ul>
+      <p><code>config.py</code> <code>tomli</code> fallback path.</p>
+      <ul>
+        <li>
+          <code>3.13</code> — the &quot;recent&quot; leg. Catches &quot;newer
+          than 3.10&quot; breakage for
+        </li>
+      </ul>
+      <p>contributors whose PRs only run CI.</p>
+      <p>
+        <strong>Why 3.13 and not 3.14 for the recent leg:</strong>
+        <code>requirements.txt</code> pulls <code>sentence-transformers</code>,
+        which depends on <code>torch</code> and <code>scipy</code> — packages
+        that are slow to publish wheels for a brand-new CPython. On
+        <code>ubuntu-latest</code>, a <code>cp314</code> leg would likely fail
+        at <code>pip install</code> (no Linux <code>torch</code> wheel for 3.14
+        → source build → failure) — a failure caused by the runner, not our
+        code. 3.13 has solid Linux wheel coverage. The maintainer&#x27;s actual
+        3.14 is still exercised constantly by local pytest/pre-push runs, and
+        the hook notice (below) flags that local 3.14 sits above both CI legs.
+      </p>
+      <p>
+        Use <code>fail-fast: false</code> so one leg&#x27;s failure does not
+        cancel the other — both results stay visible. The <code>lint</code> job
+        stays single-version: <code>ruff</code> and <code>prettier</code> output
+        is interpreter-independent, and <code>ruff</code> already pins
+        <code>target-version</code>.
+      </p>
+      <p>Target shape for the <code>test</code> job:</p>
+      <pre><code>test:
+  runs-on: ubuntu-latest
+  strategy:
+    fail-fast: false
+    matrix:
+      python-version: [&quot;3.10&quot;, &quot;3.13&quot;]
+  steps:
+    - uses: actions/checkout@v5
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio
+    - name: Run Tests (Skip GPU)
+      run: |
+        # Standard runners lack Apple Silicon/GPU, so skip MLX/GPU tests.
+        pytest -v -m &quot;not needs_gpu&quot; --ignore=tests/contracts/test_mlx_contract.py</code></pre>
+      <h3>
+        2. Make the pre-push hook honest (<code>scripts/hooks/pre-push</code>)
+      </h3>
+      <ul>
+        <li>
+          <strong>Rewrite the header (lines 1–2).</strong> Drop the false
+          &quot;Mirrors the CI pipeline
+        </li>
+      </ul>
+      <p>
+        exactly&quot; claim. State accurately that the hook runs CI&#x27;s
+        checks against the _local_ interpreter, and that CI additionally runs
+        the pytest suite on each matrix version.
+      </p>
+      <ul>
+        <li>
+          <strong>Add a non-fatal coverage notice</strong> after the pytest
+          step. Read the venv&#x27;s
+        </li>
+      </ul>
+      <p>
+        <code>major.minor</code>; if it is not one of CI&#x27;s matrix versions,
+        print a clear <code>⚠</code> line telling the user a version-specific
+        failure won&#x27;t be caught locally and to watch the Actions run. It
+        informs; it never changes the hook&#x27;s exit code.
+      </p>
+      <ul>
+        <li>
+          <strong>CI version list</strong> lives as a commented constant in the
+          hook
+        </li>
+      </ul>
+      <p>
+        (<code>CI_PY_VERSIONS=&quot;3.10 3.13&quot;</code>) with a pointer to
+        <code>ci.yml</code> as the source of truth. A true file-based single
+        source of truth is awkward — GitHub Actions cannot read a matrix from a
+        file without an extra job — and this value only feeds an _informational_
+        notice that never gates, so a commented constant is the right level of
+        effort.
+      </p>
+      <p>
+        Target shape for the new hook logic (appended after the existing
+        <code>pytest</code> line, before the final success echo):
+      </p>
+      <pre><code># CI runs the pytest suite on each of these versions (keep in sync with
+# .github/workflows/ci.yml). Informational only — never affects exit status.
+CI_PY_VERSIONS=&quot;3.10 3.13&quot;
+LOCAL_PYV=&quot;$(&quot;${ARCH_PREFIX[@]}&quot; &quot;$VENV_PYTHON&quot; -c \
+  &#x27;import sys; print(f&quot;{sys.version_info.major}.{sys.version_info.minor}&quot;)&#x27;)&quot;
+case &quot; $CI_PY_VERSIONS &quot; in
+  *&quot; $LOCAL_PYV &quot;*) : ;; # local interpreter matches a CI leg
+  *)
+    echo &quot;⚠ pytest ran on local Python $LOCAL_PYV; CI runs it on: $CI_PY_VERSIONS.&quot;
+    echo &quot;  A failure specific to those versions won&#x27;t be caught here — watch the&quot;
+    echo &quot;  GitHub Actions run after pushing.&quot;
+    ;;
+esac</code></pre>
+      <h3>3. Reinstall the hook</h3>
+      <p>
+        After editing <code>scripts/hooks/pre-push</code>, run
+        <code>bash scripts/install-hooks.sh</code> so
+        <code>.git/hooks/pre-push</code> matches source — per the CLAUDE.md
+        mandate that source in <code>scripts/hooks/</code> is authoritative and
+        installed copies must not drift.
+      </p>
+      <h2>Out of scope</h2>
+      <ul>
+        <li>
+          <code>localllm/config.py</code> <code>tomli</code> fallback:
+          <strong>keep it.</strong> It is correct, and the new
+        </li>
+      </ul>
+      <p>3.10 CI leg now genuinely exercises it.</p>
+      <ul>
+        <li>
+          <code>agent.py:245</code> <code>datetime.utcnow()</code> is deprecated
+          on 3.12+ (warns on local 3.14,
+        </li>
+      </ul>
+      <p>
+        silent on CI 3.10). Noted as a
+        <strong>separate follow-up cleanup</strong>, not part of this
+        version-gap fix.
+      </p>
+      <h2>Risks</h2>
+      <ul>
+        <li>
+          <strong>The 3.13 leg has never run.</strong> It may surface a genuine
+          latent issue on first
+        </li>
+      </ul>
+      <p>
+        push. That is the footgun working as intended — we fix what it finds
+        before calling the task done.
+      </p>
+      <ul>
+        <li>
+          <strong>Dependency install time/cost</strong> roughly doubles for the
+          <code>test</code> job (two
+        </li>
+      </ul>
+      <p>legs). Acceptable for the coverage gained.</p>
+      <ul>
+        <li>
+          <strong><code>actions/setup-python@v6</code> must offer 3.13</strong>
+          (it does, via the version
+        </li>
+      </ul>
+      <p>manifest). If a future runner image lags, pin a patch version.</p>
+      <h2>Verification (Definition of Done)</h2>
+      <ul>
+        <li>
+          <code>bash .git/hooks/pre-push</code> runs in-session and exits 0, and
+          the new mismatch
+        </li>
+      </ul>
+      <p>
+        notice fires (the maintainer is on 3.14, outside
+        <code>{3.10, 3.13}</code>).
+      </p>
+      <ul>
+        <li>
+          After push, <strong>both</strong> matrix legs (<code>3.10</code> and
+          <code>3.13</code>) and the <code>lint</code> job go
+        </li>
+      </ul>
+      <p>
+        green on GitHub Actions. If the 3.13 leg goes red, diagnose and fix
+        before reporting done.
+      </p>
+      <h2>Files touched</h2>
+      <ul>
+        <li>
+          <code>.github/workflows/ci.yml</code> — matrix on the
+          <code>test</code> job.
+        </li>
+        <li>
+          <code>scripts/hooks/pre-push</code> — honest header + non-fatal
+          coverage notice.
+        </li>
+        <li>
+          <code>.git/hooks/pre-push</code> — regenerated by
+          <code>scripts/install-hooks.sh</code> (not edited
+        </li>
+      </ul>
+      <p>by hand).</p>
+      <ul>
+        <li>
+          <code
+            >docs/superpowers/specs/2026-06-05-ci-local-python-version-gap-design.md</code
           >
-          — risky. Create an event.
-        </li>
-        <li>
-          <strong><code>reminders_list(list?)</code></strong> — safe. List
-          reminders.
-        </li>
-        <li>
-          <strong><code>reminders_create(text, due?)</code></strong> — risky.
-          Add a reminder.
-        </li>
-        <li>
-          <strong><code>notes_search(query)</code></strong> — safe. Search and
-          read Apple Notes.
-        </li>
-        <li>
-          <strong><code>notes_create(title, body)</code></strong> — risky.
-          Create a note.
-        </li>
-        <li>
-          <strong><code>messages_read(limit=20)</code></strong> — risky. Read
-          recent iMessages (privacy
+          —
         </li>
       </ul>
-      <p>sensitive, so gated even though it only reads).</p>
-      <ul>
-        <li>
-          <strong><code>send_message(recipient, text)</code></strong> — risky.
-          Send an iMessage.
-        </li>
-        <li>
-          <strong><code>mail_compose(to, subject, body)</code></strong> — risky.
-          Creates a <strong>draft</strong> — never
-        </li>
-      </ul>
-      <p>auto-sends — so a human always hits send.</p>
-      <hr />
-      <h2>Phase 3 — Multimodal (lean-native)</h2>
-      <ul>
-        <li>
-          <strong><code>transcribe(path)</code></strong> — safe. Speech-to-text
-          via <code>mlx-whisper</code> (the one new
-        </li>
-      </ul>
-      <p>darwin-only dependency this work adds).</p>
-      <ul>
-        <li>
-          <strong><code>describe_image(path, prompt?)</code></strong> — safe.
-          Vision description via
-        </li>
-      </ul>
-      <p>
-        <code>mlx-vlm</code>, which is <strong>already shipped</strong> in
-        requirements.
-      </p>
-      <ul>
-        <li>
-          <strong><code>ocr_image(path)</code></strong> — safe. Text extraction
-          via the macOS Vision framework
-        </li>
-      </ul>
-      <p>
-        through a small Swift helper (no new Python dep). If the helper fails,
-        it falls back to <code>describe_image</code>.
-      </p>
-      <hr />
-      <h2>Cross-Cutting Concerns</h2>
-      <h3>Security</h3>
-      <p>
-        All new file / DB / send / delete tools pass through
-        <code>validate_path</code> + <code>log_audit</code> and are registered
-        <code>risky</code>, so they are auto-gated. Two extra defense-in-depth
-        choices: <code>delete_file</code> uses Trash, and
-        <code>mail_compose</code> only drafts.
-      </p>
-      <h3>Testing</h3>
-      <p>
-        Unit tests stub the OS calls and assert argument validation and error
-        paths — no live Calendar, Messages, or model calls in CI. The osascript,
-        audio, and vision live paths are darwin-only and excluded from the CI
-        lane, mirroring how the existing <code>mlx</code> / GPU tests are
-        already handled.
-      </p>
-      <h3>CI Gate</h3>
-      <p>
-        <code>bash .git/hooks/pre-push</code> must exit 0 before any phase is
-        called done, per the project mandate. Each phase is verified green
-        before the next begins.
-      </p>
-      <hr />
-      <h2>Known Design Risk</h2>
-      <p>
-        <code>ocr_image</code> relies on a tiny compiled Swift snippet against
-        the Vision framework. If that proves fiddly on this machine, the
-        fallback is routing OCR through <code>mlx-vlm</code> (the same model as
-        <code>describe_image</code>). Vision-native is attempted first because
-        it is faster and lighter.
-      </p>
+      <p>this spec.</p>
+      <p>Estimated change surface: ~25–35 lines across the two source files.</p>
     </div>
   </body>
 </html>
