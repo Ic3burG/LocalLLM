@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
-# Mirrors the CI pipeline exactly — if this passes locally, CI will pass.
+# Runs the same checks as GitHub Actions CI (ruff, prettier, pytest) against your
+# LOCAL Python interpreter. It is NOT a perfect mirror: CI runs the pytest suite
+# on every version in its matrix (currently 3.10 and 3.13), while this hook only
+# exercises whatever Python your .venv uses. The notice after the pytest step
+# flags when your local version isn't one CI tests, so a version-specific failure
+# can still surface in CI after a green local run.
 set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -33,5 +38,19 @@ npx prettier --check .
 
 echo "▶ pytest..."
 "${ARCH_PREFIX[@]}" "$VENV_PYTHON" -m pytest -q -m "not needs_gpu" --ignore=tests/contracts/test_mlx_contract.py
+
+# CI runs the pytest suite on each of these versions (keep in sync with
+# .github/workflows/ci.yml). Informational only — never affects exit status.
+CI_PY_VERSIONS="3.10 3.13"
+LOCAL_PYV="$("${ARCH_PREFIX[@]}" "$VENV_PYTHON" -c \
+  'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')"
+case " $CI_PY_VERSIONS " in
+  *" $LOCAL_PYV "*) : ;; # local interpreter matches a CI leg
+  *)
+    echo "⚠ pytest ran on local Python $LOCAL_PYV; CI runs it on: $CI_PY_VERSIONS."
+    echo "  A failure specific to those versions won't be caught here — watch the"
+    echo "  GitHub Actions run after pushing."
+    ;;
+esac
 
 echo "✅ All checks passed."
