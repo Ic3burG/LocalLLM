@@ -1641,6 +1641,55 @@ HuggingFace rate-limits. Three commits: `702099b`, `e3320ff`, `c2bfe1d`.
 
 ---
 
+## 🐍 Close the CI/local Python Version Gap — June 5, 2026
+
+The pre-push hook claimed to "mirror CI exactly," but CI ran pytest on **3.10**
+while the local `.venv` runs **3.14** — the two never tested the same
+interpreter. The gap was live, not theoretical: `localllm/config.py`'s
+`try: import tomllib / except: import tomli` fallback (and the
+`tomli; python_version < "3.11"` marker in `requirements.txt`) only ever
+executes on CI's 3.10, so that path was untested locally by construction. Ruff's
+`target-version = py310` catches _syntax_ 3.10 can't parse, but not stdlib-API
+drift (e.g. calling a 3.11+ function under a bare import).
+
+**Decision:** keep the declared `>=3.10` floor (the 3.10-compat code is
+deliberate and there are external-contributor PRs), and close the gap by making
+CI cover both ends and the hook tell the truth.
+
+### What changed
+
+- **`.github/workflows/ci.yml`** — the `test` job now runs a `fail-fast: false`
+  matrix on **`["3.10", "3.13"]`**. 3.10 = the floor (exercises the `tomli`
+  path); 3.13 = a recent interpreter for contributor PRs that never run the
+  local hook. **3.13 not 3.14** because `torch`/`scipy` (via
+  `sentence-transformers`) lack `cp314` Linux wheels — a 3.14 leg would fail at
+  `pip install`, not on our code. Local 3.14 is still exercised every local run.
+- **`scripts/hooks/pre-push`** — dropped the false "mirrors CI exactly" header;
+  added a **non-fatal** notice (`CI_PY_VERSIONS="3.10 3.13"`) that fires when the
+  local interpreter isn't one CI tests, pointing you at the Actions run.
+  Reinstalled via `scripts/install-hooks.sh`.
+- **No production code touched.** `config.py`'s fallback kept (now genuinely
+  tested by the 3.10 leg). `agent.py`'s `datetime.utcnow()` deprecation left as a
+  separate follow-up.
+
+### Verified
+
+- Local `bash .git/hooks/pre-push`: **317 passed**, exit 0, notice fired on 3.14.
+- CI green on the push: `lint` ✓, `test (3.10)` ✓ (1m41s), `test (3.13)` ✓
+  (1m47s) — the new 3.13 leg installed deps cleanly, confirming the 3.13 call.
+- Spec: `docs/superpowers/specs/2026-06-05-ci-local-python-version-gap-design.md`;
+  plan: `docs/superpowers/plans/2026-06-05-ci-local-python-version-gap.md`.
+
+### Next steps / where we left off
+
+- The 3.10↔3.14 footgun from the prior session is **closed** for the silent
+  case; the residual (local 3.14 sits above both CI legs) is now surfaced by the
+  hook notice on every run.
+- Multi-request _throughput_ via MLX **batched generation** remains a separate
+  future effort (distinct from the multi-file ingest already shipped).
+
+---
+
 ## 📈 Current Status (as of June 5, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
@@ -1677,7 +1726,9 @@ HuggingFace rate-limits. Three commits: `702099b`, `e3320ff`, `c2bfe1d`.
   opens a fresh chat with the prompt prefilled); regenerate via
   `python3 scripts/build_smoke_test.py`.
 - **Integrity:** 317 tests passing (hermetic — embedding model stubbed in
-  `tests/conftest.py`, so CI never downloads from HuggingFace); local **Git
-  Hooks** (self-healing pre-commit + arm64-pinned CI-mirror pre-push) enforced;
-  `CLAUDE.md` mandate auto-loaded every session; CI green on every push to
-  `main`.
+  `tests/conftest.py`, so CI never downloads from HuggingFace); CI runs the suite
+  on a **3.10/3.13 matrix** (declared floor + a recent interpreter) alongside
+  `lint`; local **Git Hooks** (self-healing pre-commit + arm64-pinned pre-push
+  that runs the same checks against your local Python and flags when it differs
+  from CI's matrix) enforced; `CLAUDE.md` mandate auto-loaded every session; CI
+  green on every push to `main`.
