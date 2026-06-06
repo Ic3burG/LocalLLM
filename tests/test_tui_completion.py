@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from localllm.app import LocalLLMApp
@@ -111,3 +113,21 @@ async def test_submit_injects_mentioned_file(tmp_path, monkeypatch):
         await pilot.pause(0.3)
         assert "hello-from-file" in captured["prompt"]
         assert '<file path="note.txt">' in captured["prompt"]
+
+
+async def test_cwd_command_retargets_picker(tmp_path):
+    (tmp_path / "findme.py").write_text("x")
+    app = LocalLLMApp(bridge_url="http://127.0.0.1:9999")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        inp = app.query_one(InputBox)
+        inp.focus()
+        app.post_message(InputBox.Submitted(inp, f"/cwd {tmp_path}"))
+        await pilot.pause()
+        await pilot.pause(0.3)
+        assert inp.cwd == str(Path(tmp_path).resolve())
+        await pilot.press("@")
+        await pilot.pause()
+        menu = app.query_one(CompletionMenu)
+        assert menu.display is True
+        assert menu.option_count == 1

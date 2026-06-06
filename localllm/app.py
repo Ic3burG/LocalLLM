@@ -257,10 +257,11 @@ class LocalLLMApp(App):
                 status.model = chosen
                 transcript.write_status(f"model → {chosen}")
         elif result.kind == "set_cwd":
-            self._cwd = result.value
-            status.cwd = result.value
-            self.query_one(InputBox).cwd = result.value
-            transcript.write_status(f"cwd → {result.value}")
+            resolved = str(Path(os.path.expanduser(result.value)).resolve())
+            self._cwd = resolved
+            status.cwd = resolved
+            self.query_one(InputBox).cwd = resolved
+            transcript.write_status(f"cwd → {resolved}")
         elif result.kind == "quit":
             self.exit()
 
