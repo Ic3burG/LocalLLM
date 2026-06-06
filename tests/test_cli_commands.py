@@ -1,4 +1,4 @@
-from localllm.commands import CommandResult, dispatch
+from localllm.commands import COMMANDS, HELP_TEXT, CommandResult, dispatch
 
 
 def test_help_returns_help_text():
@@ -64,8 +64,6 @@ def test_non_command_returns_none():
 
 
 def test_commands_table_drives_help():
-    from localllm.commands import COMMANDS, HELP_TEXT
-
     names = [name for name, _ in COMMANDS]
     assert "/help" in names
     assert "/quit" in names

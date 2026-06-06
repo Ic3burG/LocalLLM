@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-COMMANDS: list[tuple[str, str]] = [
+COMMANDS: tuple[tuple[str, str], ...] = (
     ("/help", "Show this help."),
     ("/model", "Switch model. Bare /model opens a selectable list."),
     ("/clear", "Clear the transcript."),
@@ -13,7 +13,7 @@ COMMANDS: list[tuple[str, str]] = [
     ("/cwd", "Change session cwd (sandbox root)."),
     ("/reconnect", "Next prompt will retry the bridge probe."),
     ("/quit", "Exit the CLI."),
-]
+)
 
 
 def _build_help() -> str:
