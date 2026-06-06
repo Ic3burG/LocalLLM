@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Close the CI/local Python version gap</title>
+    <title>MLX Batched Generation — multi-client serving throughput</title>
     <style>
       * {
         box-sizing: border-box;
@@ -112,334 +112,760 @@
   </head>
   <body>
     <div class="container">
-      <h1>Close the CI/local Python version gap</h1>
+      <h1>MLX Batched Generation — multi-client serving throughput</h1>
       <h2>Problem</h2>
       <p>
-        CI and local development run
-        <strong>different Python interpreters</strong>, and nothing makes that
-        divergence visible or fully tested:
+        Every generation in LocalLLM funnels through
+        <strong>one OS thread</strong> fed by a single FIFO queue
+        (<code>inference_engine._inference_worker</code>, backed by
+        <code>_inference_queue</code>). The design is deliberate: MLX GPU
+        streams are <strong>thread-local</strong>, and
+        <code>mlx_vlm</code> creates its <code>generation_stream</code> at
+        import time, so all inference must live on one thread forever (see
+        <code>inference_engine.py:44-58</code>). <code>_is_job_running</code> is
+        a single global boolean.
       </p>
-      <ul>
-        <li>
-          <strong>CI</strong> (<code>.github/workflows/ci.yml</code>) pins
-          <strong>3.10</strong> for both the <code>lint</code> and
-        </li>
-      </ul>
-      <p><code>test</code> jobs.</p>
-      <ul>
-        <li>
-          <strong>Local</strong> development runs <strong>3.14</strong> — both
-          <code>.venv/bin/python</code> and the
-        </li>
-      </ul>
       <p>
-        <code>python3</code> on <code>PATH</code> are 3.14.0. No 3.10/3.11/3.12
-        interpreter is installed.
+        The consequence is that requests
+        <strong
+          >do not run concurrently — they queue and run one at a time</strong
+        >. When two browser tabs / devices hit the bridge at once, the second
+        waits for the first to fully finish. That serialization is the
+        throughput ceiling for multi-client serving.
       </p>
-      <ul>
-        <li>
-          The project declares
-          <code>requires-python = &quot;&gt;=3.10&quot;</code> and
-          <code>ruff</code> uses
-        </li>
-      </ul>
-      <p><code>target-version = &quot;py310&quot;</code>.</p>
       <p>
-        The <code>scripts/hooks/pre-push</code> hook claims, on lines 1–2, that
-        it _&quot;Mirrors the CI pipeline exactly — if this passes locally, CI
-        will pass.&quot;_ That promise is false on one axis: it runs
-        <code>pytest</code> against the local <strong>3.14</strong> interpreter,
-        while CI runs <code>pytest</code> on <strong>3.10</strong>.
-      </p>
-      <p>This is a live footgun, not a hypothetical one:</p>
-      <ul>
-        <li><code>localllm/config.py:11-13</code> uses the standard</li>
-      </ul>
-      <p>
-        <code
-          >try: import tomllib / except ImportError: import tomli as
-          tomllib</code
-        >
-        pattern. On local 3.14, only the <code>tomllib</code> branch ever
-        executes. The <code>tomli</code> fallback branch — and
-        <code>requirements.txt</code>&#x27;s
-        <code>tomli&gt;=2.0; python_version &lt; &quot;3.11&quot;</code> marker
-        — are <strong>only</strong> exercised on CI&#x27;s 3.10. So that code
-        path is untested locally by construction. A green local pre-push cannot
-        catch a break in it.
-      </p>
-      <ul>
-        <li>
-          <code>ruff</code> catches _syntax_ that 3.10 cannot parse (its
-          <code>target-version</code> is
-        </li>
-      </ul>
-      <p>
-        <code>py310</code>), but it does <strong>not</strong> model the stdlib
-        surface. Calling a 3.11+-only API such as
-        <code>tomllib.load</code> under a bare import is invisible to ruff. Only
-        _running on 3.10_ exercises the 3.10 stdlib — and nothing local does.
+        The fix is <strong>batched generation</strong>: feed multiple prompts
+        into a *single batched forward pass* on that same thread so concurrent
+        requests share GPU work, instead of adding threads or processes (the GPU
+        is one shared resource and unified memory is limited — more processes
+        multiply VRAM without adding throughput).
       </p>
       <h2>Decision</h2>
       <p>
-        <strong>Keep the <code>&gt;=3.10</code> floor.</strong> The 3.10-compat
-        code is deliberate, and the repo has external contributors (e.g. the
-        Ic3burG CLI PR) for whom broad compatibility matters. We close the gap
-        by making the untested side <strong>covered in CI</strong> and the
-        interpreter divergence <strong>visible in the hook</strong>, rather than
-        dropping support or forcing a 3.10 install on the maintainer&#x27;s Mac.
+        Build a <strong>unified batching scheduler</strong> on the existing
+        single MLX thread, with two pluggable backends behind one interface:
+      </p>
+      <ul>
+        <li>
+          <strong><code>TextBatchSession</code></strong> wraps
+          <code>mlx_lm.server.BatchGenerator</code> → true
+        </li>
+      </ul>
+      <p>
+        <strong>continuous batching</strong> for text-only models
+        (<code>phi4-mini</code>, <code>deepseek-v4-mini</code>). Requests join
+        and leave a running batch at token boundaries.
+      </p>
+      <ul>
+        <li>
+          <strong><code>VisionBatchRunner</code></strong> wraps
+          <code>mlx_vlm.batch_generate</code> → <strong>static</strong> batching
+        </li>
+      </ul>
+      <p>
+        for the vision-capable gemma models. A group of pending same-model
+        requests runs as one call and finishes together.
+      </p>
+      <p>
+        The public contract is <strong>preserved byte-for-byte</strong>:
+        <code>run_inference(messages, model_id) -&gt; str</code> still buffers
+        and returns a full response. The app already does *not* stream tokens
+        live — both
+        <code>_react_loop_internal</code> (<code>agent.py:319</code>) and
+        <code>react_loop_sse</code> (<code>agent.py:531</code>) call the
+        buffered <code>run_inference</code>, and the SSE endpoints stream
+        *events* per ReAct step, not tokens. So batching happens
+        <strong>internally</strong>: the <strong>inference path</strong> never
+        learns it exists — <code>agent.py</code> is not edited, and the
+        bridge&#x27;s chat routes (<code>/v1/chat/completions</code>,
+        <code>/v1/chat/stream</code>) are unchanged. The only bridge edit is an
+        *additive* batch block in the read-only <code>/v1/stats</code> telemetry
+        route (see Design §7).
+      </p>
+      <p>
+        Alternatives rejected: routing everything through
+        <code>mlx_lm</code> (loses image support — violates the
+        feature-integrity mandate); multiple model processes (wrong lever — GPU
+        is shared, VRAM is the constraint).
       </p>
       <h2>Goals</h2>
       <ul>
         <li>
-          CI is self-sufficient for both ends of the supported range — important
-          for
+          Concurrent same-model requests share GPU forward passes instead of
+          serializing.
+        </li>
+        <li>
+          The <code>run_inference</code> contract and all current behavior are
+          unchanged; no edits
         </li>
       </ul>
-      <p>
-        contributors whose PRs run CI but never run the maintainer&#x27;s local
-        hook.
-      </p>
+      <p>to its callers (the bridge chat routes and <code>agent.py</code>).</p>
       <ul>
         <li>
-          The pre-push hook tells the truth about what it does and does not
-          guarantee.
+          Scheduler logic is unit-testable in CI <strong>without</strong> a GPU
+          (MLX stubbed, as
+        </li>
+      </ul>
+      <p>today).</p>
+      <ul>
+        <li>
+          A master feature flag reverts to today&#x27;s serial path for rollback
+          / A/B.
         </li>
         <li>
-          No new local toolchain (no second interpreter to install/maintain).
+          Idle (single-request) latency stays identical to today — no artificial
+          batching
         </li>
-        <li>No production code changes.</li>
       </ul>
+      <p>delay.</p>
       <h2>Non-goals</h2>
       <ul>
-        <li>Raising or lowering the supported Python range.</li>
         <li>
-          Making local pre-push run 3.10 (the heavier &quot;belt and
-          suspenders&quot; option was
+          <strong>Live token streaming</strong> to clients. The contract stays
+          buffered. Continuous
         </li>
       </ul>
-      <p>considered and declined).</p>
+      <p>
+        batching *can* stream text, but the static vision path cannot, and
+        adding streaming would change the public contract. Out of scope for v1.
+      </p>
       <ul>
-        <li>Fixing unrelated deprecations (see Out of scope).</li>
+        <li>
+          <strong
+            >Per-request cancellation / client-disconnect handling.</strong
+          >
+          Today&#x27;s contract
+        </li>
       </ul>
+      <p>shields the future to completion; that stays. Out of scope for v1.</p>
+      <ul>
+        <li>
+          <strong>Cross-model co-batching.</strong> A batch shares one
+          model&#x27;s weights, so requests
+        </li>
+      </ul>
+      <p>
+        for *different* models still take turns. Out of scope (and physically
+        required).
+      </p>
+      <ul>
+        <li>
+          Raising throughput of *document ingestion* — that already shipped
+          (parallel
+        </li>
+      </ul>
+      <p>parse + one batched embed) and is a different problem.</p>
       <h2>Design</h2>
-      <h3>1. CI <code>test</code> job → version matrix</h3>
+      <h3>1. Module decomposition &amp; preserved contract</h3>
       <p>
-        Convert the single <code>test</code> job to a matrix over
-        <strong><code>[&quot;3.10&quot;, &quot;3.13&quot;]</code></strong
-        >:
+        <code>inference_engine.py</code> (437 lines) already does four jobs.
+        Adding a scheduler plus two backends inline would overload it, so split
+        along responsibility lines:
+      </p>
+      <p>
+        | Module | Responsibility | Touches MLX | |---|---|---| |
+        <code>model_cache.py</code> | LRU model/processor caches,
+        <code>get_mlx_vlm_model</code>, <code>get_mlx_lm_model</code>,
+        <code>_TEXT_ONLY_MODELS</code>, <code>is_model_loaded</code>,
+        <code>get_loaded_models</code> | load only | |
+        <code>batch_backends.py</code> | <code>TextBatchSession</code> +
+        <code>VisionBatchRunner</code>; the <strong>only</strong> module that
+        calls MLX batch APIs | yes | | <code>batch_scheduler.py</code> | Owns
+        the single MLX thread, pending queue, scheduling loop, fairness,
+        watchdog, batch telemetry | no | | <code>inference_engine.py</code> |
+        Thin <strong>facade</strong>: <code>run_inference()</code> builds a
+        request, submits it, awaits the future; re-exports status/cache symbols
+        | no |
+      </p>
+      <p>
+        <strong>Contract preservation.</strong>
+        <code>run_inference(messages, model_id) -&gt; str</code> stays
+        byte-identical. <code>inference_engine</code> re-exports the
+        cache/status symbols that callers and tests import
+        (<code>is_model_loaded</code>, <code>get_avg_latency</code>,
+        <code>get_status_info</code>, <code>get_loaded_models</code>,
+        <code>get_mlx_vlm_model</code>, <code>_vlm_cache</code>, …) so no import
+        sites break. The scheduler exposes a
+        <code>run_on_thread(fn, *args)</code> escape hatch (replacing
+        today&#x27;s <code>run_in_inference_thread</code>) for non-batchable
+        one-off work on the MLX thread — used by the contract test for cache
+        inspection/cleanup.
+      </p>
+      <p>
+        This split is driven by <strong>testability</strong>:
+        <code>batch_scheduler</code> has no MLX dependency, so grouping /
+        fairness / future-resolution / error-isolation are unit-testable in CI
+        against a <code>FakeBackend</code>; the GPU wiring is quarantined in
+        <code>batch_backends</code> behind a <code>needs_gpu</code> contract
+        test.
+      </p>
+      <h3>2. Request lifecycle &amp; scheduler loop</h3>
+      <p>A submission becomes an <code>InferenceRequest</code> dataclass:</p>
+      <pre><code>@dataclass
+class InferenceRequest:
+    id: str
+    engine_kind: str          # &quot;text&quot; if model_id in _TEXT_ONLY_MODELS else &quot;vision&quot;
+    model_id: str
+    messages: list
+    max_tokens: int
+    future: asyncio.Future
+    loop: asyncio.AbstractEventLoop
+    created_at: float</code></pre>
+      <p>
+        <code>engine_kind</code> follows
+        <strong>today&#x27;s exact routing</strong>, so a gemma request with no
+        image still uses the vision path — no behavior change.
+      </p>
+      <p>The scheduler loop (single thread), each tick:</p>
+      <ol>
+        <li>
+          <strong>Drain</strong> pending requests into in-memory groups keyed by
+        </li>
+      </ol>
+      <p><code>(engine_kind, model_id)</code>.</p>
+      <ol>
+        <li>
+          <strong>If a text session is active</strong> for model X: admit
+          pending text-X requests up
+        </li>
+      </ol>
+      <p>
+        to <code>completion_batch_size</code>, <code>step()</code> once, resolve
+        any finished sequences&#x27; futures. Continue while it has work *and*
+        fairness allows (below).
+      </p>
+      <ol>
+        <li>
+          <strong>Else pick the oldest-waiting group</strong> and serve it:
+        </li>
+        <ul>
+          <li>
+            <strong>vision</strong> → gather everything pending for that model
+            *now* and run one
+          </li>
+        </ul>
+      </ol>
+      <p>static <code>batch_generate</code> (no artificial wait timer).</p>
+      <ul>
+        <li>
+          <strong>text</strong> → create a <code>TextBatchSession</code>, insert
+          the pending requests, begin
+        </li>
+      </ul>
+      <p>stepping.</p>
+      <ol>
+        <li>
+          Resolve each request via
+          <code>loop.call_soon_threadsafe(future.set_result, text)</code>
+        </li>
+      </ol>
+      <p>(or <code>set_exception</code>).</p>
+      <p>
+        <strong>No window timer.</strong> When busy, multiple requests are
+        already pending at dispatch and batch naturally; when idle, a lone
+        request runs immediately. This keeps idle latency identical to today and
+        removes a config knob.
+      </p>
+      <p>
+        <strong>Fairness / model switching.</strong> The active text session
+        admits same-model requests freely *until a request for a different model
+        has been waiting*. At that point it stops admitting new ones, drains its
+        in-flight sequences, then the scheduler switches models. This bounds
+        another model&#x27;s wait to &quot;current in-flight completion.&quot;
+        In practice clients share one model, so switches are rare; the guard
+        exists to prevent starvation, not as the common path.
+      </p>
+      <h3>3. Text backend — <code>TextBatchSession</code> (continuous)</h3>
+      <p>
+        Built once per active text model from
+        <code>model_cache.get_mlx_lm_model(model_id)</code>; constructs
+        <code
+          >BatchGenerator(model, completion_batch_size=…, prefill_batch_size=…,
+          max_kv_size=…, stop_tokens=…)</code
+        >.
       </p>
       <ul>
         <li>
-          <code>3.10</code> — the declared floor. Catches 3.10-only breakage
-          such as the
-        </li>
-      </ul>
-      <p><code>config.py</code> <code>tomli</code> fallback path.</p>
-      <ul>
-        <li>
-          <code>3.13</code> — the &quot;recent&quot; leg. Catches &quot;newer
-          than 3.10&quot; breakage for
-        </li>
-      </ul>
-      <p>contributors whose PRs only run CI.</p>
-      <p>
-        <strong>Why 3.13 and not 3.14 for the recent leg:</strong>
-        <code>requirements.txt</code> pulls <code>sentence-transformers</code>,
-        which depends on <code>torch</code> and <code>scipy</code> — packages
-        that are slow to publish wheels for a brand-new CPython. On
-        <code>ubuntu-latest</code>, a <code>cp314</code> leg would likely fail
-        at <code>pip install</code> (no Linux <code>torch</code> wheel for 3.14
-        → source build → failure) — a failure caused by the runner, not our
-        code. 3.13 has solid Linux wheel coverage. The maintainer&#x27;s actual
-        3.14 is still exercised constantly by local pytest/pre-push runs, and
-        the hook notice (below) flags that local 3.14 sits above both CI legs.
-      </p>
-      <p>
-        Use <code>fail-fast: false</code> so one leg&#x27;s failure does not
-        cancel the other — both results stay visible. The <code>lint</code> job
-        stays single-version: <code>ruff</code> and <code>prettier</code> output
-        is interpreter-independent, and <code>ruff</code> already pins
-        <code>target-version</code>.
-      </p>
-      <p>Target shape for the <code>test</code> job:</p>
-      <pre><code>test:
-  runs-on: ubuntu-latest
-  strategy:
-    fail-fast: false
-    matrix:
-      python-version: [&quot;3.10&quot;, &quot;3.13&quot;]
-  steps:
-    - uses: actions/checkout@v5
-    - name: Set up Python
-      uses: actions/setup-python@v6
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-asyncio
-    - name: Run Tests (Skip GPU)
-      run: |
-        # Standard runners lack Apple Silicon/GPU, so skip MLX/GPU tests.
-        pytest -v -m &quot;not needs_gpu&quot; --ignore=tests/contracts/test_mlx_contract.py</code></pre>
-      <h3>
-        2. Make the pre-push hook honest (<code>scripts/hooks/pre-push</code>)
-      </h3>
-      <ul>
-        <li>
-          <strong>Rewrite the header (lines 1–2).</strong> Drop the false
-          &quot;Mirrors the CI pipeline
+          <code>insert(req)</code> — render
+          <code>tokenizer.apply_chat_template(...)</code> → token ids →
         </li>
       </ul>
       <p>
-        exactly&quot; claim. State accurately that the hook runs CI&#x27;s
-        checks against the _local_ interpreter, and that CI additionally runs
-        the pytest suite on each matrix version.
+        <code>gen.insert(uid, ids)</code>; track
+        <code>uid → (req, accumulator)</code>.
       </p>
       <ul>
         <li>
-          <strong>Add a non-fatal coverage notice</strong> after the pytest
-          step. Read the venv&#x27;s
+          <code>step()</code> — advance one round; append each uid&#x27;s new
+          token text to its
         </li>
       </ul>
       <p>
-        <code>major.minor</code>; if it is not one of CI&#x27;s matrix versions,
-        print a clear <code>⚠</code> line telling the user a version-specific
-        failure won&#x27;t be caught locally and to watch the Actions run. It
-        informs; it never changes the hook&#x27;s exit code.
+        accumulator; for any sequence that hit EOS / a stop token / its
+        <code>max_tokens</code>, decode the full text, resolve that
+        request&#x27;s future, and <code>gen.remove(uid)</code> to free the
+        slot.
+        <strong
+          >This is the essence of continuous batching: finished requests leave
+          mid-flight while others keep running.</strong
+        >
       </p>
       <ul>
         <li>
-          <strong>CI version list</strong> lives as a commented constant in the
-          hook
+          <code>active_count()</code> / <code>has_capacity()</code> — for
+          admission decisions.
+        </li>
+        <li>
+          <code>close()</code> — called before the model can be evicted (it
+          holds KV-cache state).
         </li>
       </ul>
       <p>
-        (<code>CI_PY_VERSIONS=&quot;3.10 3.13&quot;</code>) with a pointer to
-        <code>ci.yml</code> as the source of truth. A true file-based single
-        source of truth is awkward — GitHub Actions cannot read a matrix from a
-        file without an extra job — and this value only feeds an _informational_
-        notice that never gates, so a commented constant is the right level of
-        effort.
+        The exact <code>BatchGenerator</code> stepping protocol
+        (<code>insert</code>/<code>next</code>/<code>next_generated</code>/<code>remove</code>/<code>stream</code>)
+        is internal to <code>mlx_lm.server</code> and undocumented in inspection
+        — the
+        <strong>contract test pins down the real call sequence</strong> (see
+        Risks).
+      </p>
+      <h3>4. Vision backend — <code>VisionBatchRunner</code> (static)</h3>
+      <p>Given a group of same-model vision requests:</p>
+      <ol>
+        <li>Load via <code>model_cache.get_mlx_vlm_model(model_id)</code>.</li>
+        <li>
+          Render each prompt with <code>processor.apply_chat_template</code>;
+          decode each request&#x27;s
+        </li>
+      </ol>
+      <p>
+        inline base64 image to a temp file.
+        <strong
+          >The image-decode + chat-template logic currently in
+          <code>handle_mlx_vlm_request</code> moves here, reused not
+          duplicated.</strong
+        >
+      </p>
+      <ol>
+        <li>
+          Build aligned lists <code>prompts: list[str]</code>,
+          <code>images: list[str | None]</code>,
+        </li>
+      </ol>
+      <p><code>max_tokens: list[int]</code>.</p>
+      <ol>
+        <li>
+          One call: `mlx_vlm.batch_generate(model, processor, images=images,
+        </li>
+      </ol>
+      <p>prompts=prompts, max_tokens=max_tokens, group_by_shape=True)`.</p>
+      <ol>
+        <li>
+          Map the <code>BatchResponse</code> back to requests in original order,
+          resolve each
+        </li>
+      </ol>
+      <p>future, clean up temp images in <code>finally</code>.</p>
+      <p>
+        <code>VisionBatchRunner</code> is <strong>transactional</strong> (one
+        call in, all results out, everyone finishes together) where
+        <code>TextBatchSession</code> is <strong>temporal</strong> (admits and
+        retires sequences over time). Same <code>BatchBackend</code> interface,
+        opposite lifecycles — which is why the scheduler can&#x27;t use a single
+        <code>run_group(list)</code> method.
       </p>
       <p>
-        Target shape for the new hook logic (appended after the existing
-        <code>pytest</code> line, before the final success echo):
+        <code>LOCALLLM_VISION_MAX_BATCH</code> caps a static batch; overflow
+        waits for the next one.
       </p>
-      <pre><code># CI runs the pytest suite on each of these versions (keep in sync with
-# .github/workflows/ci.yml). Informational only — never affects exit status.
-CI_PY_VERSIONS=&quot;3.10 3.13&quot;
-LOCAL_PYV=&quot;$(&quot;${ARCH_PREFIX[@]}&quot; &quot;$VENV_PYTHON&quot; -c \
-  &#x27;import sys; print(f&quot;{sys.version_info.major}.{sys.version_info.minor}&quot;)&#x27;)&quot;
-case &quot; $CI_PY_VERSIONS &quot; in
-  *&quot; $LOCAL_PYV &quot;*) : ;; # local interpreter matches a CI leg
-  *)
-    echo &quot;⚠ pytest ran on local Python $LOCAL_PYV; CI runs it on: $CI_PY_VERSIONS.&quot;
-    echo &quot;  A failure specific to those versions won&#x27;t be caught here — watch the&quot;
-    echo &quot;  GitHub Actions run after pushing.&quot;
-    ;;
-esac</code></pre>
-      <h3>3. Reinstall the hook</h3>
+      <h3>5. Watchdog, error isolation, cancellation</h3>
       <p>
-        After editing <code>scripts/hooks/pre-push</code>, run
-        <code>bash scripts/install-hooks.sh</code> so
-        <code>.git/hooks/pre-push</code> matches source — per the CLAUDE.md
-        mandate that source in <code>scripts/hooks/</code> is authoritative and
-        installed copies must not drift.
+        <strong
+          >Error isolation — one bad request must not poison the batch.</strong
+        >
       </p>
-      <h2>Out of scope</h2>
       <ul>
         <li>
-          <code>localllm/config.py</code> <code>tomli</code> fallback:
-          <strong>keep it.</strong> It is correct, and the new
+          *Text:* a render/insert failure resolves just that future with the
+          exception;
         </li>
       </ul>
-      <p>3.10 CI leg now genuinely exercises it.</p>
+      <p>others proceed.</p>
       <ul>
         <li>
-          <code>agent.py:245</code> <code>datetime.utcnow()</code> is deprecated
-          on 3.12+ (warns on local 3.14,
+          *Vision:* <code>batch_generate</code> is all-or-nothing, so on a
+          batch-level exception the
         </li>
       </ul>
       <p>
-        silent on CI 3.10). Noted as a
-        <strong>separate follow-up cleanup</strong>, not part of this
-        version-gap fix.
+        runner <strong>retries each request individually</strong> (batch-of-1)
+        to isolate the culprit — good requests succeed, the bad one gets its
+        error. Errors are rare, so the re-run cost is acceptable.
+      </p>
+      <p>
+        <strong>Watchdog.</strong> Keep the existing 180s idle guard, made
+        batch-aware: <code>_last_progress</code> updates on any produced token
+        or completed batch. If no progress for 180s while work is active, abort
+        the active batch/session and resolve all its in-flight futures with
+        <code>RuntimeError(&quot;inference watchdog: stalled&quot;)</code>, then
+        reset. Because a GPU step advances the whole batch together, a stall is
+        inherently global — aborting the active batch is the right granularity
+        (no per-request stop needed).
+      </p>
+      <p>
+        <strong>Cancellation.</strong> None — today&#x27;s contract shields the
+        future to completion. Out of scope for v1 (would change the public
+        contract).
+      </p>
+      <h3>6. Configuration (env vars, app style)</h3>
+      <p>Conservative defaults for a memory-bound Mac:</p>
+      <p>
+        | Var | Default | Effect | |---|---|---| |
+        <code>LOCALLLM_BATCH_ENABLED</code> | <code>1</code> | Master flag.
+        <code>0</code> → scheduler processes one request per tick = today&#x27;s
+        serial behavior (rollback / A/B baseline). | |
+        <code>LOCALLLM_TEXT_COMPLETION_BATCH</code> | <code>8</code> |
+        <code>BatchGenerator.completion_batch_size</code>. | |
+        <code>LOCALLLM_TEXT_PREFILL_BATCH</code> | <code>8</code> |
+        <code>BatchGenerator.prefill_batch_size</code>. | |
+        <code>LOCALLLM_MAX_KV_SIZE</code> | unset |
+        <code>BatchGenerator.max_kv_size</code> (memory guard). | |
+        <code>LOCALLLM_VISION_MAX_BATCH</code> | <code>4</code> | Cap on a
+        static vision batch. |
+      </p>
+      <p><code>max_tokens</code> continues to default to 8192 as today.</p>
+      <h3>7. Telemetry</h3>
+      <p>
+        The scheduler maintains batch counters exposed via a new
+        <code>batch_scheduler.get_batch_stats()</code> helper:
+      </p>
+      <ul>
+        <li>current batch occupancy (active sequences) per engine,</li>
+        <li>peak batch size observed,</li>
+        <li>aggregate tokens/sec,</li>
+        <li>count of model switches.</li>
+      </ul>
+      <p>
+        These derive from <code>BatchGenerator.stats()</code> /
+        <code>BatchStats</code> where available, plus scheduler-side counters.
+        The bridge&#x27;s <code>/v1/stats</code> route
+        (<code>gemma_bridge.py:307</code>) gains
+        <strong>one additive <code>batch</code> block</strong> alongside the
+        existing <code>system</code> / <code>agent</code> /
+        <code>pipeline</code> blocks — a read-only change that does not touch
+        the inference path.
+      </p>
+      <p>
+        Wiring those numbers into the <strong>Settings → Vitals</strong> tab UI
+        (<code>gemma-web/index.html</code>) is a
+        <strong>small optional follow-up</strong>, not required for the
+        throughput goal — the data is available on the endpoint regardless. Per
+        CLAUDE.md, telemetry belongs on the Vitals tab, so if displayed it goes
+        there and nowhere else (no sidebar/preview mirrors).
+      </p>
+      <h2>Testing strategy (CI-safe, no GPU)</h2>
+      <p>
+        The scheduler is pure orchestration, so its hard logic is tested in CI
+        with a <code>FakeBackend</code> that &quot;generates&quot; deterministic
+        tokens:
+      </p>
+      <ul>
+        <li>grouping by <code>(engine_kind, model_id)</code>,</li>
+        <li>
+          continuous admission/retirement (requests finishing at different
+          lengths
+        </li>
+      </ul>
+      <p>resolve in the right order, free slots, let queued requests in),</p>
+      <ul>
+        <li>
+          fairness/model-switching guard (a waiting other-model request forces a
+          drain +
+        </li>
+      </ul>
+      <p>switch, no starvation),</p>
+      <ul>
+        <li>
+          error isolation (one failing request doesn&#x27;t fail its
+          batch-mates),
+        </li>
+        <li>watchdog abort resolves in-flight futures with the stall error,</li>
+        <li><code>BATCH_ENABLED=0</code> falls back to serial.</li>
+      </ul>
+      <p>
+        Real MLX wiring lives in <code>batch_backends</code> and is validated by
+        a <strong><code>needs_gpu</code></strong> contract test in
+        <code>tests/contracts/</code> (excluded from the CI gate like
+        <code>test_mlx_contract.py</code>): it exercises the real
+        <code>BatchGenerator</code> step protocol, real
+        <code>batch_generate</code>, and a <strong>mixed</strong> vision batch
+        (some requests with images, some without) — see Risks.
+      </p>
+      <h2>Acceptance benchmark</h2>
+      <p>
+        A <code>needs_gpu</code> benchmark script
+        (<code>scripts/bench_batching.py</code>, documented for manual run, not
+        in the CI gate): fire K concurrent <code>run_inference</code> calls for
+        one model and compare against the serial baseline
+        (<code>LOCALLLM_BATCH_ENABLED=0</code>). Pass criteria:
+      </p>
+      <ul>
+        <li>
+          aggregate tokens/sec for K concurrent requests
+          <strong>exceeds</strong> the serial baseline
+        </li>
+      </ul>
+      <p>at K ≥ 2,</p>
+      <ul>
+        <li>
+          single-request (K=1) latency is within noise of today&#x27;s serial
+          latency
+        </li>
+      </ul>
+      <p>(no regression when there&#x27;s nothing to batch).</p>
+      <h2>Implementation phasing</h2>
+      <p>One spec, phased build behind the shared interface:</p>
+      <ol>
+        <li>
+          <strong>Scaffolding</strong> — <code>model_cache.py</code> extracted
+          from <code>inference_engine.py</code>;
+        </li>
+      </ol>
+      <p>
+        <code>InferenceRequest</code>; <code>batch_scheduler.py</code> with the
+        loop, <code>FakeBackend</code>, and the
+        <code>BATCH_ENABLED=0</code> serial path;
+        <code>inference_engine</code> re-exports + facade. Full unit-test suite
+        green. No MLX behavior change yet (serial path only).
+      </p>
+      <ol>
+        <li>
+          <strong>Text continuous batching</strong> —
+          <code>TextBatchSession</code>; scheduler text path;
+        </li>
+      </ol>
+      <p>contract test for the <code>BatchGenerator</code> protocol.</p>
+      <ol>
+        <li>
+          <strong>Vision static batching</strong> —
+          <code>VisionBatchRunner</code> (move image/template logic);
+        </li>
+      </ol>
+      <p>scheduler vision path; mixed-batch contract test.</p>
+      <ol>
+        <li>
+          <strong>Telemetry + benchmark</strong> — Vitals batch fields;
+          <code>bench_batching.py</code>; tune
+        </li>
+      </ol>
+      <p>default batch sizes from real numbers.</p>
+      <p>
+        Each phase is independently shippable and leaves the app fully working.
+      </p>
+      <h2>Affected tests</h2>
+      <p>
+        Tests that reach into <code>inference_engine</code> internals and will
+        be updated to target the new modules:
+      </p>
+      <ul>
+        <li>
+          <code>tests/test_telemetry_unit.py</code> — patches
+          <code>run_in_inference_thread</code> → repoint to
+        </li>
+      </ul>
+      <p>the scheduler facade.</p>
+      <ul>
+        <li>
+          <code>tests/test_longevity.py</code> — uses
+          <code>handle_mlx_vlm_request</code>, <code>_stop_inference</code>,
+        </li>
+      </ul>
+      <p>
+        <code>_last_inference_activity</code>,
+        <code>_mlx_vlm_stream_generate</code> → rewrite against the
+        watchdog&#x27;s new batch-aware progress tracking.
+      </p>
+      <ul>
+        <li>
+          <code>tests/test_lru_cache.py</code> — uses
+          <code>get_mlx_vlm_model</code>, <code>_vlm_cache</code>,
+        </li>
+      </ul>
+      <p>
+        <code>_inference_ready</code> → repoint to
+        <code>model_cache</code> (symbols re-exported, so changes are minimal).
+      </p>
+      <ul>
+        <li>
+          <code>tests/test_logging_config.py</code> — patches
+          <code>run_in_inference_thread</code> → repoint.
+        </li>
+        <li>
+          <code>tests/contracts/test_mlx_contract.py</code> — imports
+          <code>get_mlx_vlm_model</code>,
+        </li>
+      </ul>
+      <p>
+        <code>run_in_inference_thread</code>, <code>run_inference</code> → keep
+        working via re-exports + <code>run_on_thread</code>.
       </p>
       <h2>Risks</h2>
       <ul>
         <li>
-          <strong>The 3.13 leg has never run.</strong> It may surface a genuine
-          latent issue on first
+          <strong
+            ><code>BatchGenerator</code> is an internal
+            <code>mlx_lm.server</code> API.</strong
+          >
+          Its step protocol is
         </li>
       </ul>
       <p>
-        push. That is the footgun working as intended — we fix what it finds
-        before calling the task done.
+        undocumented and may shift across mlx_lm releases. Mitigation: the
+        contract test pins the exact call sequence; <code>mlx_lm</code> is
+        version-pinned (0.31.3); the <code>BATCH_ENABLED=0</code> flag is an
+        instant fallback.
       </p>
       <ul>
         <li>
-          <strong>Dependency install time/cost</strong> roughly doubles for the
-          <code>test</code> job (two
+          <strong>Mixed vision batches</strong> (some requests with images, some
+          without) may not be
         </li>
       </ul>
-      <p>legs). Acceptable for the coverage gained.</p>
+      <p>
+        supported by <code>batch_generate</code>. Mitigation: contract test
+        validates it; if unsupported, <code>VisionBatchRunner</code> splits into
+        image / no-image subgroups.
+      </p>
       <ul>
         <li>
-          <strong><code>actions/setup-python@v6</code> must offer 3.13</strong>
-          (it does, via the version
+          <strong>KV-cache memory under load.</strong> A full text batch holds
+          KV cache for every
         </li>
       </ul>
-      <p>manifest). If a future runner image lags, pin a patch version.</p>
+      <p>
+        active sequence; on a memory-bound Mac this can pressure unified memory.
+        Mitigation: conservative default batch sizes +
+        <code>LOCALLLM_MAX_KV_SIZE</code>; tune from the benchmark.
+      </p>
+      <ul>
+        <li>
+          <strong>Static vision coupling.</strong> A short prompt in a vision
+          batch waits for the
+        </li>
+      </ul>
+      <p>
+        longest one. Accepted tradeoff for v1; per-request
+        <code>max_tokens</code> caps the worst case;
+        <code>LOCALLLM_VISION_MAX_BATCH</code> limits the blast radius.
+      </p>
+      <ul>
+        <li>
+          <strong>Real concurrency may be low</strong> on a single-user machine,
+          so the win only
+        </li>
+      </ul>
+      <p>
+        materializes under genuine overlap. The benchmark measures this
+        honestly; the serial fallback means no downside when requests don&#x27;t
+        overlap.
+      </p>
       <h2>Verification (Definition of Done)</h2>
       <ul>
         <li>
-          <code>bash .git/hooks/pre-push</code> runs in-session and exits 0, and
-          the new mismatch
+          <code>bash .git/hooks/pre-push</code> runs in-session and exits 0
+          (full unit suite,
+        </li>
+      </ul>
+      <p>including the new scheduler tests, green).</p>
+      <ul>
+        <li>
+          The <code>needs_gpu</code> contract test passes locally on the Mac
+          (real
         </li>
       </ul>
       <p>
-        notice fires (the maintainer is on 3.14, outside
-        <code>{3.10, 3.13}</code>).
+        <code>BatchGenerator</code> + <code>batch_generate</code>, including a
+        mixed vision batch).
       </p>
       <ul>
         <li>
-          After push, <strong>both</strong> matrix legs (<code>3.10</code> and
-          <code>3.13</code>) and the <code>lint</code> job go
+          <code>scripts/bench_batching.py</code> shows aggregate tokens/sec at
+          K=2+ exceeding the
+        </li>
+      </ul>
+      <p>serial baseline, with no K=1 latency regression.</p>
+      <ul>
+        <li>
+          <code>run_inference</code>&#x27;s signature and return type are
+          unchanged; <code>agent.py</code> and the
         </li>
       </ul>
       <p>
-        green on GitHub Actions. If the 3.13 leg goes red, diagnose and fix
-        before reporting done.
+        bridge&#x27;s chat routes are not edited (only
+        <code>/v1/stats</code> gains an additive <code>batch</code> block).
       </p>
+      <ul>
+        <li>After push, GitHub Actions CI is green.</li>
+      </ul>
       <h2>Files touched</h2>
       <ul>
         <li>
-          <code>.github/workflows/ci.yml</code> — matrix on the
-          <code>test</code> job.
+          <code>model_cache.py</code> — <strong>new</strong>; caches/loaders
+          extracted from <code>inference_engine</code>.
         </li>
         <li>
-          <code>scripts/hooks/pre-push</code> — honest header + non-fatal
-          coverage notice.
-        </li>
-        <li>
-          <code>.git/hooks/pre-push</code> — regenerated by
-          <code>scripts/install-hooks.sh</code> (not edited
+          <code>batch_scheduler.py</code> — <strong>new</strong>; thread owner,
+          loop, fairness, watchdog,
         </li>
       </ul>
-      <p>by hand).</p>
+      <p>telemetry.</p>
       <ul>
         <li>
-          <code
-            >docs/superpowers/specs/2026-06-05-ci-local-python-version-gap-design.md</code
-          >
-          —
+          <code>batch_backends.py</code> — <strong>new</strong>;
+          <code>TextBatchSession</code>, <code>VisionBatchRunner</code>,
         </li>
       </ul>
-      <p>this spec.</p>
-      <p>Estimated change surface: ~25–35 lines across the two source files.</p>
+      <p><code>BatchBackend</code> interface.</p>
+      <ul>
+        <li>
+          <code>inference_engine.py</code> — slimmed to a facade + re-exports.
+        </li>
+        <li>
+          <code>gemma_bridge.py</code> — <code>/v1/stats</code> gains one
+          additive <code>batch</code> block (telemetry
+        </li>
+      </ul>
+      <p>read only; inference path untouched).</p>
+      <ul>
+        <li>
+          <code>gemma-web/index.html</code> — *optional* follow-up to render the
+          batch block on the
+        </li>
+      </ul>
+      <p>Vitals tab; not required for the throughput goal.</p>
+      <ul>
+        <li>
+          <code>tests/</code> — new scheduler unit tests +
+          <code>FakeBackend</code>; updated internal-reaching
+        </li>
+      </ul>
+      <p>tests; new <code>needs_gpu</code> batching contract test.</p>
+      <ul>
+        <li>
+          <code>scripts/bench_batching.py</code> — <strong>new</strong>;
+          acceptance benchmark.
+        </li>
+        <li>
+          <code
+            >docs/superpowers/specs/2026-06-06-mlx-batched-generation-design.md</code
+          >
+          — this
+        </li>
+      </ul>
+      <p>spec.</p>
+      <p>
+        Estimated change surface: ~600–800 lines net across the new modules, the
+        facade slim-down, and tests.
+      </p>
     </div>
   </body>
 </html>
