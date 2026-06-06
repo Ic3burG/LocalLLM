@@ -47,3 +47,44 @@ async def test_at_opens_file_menu(tmp_path):
         menu = app.query_one(CompletionMenu)
         assert menu.display is True
         assert menu.option_count == 2
+
+
+async def test_escape_dismisses_menu():
+    app = LocalLLMApp(bridge_url="http://127.0.0.1:9999")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.query_one(InputBox).focus()
+        await pilot.press("/")
+        await pilot.pause()
+        assert app.query_one(CompletionMenu).display is True
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.query_one(CompletionMenu).display is False
+
+
+async def test_picked_message_applies_completion():
+    app = LocalLLMApp(bridge_url="http://127.0.0.1:9999")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        inp = app.query_one(InputBox)
+        inp.focus()
+        await pilot.press("/")
+        await pilot.press("m")
+        await pilot.pause()
+        menu = app.query_one(CompletionMenu)
+        menu.post_message(CompletionMenu.Picked("/model"))
+        await pilot.pause()
+        assert inp.value.startswith("/model")
+
+
+async def test_history_navigation_when_menu_closed():
+    app = LocalLLMApp(bridge_url="http://127.0.0.1:9999")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        inp = app.query_one(InputBox)
+        inp.focus()
+        inp.push_history("previous command")
+        await pilot.press("up")
+        await pilot.pause()
+        assert inp.value == "previous command"
+        assert app.query_one(CompletionMenu).display is False

@@ -125,7 +125,8 @@ class LocalLLMApp(App):
         await self._client.close()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        self.query_one(InputBox).update_completions()
+        if isinstance(event.control, InputBox):
+            event.control.update_completions()
 
     def on_completion_menu_picked(self, event: CompletionMenu.Picked) -> None:
         self.query_one(InputBox).apply_value(event.value)

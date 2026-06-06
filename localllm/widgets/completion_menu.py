@@ -24,6 +24,8 @@ class CompletionMenu(OptionList):
     }
     """
 
+    can_focus = False
+
     class Picked(Message):
         """A candidate was chosen (mouse click)."""
 

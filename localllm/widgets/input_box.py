@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from textual import events
 from textual.binding import Binding
 from textual.widgets import Input
 
 from localllm.completions import (
+    Trigger,
     apply_completion,
     fuzzy_find_files,
     parse_trigger,
@@ -25,7 +27,7 @@ class InputBox(Input):
         self._history: list[str] = []
         self._cursor: int | None = None
         self.cwd = cwd
-        self._trigger = None
+        self._trigger: Trigger | None = None
 
     # --- history (unchanged behavior) -------------------------------------
     def push_history(self, line: str) -> None:
@@ -91,7 +93,7 @@ class InputBox(Input):
         if menu is not None:
             menu.hide()
 
-    async def on_key(self, event) -> None:
+    async def on_key(self, event: events.Key) -> None:
         # Only intercept navigation keys while the menu is open; otherwise let
         # Input's normal bindings (history, submit, focus) run untouched.
         menu = self._menu()
@@ -107,8 +109,9 @@ class InputBox(Input):
             event.stop()
         elif event.key in ("enter", "tab"):
             value = menu.current_value()
-            if value is not None:
-                self.apply_value(value)
+            if value is None:
+                return
+            self.apply_value(value)
             event.prevent_default()
             event.stop()
         elif event.key == "escape":
