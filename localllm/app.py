@@ -26,6 +26,7 @@ from localllm.events import (
     StepEvent,
     ThinkingEvent,
 )
+from localllm.mentions import expand_mentions, human_size
 from localllm.registry_client import RegistryClient, make_payload
 from localllm.widgets.completion_menu import CompletionMenu
 from localllm.widgets.confirm_modal import ConfirmModal
@@ -167,7 +168,12 @@ class LocalLLMApp(App):
                 )
             return
 
+        exp = expand_mentions(text, self._cwd)
         transcript.write_user(text)
+        for rel, n in exp.attached:
+            transcript.write_status(f"📎 attached: {rel} ({human_size(n)})")
+        for warning in exp.warnings:
+            transcript.write_error(warning)
         status.state = "thinking"
         trace = self.query_one(TracePanel)
         trace.reset()
@@ -175,7 +181,7 @@ class LocalLLMApp(App):
 
         try:
             async for ev in self._client.run_and_stream(
-                prompt=text,
+                prompt=exp.text,
                 model_id=self._model_id,
                 cwd=self._cwd,
                 cli_session_id=self._session_id,

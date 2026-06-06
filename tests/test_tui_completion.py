@@ -88,3 +88,26 @@ async def test_history_navigation_when_menu_closed():
         await pilot.pause()
         assert inp.value == "previous command"
         assert app.query_one(CompletionMenu).display is False
+
+
+async def test_submit_injects_mentioned_file(tmp_path, monkeypatch):
+    (tmp_path / "note.txt").write_text("hello-from-file")
+    captured = {}
+
+    async def fake_stream(self, *, prompt, model_id, cwd, cli_session_id):
+        captured["prompt"] = prompt
+        return
+        yield  # pragma: no cover  -- makes this an async generator
+
+    monkeypatch.setattr("localllm.agent_client.AgentClient.run_and_stream", fake_stream)
+
+    app = LocalLLMApp(bridge_url="http://127.0.0.1:9999")
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app._cwd = str(tmp_path)
+        inp = app.query_one(InputBox)
+        app.post_message(InputBox.Submitted(inp, "read @note.txt"))
+        await pilot.pause()
+        await pilot.pause(0.3)
+        assert "hello-from-file" in captured["prompt"]
+        assert '<file path="note.txt">' in captured["prompt"]
