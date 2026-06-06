@@ -13,7 +13,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.widgets import Footer, Header
+from textual.widgets import Footer, Header, Input
 
 from localllm.agent_client import AgentClient
 from localllm.control_server import ControlServer
@@ -27,6 +27,7 @@ from localllm.events import (
     ThinkingEvent,
 )
 from localllm.registry_client import RegistryClient, make_payload
+from localllm.widgets.completion_menu import CompletionMenu
 from localllm.widgets.confirm_modal import ConfirmModal
 from localllm.widgets.input_box import InputBox
 from localllm.widgets.model_picker import ModelPicker
@@ -48,6 +49,7 @@ class LocalLLMApp(App):
     CSS = """
     Screen {
         layout: vertical;
+        layers: base overlay;
     }
     Transcript {
         height: 1fr;
@@ -78,6 +80,7 @@ class LocalLLMApp(App):
         yield Header(show_clock=False)
         with Vertical():
             yield Transcript(id="transcript")
+            yield CompletionMenu(id="completion")
             yield InputBox(id="input")
         yield TracePanel(id="trace")
         yield StatusBar(id="status")
@@ -90,6 +93,7 @@ class LocalLLMApp(App):
         status.session_id = self._session_id
         status.state = "ready"
         self.query_one(InputBox).focus()
+        self.query_one(InputBox).cwd = self._cwd
         self.query_one(Transcript).write_status(
             f"Connected. cwd: {self._cwd}  ·  model: {self._model_id}"
         )
@@ -119,6 +123,12 @@ class LocalLLMApp(App):
         # Release pooled connections held by the long-lived clients.
         await self._registry_client.close()
         await self._client.close()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        self.query_one(InputBox).update_completions()
+
+    def on_completion_menu_picked(self, event: CompletionMenu.Picked) -> None:
+        self.query_one(InputBox).apply_value(event.value)
 
     async def on_input_submitted(self, event: InputBox.Submitted) -> None:  # type: ignore[name-defined]
         text = event.value.strip()
