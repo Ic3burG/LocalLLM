@@ -5,14 +5,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-HELP_TEXT = """Slash commands:
-  /help              Show this help.
-  /model [name]      Switch model. Bare /model opens a selectable list.
-  /clear             Clear the transcript.
-  /tools             List available tools (safe vs risky).
-  /cwd <path>        Change session cwd (sandbox root).
-  /reconnect         Next prompt will retry the bridge probe.
-  /quit              Exit the CLI."""
+COMMANDS: list[tuple[str, str]] = [
+    ("/help", "Show this help."),
+    ("/model", "Switch model. Bare /model opens a selectable list."),
+    ("/clear", "Clear the transcript."),
+    ("/tools", "List available tools (safe vs risky)."),
+    ("/cwd", "Change session cwd (sandbox root)."),
+    ("/reconnect", "Next prompt will retry the bridge probe."),
+    ("/quit", "Exit the CLI."),
+]
+
+
+def _build_help() -> str:
+    width = max(len(name) for name, _ in COMMANDS)
+    lines = ["Slash commands:"]
+    for name, summary in COMMANDS:
+        lines.append(f"  {name:<{width}}  {summary}")
+    return "\n".join(lines)
+
+
+HELP_TEXT = _build_help()
 
 
 @dataclass(frozen=True)

@@ -61,3 +61,14 @@ def test_unknown_command_returns_show_with_hint():
 
 def test_non_command_returns_none():
     assert dispatch("hello world", model="x") is None
+
+
+def test_commands_table_drives_help():
+    from localllm.commands import COMMANDS, HELP_TEXT
+
+    names = [name for name, _ in COMMANDS]
+    assert "/help" in names
+    assert "/quit" in names
+    # Every command appears in the generated help text.
+    for name in names:
+        assert name in HELP_TEXT
