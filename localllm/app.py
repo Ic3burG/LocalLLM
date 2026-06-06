@@ -259,6 +259,7 @@ class LocalLLMApp(App):
         elif result.kind == "set_cwd":
             self._cwd = result.value
             status.cwd = result.value
+            self.query_one(InputBox).cwd = result.value
             transcript.write_status(f"cwd → {result.value}")
         elif result.kind == "quit":
             self.exit()
