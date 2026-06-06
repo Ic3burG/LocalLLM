@@ -61,4 +61,21 @@ def test_dedupes_repeated_mention(tmp_path):
 
 def test_human_size():
     assert human_size(500) == "500 B"
-    assert human_size(1536).endswith("KB")
+    assert human_size(1536) == "1.5 KB"
+    assert human_size(5 * 1024 * 1024) == "5.0 MB"
+
+
+def test_bracket_wrapped_mention_resolves(tmp_path):
+    (tmp_path / "file.txt").write_text("INSIDE")
+    exp = expand_mentions("see @(file.txt)", tmp_path)
+    assert '<file path="file.txt">' in exp.text
+    assert "INSIDE" in exp.text
+    assert exp.attached == [("file.txt", 6)]
+
+
+def test_dotfile_mention_preserved(tmp_path):
+    (tmp_path / ".gitignore").write_text("node_modules")
+    exp = expand_mentions("check @.gitignore", tmp_path)
+    assert '<file path=".gitignore">' in exp.text
+    assert "node_modules" in exp.text
+    assert exp.attached == [(".gitignore", 12)]

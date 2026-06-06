@@ -24,8 +24,8 @@ class Expansion:
 
 def human_size(n: int) -> str:
     size = float(n)
-    for unit in ("B", "KB", "MB", "GB"):
-        if size < 1024 or unit == "GB":
+    for unit in ("B", "KB", "MB"):
+        if size < 1024:
             return f"{int(size)} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size:.1f} GB"
@@ -40,7 +40,7 @@ def expand_mentions(
     seen: set[str] = set()
 
     for match in _MENTION_RE.finditer(text):
-        rel = match.group(1).rstrip(_TRAILING)
+        rel = match.group(1).rstrip(_TRAILING).lstrip("([{")
         if not rel or rel in seen:
             continue
         seen.add(rel)
