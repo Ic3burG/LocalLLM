@@ -1690,7 +1690,66 @@ CI cover both ends and the hook tell the truth.
 
 ---
 
-## 📈 Current Status (as of June 5, 2026)
+## ⌨️ CLI `@file` Mentions & `/` Command Autocomplete — June 11, 2026
+
+The `localllm` TUI already captured its launch directory and threaded it into the
+bridge's path sandbox, but it _felt_ like it didn't: asking a small local model to
+"read README.md" relied on the model **choosing** to call the `read_file` tool,
+which it often skipped — so files never reached context. Added Claude-Code-style
+affordances that make file references **deterministic** and the input **navigable**.
+
+### What changed (CLI-only — no bridge / `agent.py` / `agent_utils.py` edits, no new dependency)
+
+- **New pure modules (no Textual imports, fully unit-tested):**
+  - `localllm/completions.py` — recursive fuzzy file search with ignore-dir pruning
+    (`.git`/`node_modules`/`.venv`/…), slash-command prefix completion, and caret
+    logic (`parse_trigger` / `apply_completion`).
+  - `localllm/mentions.py` — `@path` → inlined `<file path="…">…</file>` block, with
+    cwd **sandbox** (rejects `@../escape`), **binary guard** (NUL sniff), **100 KB cap**
+    with a visible `[truncated N bytes]` marker + loud warning, bracket/punctuation
+    stripping that preserves dotfiles, and dedupe.
+- **`commands.py`** — slash commands promoted to a single immutable `COMMANDS` table
+  that feeds both `HELP_TEXT` and the `/` menu, so help and autocomplete can't drift.
+- **New `widgets/completion_menu.py`** — a floating, **non-focusable** `OptionList`
+  overlay; **`widgets/input_box.py`** rewritten to drive it (refresh on
+  `Input.Changed`, navigate/accept/dismiss in `on_key`) while keeping up/down history
+  intact when the menu is closed.
+- **`app.py`** — composes the menu; expands mentions in the submit worker
+  (`prompt=exp.text`, the **original** line still shown in the transcript,
+  `📎 attached:` / warnings surfaced); hands cwd to the input box at mount **and**
+  after `/cwd` (now `expanduser`+`resolve`d so the picker and the expander agree).
+
+### Process
+
+- Brainstorm → spec → plan → **subagent-driven execution** (fresh implementer per
+  task + two-stage spec/quality review). Spec:
+  `docs/superpowers/specs/2026-06-06-cli-mentions-autocomplete-design.md`; plan:
+  `docs/superpowers/plans/2026-06-06-cli-mentions-autocomplete.md`.
+- Reviews earned their keep: per-task review caught a focus-stealing menu
+  (`can_focus = False`); the **final holistic review** caught a cross-cutting bug no
+  per-task review could — `fuzzy_find_files` didn't `expanduser` its root while
+  `expand_mentions` did, so `/cwd ~/dir` silently emptied the picker. Fixed once at
+  the `/cwd` producer so all three consumers read one normalized path.
+
+### Verified
+
+- Local `bash .git/hooks/pre-push`: **351 passed**, exit 0 — 37 new pure-logic tests
+  (`test_cli_completions.py`, `test_cli_mentions.py`, `test_cli_commands.py`) + 9
+  headless Textual `run_test()` Pilot tests (`test_tui_completion.py`). ruff check +
+  ruff format + prettier all clean. (Local Python 3.14; CI runs the 3.10/3.13 matrix.)
+
+### Next steps / where we left off
+
+- `.gitignore` parsing for the picker is a deliberate **non-goal** (curated ignore set
+  only); it's a clean future extension behind `fuzzy_find_files`.
+- Minor known wrinkle: arrowing history up onto an old `@…` line re-opens the picker
+  (harmless — Esc/edit dismisses, submit unaffected).
+- MLX **batched generation** (multi-client throughput) is still the standing future
+  effort, independent of this CLI work.
+
+---
+
+## 📈 Current Status (as of June 11, 2026)
 
 - **Backend:** `gemma_bridge.py` on port 9379; `server.js` on port 3001.
   Managed by launchd as **`com.localllm.bridge`** and **`com.localllm.web`**
@@ -1725,7 +1784,7 @@ CI cover both ends and the hook tell the truth.
 - **Smoke-test infra:** `docs/smoke-test.html` (one clickable link per tool,
   opens a fresh chat with the prompt prefilled); regenerate via
   `python3 scripts/build_smoke_test.py`.
-- **Integrity:** 317 tests passing (hermetic — embedding model stubbed in
+- **Integrity:** 351 tests passing (hermetic — embedding model stubbed in
   `tests/conftest.py`, so CI never downloads from HuggingFace); CI runs the suite
   on a **3.10/3.13 matrix** (declared floor + a recent interpreter) alongside
   `lint`; local **Git Hooks** (self-healing pre-commit + arm64-pinned pre-push
